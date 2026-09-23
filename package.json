@@ -1,0 +1,24 @@
+{
+  "name": "SAE_PropJV",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev:client": "pnpm --filter client dev",
+    "dev:api": "pnpm --filter api-master run dev",
+    "dev:server": "pnpm --filter game-server run dev",
+    "dev": "pnpm run dev:client & pnpm run dev:api"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devEngines": {
+    "packageManager": {
+      "name": "pnpm",
+      "version": "12.6.0",
+      "onFail": "download"
+    }
+  },
+  "packageManager": "pnpm@12.6.0",
+  "type": "module"
+}
