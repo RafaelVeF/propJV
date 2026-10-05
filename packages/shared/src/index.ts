@@ -10,8 +10,45 @@ export enum MessageType {
     PLAYER_MOVE = 'PLAYER_MOVE',
     TRANSFORM_PROP = 'TRANSFORM_PROP',
     HUNTER_SHOOT = 'HUNTER_SHOOT',
-    PLAYER_HIT = 'PLAYER_HIT'
+    PLAYER_HIT = 'PLAYER_HIT',
+    PROP_LOCK = 'PROP_LOCK',
+    PROP_WHISTLE = 'PROP_WHISTLE'
 }
+
+// Les roles existants dans le jeu
+export enum PlayerRole {
+  HUNTER = 'HUNTER',
+  PROP = 'PROP',
+  SPECTATOR = 'SPECTATOR'
+}
+
+export interface BasePlayer {
+  id: string;
+  name: string;
+  x: number;
+  y: number;
+  health: number;
+}
+
+// Joueur Prop
+export interface PropPlayer extends BasePlayer {
+  role: PlayerRole.PROP;
+  isLocked: boolean;
+  currentSpriteKey?: string;
+}
+
+// Joueur Hunter
+export interface HunterPlayer extends BasePlayer {
+  role: PlayerRole.HUNTER;
+  ammo?: number;
+}
+
+// Joueur Spectateur
+export interface SpectatorPlayer extends BasePlayer {
+  role: PlayerRole.SPECTATOR;
+}
+
+export type Player = PropPlayer | HunterPlayer | SpectatorPlayer;
 
 // Les Payload pour chaque actions (les principaux)
 
@@ -31,7 +68,7 @@ export interface TransformPropPayload {
 export interface HunterShootPayload {
     hunterId: string;
     targetX: number;
-    targety: number;
+    targetY: number;
 }
 
 export interface PlayerHitPayload {
@@ -46,3 +83,14 @@ export interface NetworkMessage<T = any> {
     payload: T;
     timestamp?: number;
   }
+
+//Action de Props
+export interface PropLockPayload {
+  playerId: string;
+  isLocked: boolean;
+}
+
+export interface PropWhistlePayload {
+  playerId: string;
+  soundKey?: string;
+}
