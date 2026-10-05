@@ -1,13 +1,18 @@
 {
   "name": "SAE_PropJV",
   "version": "1.0.0",
-  "description": "",
+  "description": "Prop JV Monorepo",
   "main": "index.js",
   "scripts": {
     "dev:client": "pnpm --filter client dev",
-    "dev:api": "pnpm --filter api-master run dev",
-    "dev:server": "pnpm --filter game-server run dev",
-    "dev": "pnpm run dev:client & pnpm run dev:api"
+    "dev:api": "pnpm --filter api-master dev",
+    "dev:server": "pnpm --filter game-server dev",
+    "dev:desktop": "pnpm --filter desktop dev",
+    "dev": "concurrently -k -p \"[{name}]\" -n \"CLIENT,API,SERVER\" -c \"cyan.bold,magenta.bold,yellow.bold\" \"pnpm dev:client\" \"pnpm dev:api\" \"pnpm dev:server\"",
+    "build": "pnpm --recursive run build"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
   },
   "keywords": [],
   "author": "",
