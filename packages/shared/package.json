@@ -1,20 +1,13 @@
 {
-  "name": "shared",
+  "name": "@prop-hunt/shared",
   "version": "1.0.0",
-  "description": "Shared types, constants and game logic",
-  "main": "./index.ts",
-  "types": "./index.ts",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
   "exports": {
-    ".": "./index.ts"
+    ".": "./src/index.ts"
   },
   "scripts": {
     "build": "tsc"
-  },
-  "devDependencies": {
-    "typescript": "^5.7.3"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "module"
+  }
 }
