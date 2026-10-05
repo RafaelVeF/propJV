@@ -1,11 +1,17 @@
 import './style.css';
 import { GAME_NAME } from 'shared';
+import logoUrl from './assets/propJV_logo.png';
+
 
 const titleElement = document.getElementById('main-title');
 if (titleElement) {
   titleElement.textContent = GAME_NAME;
 }
 
+const logoElement = document.querySelector<HTMLImageElement>('.main-logo');
+if (logoElement) {
+  logoElement.src = logoUrl;
+}
 
 // Changer d'une vue a une autre
 function switchView(hideView: HTMLElement | null, showView: HTMLElement | null) {
