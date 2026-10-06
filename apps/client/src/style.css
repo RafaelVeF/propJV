@@ -134,20 +134,21 @@ body {
 /* Top Left Nav */
 .top-left-nav {
   position: absolute;
-  top: 35px;
-  left: 40px;
+  top: clamp(15px, 3.5vh, 35px);
+  left: clamp(20px, 3.5vw, 40px);
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 14px;
+  gap: clamp(6px, 1.5vh, 14px);
   pointer-events: auto;
+  z-index: 15;
 }
 
 .top-nav-link {
   background: none;
   border: none;
   font-family: var(--font-display);
-  font-size: 2.2rem;
+  font-size: clamp(1.8rem, 3.2vh, 2.8rem);
   letter-spacing: 1.5px;
   cursor: pointer;
   position: relative;
@@ -184,13 +185,14 @@ body {
 /* Top Right Nav Icons */
 .top-right-nav {
   position: absolute;
-  top: 30px;
-  right: 40px;
+  top: clamp(15px, 3.5vh, 30px);
+  right: clamp(20px, 3.5vw, 40px);
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 22px;
+  gap: clamp(12px, 2.2vh, 24px);
   pointer-events: auto;
+  z-index: 15;
 }
 
 .icon-btn {
@@ -222,17 +224,18 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 16px;
+  gap: clamp(8px, 1.8vh, 20px);
   pointer-events: auto;
+  max-height: 100vh;
 }
 
 .main-logo {
-  max-width: 840px;
-  max-height: 350px;
+  max-width: min(90vw, 840px);
+  max-height: min(32vh, 320px);
   width: auto;
   height: auto;
   object-fit: contain;
-  margin-bottom: 20px;
+  margin-bottom: clamp(8px, 2vh, 22px);
   border: none;
   border-radius: 0;
   box-shadow: none;
@@ -249,10 +252,11 @@ body {
   background: none;
   border: none;
   font-family: var(--font-display);
-  font-size: 3.5rem;
+  font-size: clamp(2.4rem, 5.5vh, 4.5rem);
   letter-spacing: 2px;
   cursor: pointer;
   transition: all 0.25s ease;
+  line-height: 1.1;
 }
 
 .main-menu-btn:hover {
@@ -260,7 +264,7 @@ body {
 }
 
 .menu-divider-line {
-  width: 260px;
+  width: clamp(200px, 25vw, 320px);
   height: 3px;
   background: linear-gradient(90deg, var(--color-cyan), var(--color-purple));
   border-radius: 2px;
@@ -268,11 +272,11 @@ body {
 }
 
 .quit-container {
-  margin-top: 45px;
+  margin-top: clamp(12px, 3vh, 40px);
 }
 
 .quit-btn {
-  font-size: 2rem !important;
+  font-size: clamp(1.6rem, 3.2vh, 2.5rem) !important;
   opacity: 0.9;
 }
 
@@ -280,9 +284,10 @@ body {
    MODAL VIEWS (Partie locale, Lobby, Settings, Profil...)
 ---------------------------------------------------- */
 .view.modal-view {
-  width: 100%;
-  max-width: 550px;
-  padding: 2.5rem;
+  width: min(92vw, 550px);
+  max-height: min(90vh, 720px);
+  overflow-y: auto;
+  padding: clamp(1.5rem, 3.5vh, 2.5rem);
   background: var(--color-surface);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
@@ -294,29 +299,38 @@ body {
   align-items: center;
 }
 
+.view.modal-view::-webkit-scrollbar {
+  width: 5px;
+}
+
+.view.modal-view::-webkit-scrollbar-thumb {
+  background: var(--color-purple);
+  border-radius: 4px;
+}
+
 .view-title {
   font-family: var(--font-display);
-  font-size: 3rem;
+  font-size: clamp(2rem, 3.8vh, 3rem);
   letter-spacing: 2px;
-  margin-bottom: 1.8rem;
+  margin-bottom: clamp(1rem, 2vh, 1.8rem);
   text-align: center;
 }
 
 .menu-container {
   display: flex;
   flex-direction: column;
-  gap: 1.2rem;
+  gap: clamp(0.7rem, 1.5vh, 1.2rem);
   width: 100%;
   max-width: 360px;
 }
 
 .btn {
   width: 100%;
-  padding: 0.9rem 1.5rem;
+  padding: clamp(0.65rem, 1.3vh, 0.9rem) 1.5rem;
   border: none;
   border-radius: var(--radius);
   font-family: var(--font-display);
-  font-size: 1.5rem;
+  font-size: clamp(1.2rem, 2vh, 1.5rem);
   letter-spacing: 1.5px;
   cursor: pointer;
   transition: all var(--transition);
@@ -701,4 +715,51 @@ body {
   background: rgba(239, 68, 68, 0.3) !important;
   border-color: #f87171 !important;
   color: #ffffff !important;
+}
+
+
+@media (max-height: 680px) {
+
+  .top-left-nav,
+  .top-right-nav {
+    gap: 8px;
+    top: 10px;
+  }
+
+  .main-logo {
+    max-height: 18vh;
+    margin-bottom: 6px;
+  }
+
+  .center-main-menu {
+    gap: 6px;
+  }
+
+  .menu-divider-line {
+    display: none;
+    /* Épurer l'interface sur les hauteurs très réduites */
+  }
+
+  .quit-container {
+    margin-top: 10px;
+  }
+}
+
+/* Écrans très étroits (Tablettes verticales, smartphones, fenêtres réduites) */
+@media (max-width: 800px) {
+  .top-left-nav {
+    left: 15px;
+    top: 15px;
+  }
+
+  .top-right-nav {
+    right: 15px;
+    top: 15px;
+    flex-direction: row;
+    gap: 12px;
+  }
+
+  .main-logo {
+    max-width: 90vw;
+  }
 }
