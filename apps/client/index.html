@@ -1,13 +1,250 @@
 <!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>client</title>
-  </head>
-  <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.ts"></script>
-  </body>
+<html lang="fr">
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Prop JV - Lobby</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Outfit:wght@300;400;600;800&display=swap"
+    rel="stylesheet">
+</head>
+
+<body>
+  <!-- Canvas Phaser en arrière-plan -->
+  <div id="game-container"></div>
+
+  <!-- UI HTML Superposée -->
+  <div id="ui-layer">
+
+
+    <!-- Vue 1 : Menu Principal -->
+    <div id="view-main" class="view main-screen active">
+      <!-- Haut Gauche -->
+      <div class="top-left-nav">
+        <button class="top-nav-link purple-text" id="btn-how-to-play">
+          COMMENT JOUER ?
+          <span class="nav-underline purple-cyan-gradient"></span>
+        </button>
+        <button class="top-nav-link purple-text" id="btn-friends">
+          AMIS
+          <span class="nav-underline purple-gradient"></span>
+        </button>
+      </div>
+
+      <!-- Haut Droite (Icônes) -->
+      <div class="top-right-nav">
+        <button class="icon-btn purple-icon" id="btn-settings" title="Paramètres">
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="currentColor">
+            <!-- tracé vectoriel d'engrenage-->
+            <path
+              d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
+          </svg>
+        </button>
+        <button class="icon-btn purple-icon" id="btn-profile" title="Profil">
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="currentColor">
+            <path
+              d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+          </svg>
+        </button>
+        <button class="icon-btn purple-icon" id="btn-stats" title="Statistiques">
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M5 9.2h3.5V19H5zM10.25 5h3.5v14h-3.5zM15.5 12h3.5v7h-3.5z" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Menu Central -->
+      <div class="center-main-menu">
+        <img src="/src/assets/propJV_logo.png" alt="Prop JV Logo" class="main-logo" />
+        <button class="main-menu-btn purple-text" id="btn-local">PARTIE LOCALE</button>
+        <div class="menu-divider-line"></div>
+        <button disabled class="main-menu-btn purple-text" id="btn-online">PARTIE EN LIGNE</button>
+        <div class="menu-divider-line"></div>
+        <button disabled class="main-menu-btn purple-text" id="btn-freeplay">FREEPLAY</button>
+
+        <div class="quit-container">
+          <button class="main-menu-btn quit-btn purple-text" id="btn-quit">QUITTER</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Vue 2 : Menu Partie Locale -->
+    <div id="view-local" class="view modal-view hidden">
+      <h2 class="view-title purple-text">PARTIE LOCALE</h2>
+      <div class="menu-container">
+        <button class="btn primary" id="btn-host">HÉBERGER UNE PARTIE</button>
+        <div class="divider">ou</div>
+        <div class="join-container">
+          <input type="text" class="input-field" placeholder="CLÉ DE SERVEUR" />
+          <button class="btn secondary" id="btn-join-local">REJOINDRE</button>
+        </div>
+        <button class="btn back" id="btn-back-main-from-local">RETOUR</button>
+      </div>
+    </div>
+
+    <!-- Vue 3 : Lobby Hébergé / En ligne (Salon) -->
+    <div id="view-lobby" class="view modal-view hidden">
+      <div class="lobby-header">
+        <h2 class="view-title blue-text">SALON DE JEU</h2>
+        <div class="room-key-box">
+          CLÉ : <span class="room-key">LOCAL-XYZ9</span>
+        </div>
+      </div>
+
+      <div class="lobby-content">
+        <div class="players-list">
+          <h3>JOUEURS (2/12)</h3>
+          <div class="player-item ready">
+            <span class="player-name">Hôte (Toi)</span>
+            <span class="player-status">PRÊT</span>
+          </div>
+          <div class="player-item not-ready">
+            <span class="player-name">Joueur 2</span>
+            <span class="player-status">EN ATTENTE...</span>
+          </div>
+        </div>
+
+        <div class="lobby-actions">
+          <button class="btn primary" id="btn-start-game">LANCER LA PARTIE</button>
+          <button class="btn back" id="btn-back-main-from-online">QUITTER LE SALON</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Vue 4 : Paramètres -->
+    <div id="view-settings" class="view modal-view hidden">
+      <h2 class="view-title purple-text">PARAMÈTRES</h2>
+      <div class="menu-container">
+        <div class="join-container">
+          <label class="input-label">VOLUME AUDIO</label>
+          <input type="range" min="0" max="100" value="80" class="range-input" />
+        </div>
+        <div class="join-container">
+          <label class="input-label">CLAVIER</label>
+          <select class="input-field">
+            <option value="AZERTY" selected>Azerty</option>
+            <option value="QWERTY">Qwerty</option>
+          </select>
+        </div>
+        <button class="btn back" id="btn-back-main-from-settings">RETOUR</button>
+      </div>
+    </div>
+
+    <!-- Vue 5 : Profil -->
+    <div id="view-profile" class="view modal-view hidden">
+      <h2 class="view-title blue-text">PROFIL JOUEUR</h2>
+      <div class="menu-container">
+        <div class="join-container">
+          <label class="input-label">PSEUDO</label>
+          <input type="text" class="input-field" value="Joueur1" placeholder="Entrez votre pseudo" />
+        </div>
+        <button class="btn back" id="btn-back-main-from-profile">RETOUR</button>
+      </div>
+    </div>
+
+    <!-- Vue 6 : Comment Jouer -->
+    <div id="view-how-to-play" class="view modal-view hidden">
+      <h2 class="view-title purple-text">COMMENT JOUER ?</h2>
+      <div class="menu-container">
+        <div class="info-card">
+          <p><strong>Objectifs : </strong><br>
+          <p style="margin-top: 10px;"><strong>Props : </strong>Cachez-vous ou débusquez les accessoires avant la fin
+            du temps imparti !</p>
+          <p style="margin-top: 10px;"><strong>Hunter : </strong>Trouvez tous les props avant la fin du temps imparti
+            !</p>
+          </p>
+          <p style="margin-top: 10px;"><strong>Touches :</strong> Utilisez ZQSD pour vous déplacer et la Souris pour
+            interagir avec les éléments du décor ou votre arme.</p>
+        </div>
+        <button class="btn back" id="btn-back-main-from-how-to-play">RETOUR</button>
+      </div>
+    </div>
+
+    <!-- Vue 7 : Amis -->
+    <div id="view-friends" class="view modal-view hidden">
+      <h2 class="view-title purple-text">AMIS</h2>
+      <div class="menu-container">
+
+        <!-- Liste des Amis -->
+        <div class="players-list">
+          <div class="list-header">
+            <h3>LISTE D'AMIS</h3>
+            <button class="icon-btn-inline purple-text" id="btn-open-add-friend" title="Ajouter un ami">+</button>
+          </div>
+          <div id="friends-items-list" class="scrollable-friends-items">
+            <div class="player-item ready">
+              <span class="player-name">Mock-Rafael</span>
+              <span class="player-status">En ligne</span>
+            </div>
+            <div class="player-item ready">
+              <span class="player-name">Mock-Florent</span>
+              <span class="player-status">En ligne</span>
+            </div>
+            <div class="player-item not-ready">
+              <span class="player-name">Mock-Jamie</span>
+              <span class="player-status">Hors ligne</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section Demandes Reçues -->
+        <div class="players-list requests-list">
+          <h3>DEMANDES REÇUES</h3>
+          <div id="requests-items-list">
+            <div class="player-item request-item">
+              <span class="player-name">Mock-Sovanmony</span>
+              <div class="request-actions">
+                <button class="btn primary accept-btn">Accepter</button>
+                <button class="btn secondary reject-btn">Refuser</button>
+              </div>
+            </div>
+            <div class="player-item request-item">
+              <span class="player-name">Mock-Lukas</span>
+              <div class="request-actions">
+                <button class="btn primary accept-btn">Accepter</button>
+                <button class="btn secondary reject-btn">Refuser</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <button class="btn back" id="btn-back-main-from-friends">RETOUR</button>
+      </div>
+    </div>
+
+    <!-- Vue 7b : Ajouter un Ami -->
+    <div id="view-add-friend" class="view modal-view hidden">
+      <h2 class="view-title purple-text">AJOUTER UN AMI</h2>
+      <div class="menu-container">
+        <div class="join-container">
+          <label class="input-label">PSEUDO DE L'AMI</label>
+          <input type="text" id="input-add-friend" class="input-field" placeholder="Entrez le pseudo..." />
+        </div>
+        <button class="btn primary" id="btn-add-friend">
+          <span>+ AJOUTER</span>
+        </button>
+        <button class="btn back" id="btn-back-friends-from-add-friend">RETOUR</button>
+      </div>
+    </div>
+
+    <!-- Vue 8 : Statistiques -->
+    <div id="view-stats" class="view modal-view hidden">
+      <h2 class="view-title purple-text">STATISTIQUES</h2>
+      <div class="menu-container">
+        <div class="info-card">
+          <div class="stat-row"><span>Parties Jouées :</span> <strong>?</strong></div>
+          <div class="stat-row"><span>Victoires :</span> <strong>?</strong></div>
+          <div class="stat-row"><span>Ratio V/D :</span> <strong>?</strong></div>
+        </div>
+        <button class="btn back" id="btn-back-main-from-stats">RETOUR</button>
+      </div>
+    </div>
+
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+
 </html>
