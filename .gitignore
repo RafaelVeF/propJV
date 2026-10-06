@@ -33,3 +33,5 @@ Thumbs.db
 # Base de données locale de test (pour éviter de push les données de test)
 *.sqlite
 *.db
+
+.vs/

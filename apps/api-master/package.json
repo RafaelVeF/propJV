@@ -18,7 +18,8 @@
     "cors": "^2.8.6",
     "dotenv": "^18.0.3",
     "express": "^5.2.1",
-    "mysql2": "^3.24.4"
+    "mysql2": "^3.24.4",
+    "@prop-hunt/shared": "workspace:*"
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
