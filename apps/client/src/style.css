@@ -404,7 +404,7 @@ body {
   padding: 0.85rem 1rem;
   background: rgba(10, 11, 15, 0.8);
   border: 1px solid rgba(170, 91, 240, 0.4);
-  border-radius: var(--radius);
+  border-radius: 3px;
   color: var(--color-text);
   font-family: var(--font-main);
   font-size: 1rem;
@@ -463,6 +463,52 @@ body {
   letter-spacing: 1.5px;
   border: 1px solid rgba(56, 189, 248, 0.3);
   box-shadow: 0 0 15px rgba(56, 189, 248, 0.15);
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.copy-key-btn {
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  color: var(--color-cyan);
+  border-radius: 6px;
+  padding: 0.35rem 0.5rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+.copy-key-btn:hover {
+  background: rgba(56, 189, 248, 0.25);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+  transform: scale(1.08);
+}
+
+.copy-tooltip {
+  position: absolute;
+  bottom: 125%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--color-cyan);
+  color: #0b0f19;
+  font-family: var(--font-main);
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 2px 7px;
+  border-radius: 4px;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  white-space: nowrap;
+}
+
+.copy-tooltip.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(-2px);
 }
 
 .room-key {
@@ -517,12 +563,37 @@ body {
   color: #ffffff;
 }
 
+.player-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
 .player-status {
   font-family: var(--font-display);
   font-size: 1.1rem;
   padding: 0.2rem 0.6rem;
   border-radius: 6px;
   letter-spacing: 1px;
+}
+
+.kick-player-btn {
+  background: none;
+  border: none;
+  color: var(--color-purple);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.kick-player-btn:hover {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.2);
+  transform: scale(1.2);
 }
 
 .player-item.ready .player-status {
