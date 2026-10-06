@@ -2,9 +2,8 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { GAME_NAME } from '@prop-hunt/shared';
-import mysql from 'mysql2/promise';
-
-// a changer plus tard pour utiliser directement les constantes de .env
+import authRoutes from './routes/auth.js';
+import { pool } from './db.js'; 
 
 dotenv.config();
 
@@ -14,17 +13,8 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// Configuration du pool de connexion TiDB
-const pool = mysql.createPool({
-    host: process.env.DB_HOST,
-    port: Number(process.env.DB_PORT),
-    user: process.env.DB_USERNAME,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_DATABASE,
-    ssl: {
-        rejectUnauthorized: true
-    }
-});
+// Activation de la route
+app.use('/api/auth', authRoutes);
 
 // Test de la connexion au démarrage
 pool.getConnection()
