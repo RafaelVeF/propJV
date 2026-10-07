@@ -47,9 +47,9 @@ INSERT INTO users_achievements (user_achievement_id, user_id, achievement_id, un
 
 -- 6. Railleries (Taunts)
 INSERT INTO taunts (taunt_id, internal_name, price, is_default, cooldown, asset_path, created_by) VALUES
-(1, 'taunt_chicken',     0, TRUE,  4.0, '/assets/audio/taunts/chicken.ogg',    1),
-(2, 'taunt_evil_laugh', 150, FALSE, 8.0, '/assets/audio/taunts/evil_laugh.ogg', 1),
-(3, 'taunt_whistle',    100, FALSE, 5.0, '/assets/audio/taunts/whistle.ogg',    1);
+(1, 'taunt_chicken',     0, TRUE,  4.0, '/assets/audio/chicken.ogg',    1),
+(2, 'taunt_evil_laugh', 150, FALSE, 8.0, '/assets/audio/evil_laugh.ogg', 1),
+(3, 'taunt_whistle',    100, FALSE, 5.0, '/assets/audio/whistle.ogg',    1);
 
 INSERT INTO taunts_translations (taunt_translation_id, taunt_id, language_id, display_name, created_by) VALUES
 (1, 1, 1, 'Chicken Cluck', 1),
