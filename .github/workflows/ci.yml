@@ -1,0 +1,36 @@
+name: CI - Pull Request Check
+
+on:
+  pull_request:
+    branches: [ develop, main ]
+
+jobs:
+  quality-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v4
+
+      - name: Installer pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 8
+
+      - name: Configuration de Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-node-version: 20
+          cache: 'pnpm'
+
+      - name: Installer les dépendances
+        run: pnpm install --frozen-lockfile
+
+      - name: Vérification des types TypeScript
+        run: pnpm -r exec tsc --noEmit
+
+      - name: Linter (ESLint / Prettier)
+        run: pnpm run lint --if-present
+
+      - name: Lancer les tests unitaires
+        run: pnpm run test --if-present
