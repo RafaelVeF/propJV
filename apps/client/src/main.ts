@@ -1,5 +1,5 @@
 import './style.css';
-import { GAME_NAME } from 'shared';
+import { GAME_NAME } from '@prop-hunt/shared';
 
 // Import des Composants UI (Template + Contrôleur)
 import { renderMainMenu, initMainMenu } from './components/mainMenu';

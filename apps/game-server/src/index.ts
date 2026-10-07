@@ -8,24 +8,48 @@ import {
     type TransformPropPayload,
     type PropLockPayload,
     type PropWhistlePayload,
-    type HunterShootPayload
+    type HunterShootPayload,
+    Rectangle
 } from '@prop-hunt/shared';
+import { GameLoop } from './GameLoop.js';
+import { updatePlayerPosition } from './systems/movement.js';
+import { parseTiledCollisions } from './utils/mapLoader.js';
+
+// =========================================================================
+// TODO FUTUR : Chargement dynamique de la carte via son ID (stockée en BDD)
+// Lorsque l'hôte sélectionne une carte dans le lobby, l'ID de la map est transmis
+// au serveur (par exemple via les arguments de démarrage ou une requête initiale).
+//
+// 1. Récupérer l'ID de la map (ex: const mapId = process.argv.find(...))
+// 2. Faire un fetch vers l'API Maître pour récupérer le JSON Tiled brut :
+//    const response = await fetch(`http://localhost:3000/api/maps/${mapId}`);
+//    const mapData = await response.json();
+// 3. Parser les collisions dynamiquement pour remplacer le tableau vide :
+//    const staticObstacles: Rectangle[] = parseTiledCollisions(mapData);
+// =========================================================================
 
 const wss = new WebSocketServer({ port: 8080 }); // Serveur WebSocket sur le port 8080
+console.log('[GameServer] Serveur WebSocket démarré sur le port 8080');
 
 const players = new Map<string, Player>(); // Map pour stocker les états des joueurs
-const clients = new Set<WebSocket>();    // Set pour stocker les sockets actifs
+const clients = new Map<WebSocket, string>();    // Set pour stocker les sockets actifs
+
+// Stockage temporaire des dernières entrées (vélocité) reçues pour chaque joueur
+const playerInputs = new Map<string, { vx: number; vy: number }>();
+
+const staticObstacles: Rectangle[] = [] // Temporairement vide en attendant l'implémentation BDD
+
 
 wss.on('connection', (ws) => {
-    console.log('Client connected');
+    console.log('[GameServer] Nouveau client connecté');
     const playerId = Math.random().toString(36).substring(2, 15); // ID aléatoire assigné au joueur
 
     // Initialisation d'un nouveau joueur (par défaut en tant que Prop)
     const newPlayer: Player = {
         id: playerId,
         name: `Player_${playerId.substring(0, 4)}`,
-        x: 0,
-        y: 0,
+        x: 200,
+        y: 200,
         health: 100,
         role: PlayerRole.PROP,
         isLocked: false,
@@ -33,7 +57,8 @@ wss.on('connection', (ws) => {
     };
 
     players.set(playerId, newPlayer);
-    clients.add(ws); 
+    clients.set(ws, playerId);
+    playerInputs.set(playerId, { vx: 0, vy: 0 });
 
     // Envoi du message de bienvenue au joueur qui vient de se connecter
     ws.send(JSON.stringify({ 
@@ -42,17 +67,12 @@ wss.on('connection', (ws) => {
     } satisfies NetworkMessage));
 
     // Notifie les autres joueurs qu'un nouveau joueur a rejoint
-    clients.forEach(clientWs => {
-        if (clientWs !== ws && clientWs.readyState === clientWs.OPEN) {
-            clientWs.send(JSON.stringify({ 
-                type: MessageType.PLAYER_JOINED, 
-                payload: { player: newPlayer } 
-            } satisfies NetworkMessage));
-        }
-    });
+    broadcast({
+        type: MessageType.PLAYER_JOINED,
+        payload: { player: newPlayer }
+    }, ws);
 
     ws.on('message', (data) => {
-        console.log('Message received:', data.toString());
         try {
             const message: NetworkMessage = JSON.parse(data.toString());
             
@@ -60,31 +80,11 @@ wss.on('connection', (ws) => {
                 case MessageType.PLAYER_MOVE: {
 
                     const payload = message.payload as PlayerMovePayload; 
-
-                    // Met à jour la position du joueur dans le serveur
-                    const currentPlayer = players.get(playerId);
-                    if (currentPlayer) {
-                        currentPlayer.x = payload.x;
-                        currentPlayer.y = payload.y;
-                        players.set(playerId, currentPlayer);
-                    }
-
-                    // Diffuse la position aux autres joueurs
-                    clients.forEach(clientWs => {
-                        if (clientWs !== ws && clientWs.readyState === clientWs.OPEN) {
-                            clientWs.send(JSON.stringify({ 
-                                type: MessageType.PLAYER_MOVE, 
-                                payload: { 
-                                    playerId, 
-                                    x: payload.x, 
-                                    y: payload.y, 
-                                    vx: payload.vx, 
-                                    vy: payload.vy 
-                                } 
-                            } satisfies NetworkMessage));
-                        }
-                    });
+                    // On enregistre l'intention demandée par le joueur
+                    // Elle sera traitée et validée de manière autoritaire par la GameLoop
+                    playerInputs.set(playerId, { vx: payload.vx, vy: payload.vy });
                     break;
+                
                 }
                 case MessageType.TRANSFORM_PROP: {
 
@@ -96,17 +96,9 @@ wss.on('connection', (ws) => {
                         playerToTransform.currentSpriteKey = payload.spriteKey;
                         players.set(playerId, playerToTransform);
                         
-                        // Notifie les autres joueurs de la transformation
-                        clients.forEach(clientWs => {
-                            if (clientWs !== ws && clientWs.readyState === clientWs.OPEN) {
-                                clientWs.send(JSON.stringify({ 
-                                    type: MessageType.TRANSFORM_PROP, 
-                                    payload: { 
-                                        playerId, 
-                                        spriteKey: payload.spriteKey 
-                                    } 
-                                } satisfies NetworkMessage));
-                            }
+                        broadcast({
+                            type: MessageType.TRANSFORM_PROP,
+                            payload: { playerId, spriteKey: payload.spriteKey }
                         });
                     }
                     break;
@@ -119,45 +111,30 @@ wss.on('connection', (ws) => {
                     const playerToLock = players.get(playerId);
                     if (playerToLock && playerToLock.role === PlayerRole.PROP) {
                         playerToLock.isLocked = payload.isLocked;
-                        players.set(playerId, playerToLock);
 
-                        // Diffuse l'état de verrouillage (immobilisation du prop)
-                        clients.forEach(clientWs => {
-                            if (clientWs !== ws && clientWs.readyState === clientWs.OPEN) {
-                                clientWs.send(JSON.stringify({
-                                    type: MessageType.PROP_LOCK,
-                                    payload: { playerId, isLocked: payload.isLocked }
-                                } satisfies NetworkMessage));
-                            }
+                        broadcast({
+                            type: MessageType.PROP_LOCK,
+                            payload: { playerId, isLocked: payload.isLocked }
                         });
+                        
                     }
                     break;
                 }
                 case MessageType.PROP_WHISTLE: {
                     const payload = message.payload as PropWhistlePayload;
 
-                    // Diffuse le son du sifflement du prop aux autres joueurs
-                    clients.forEach(clientWs => {
-                        if (clientWs !== ws && clientWs.readyState === clientWs.OPEN) {
-                            clientWs.send(JSON.stringify({
-                                type: MessageType.PROP_WHISTLE,
-                                payload: { playerId, soundKey: payload.soundKey }
-                            } satisfies NetworkMessage));
-                        }
+                    broadcast({
+                        type: MessageType.PROP_WHISTLE,
+                        payload: { playerId, soundKey: payload.soundKey }
                     });
                     break;
                 }
                 case MessageType.HUNTER_SHOOT: {
                     const payload = message.payload as HunterShootPayload;
 
-                    // Diffuse l'action de tir du chasseur
-                    clients.forEach(clientWs => {
-                        if (clientWs !== ws && clientWs.readyState === clientWs.OPEN) {
-                            clientWs.send(JSON.stringify({
-                                type: MessageType.HUNTER_SHOOT,
-                                payload
-                            } satisfies NetworkMessage));
-                        }
+                    broadcast({
+                        type: MessageType.HUNTER_SHOOT,
+                        payload
                     });
                     break;
                 }
@@ -165,14 +142,9 @@ wss.on('connection', (ws) => {
                 case MessageType.PLAYER_HIT: {
                     const payload = message.payload as { playerId: string; damage: number };
 
-                    // Notifie les autres joueurs qu'un joueur a été touché
-                    clients.forEach(clientWs => {
-                        if (clientWs !== ws && clientWs.readyState === clientWs.OPEN) {
-                            clientWs.send(JSON.stringify({
-                                type: MessageType.PLAYER_HIT,
-                                payload
-                            } satisfies NetworkMessage));
-                        }
+                    broadcast({
+                        type: MessageType.PLAYER_HIT,
+                        payload
                     });
                     break;
                 }
@@ -183,18 +155,55 @@ wss.on('connection', (ws) => {
     });
 
     ws.on('close', () => {
-        console.log('Client disconnected');
+        console.log('[GameServer] Client déconnecté', playerId);
         players.delete(playerId);
-        clients.delete(ws); 
+        clients.delete(ws);
+        playerInputs.delete(playerId); 
         
-        // Notifie les autres joueurs de la déconnexion
-        clients.forEach(clientWs => {
-            if (clientWs.readyState === clientWs.OPEN) {
-                clientWs.send(JSON.stringify({ 
-                    type: MessageType.PLAYER_LEFT, 
-                    payload: { playerId } 
-                } satisfies NetworkMessage));
-            }
-        });     
+        broadcast({
+            type: MessageType.PLAYER_LEFT,
+            payload: { playerId }
+        });
     });
 }); 
+
+// Fonction utilitaire pour diffuser un message à tous les clients connectés (avec option d'exclusion)
+function broadcast(message: NetworkMessage, excludeWs?: WebSocket) {
+    const dataString = JSON.stringify(message);
+    clients.forEach((_, clientWs) => {
+        if (clientWs !== excludeWs && clientWs.readyState === clientWs.OPEN) {
+            clientWs.send(dataString);
+        }
+    });
+}
+
+
+// Boucle de jeu principale
+const gameLoop = new GameLoop((deltaTime: number) => {
+
+    // Mise à jour de la physique de tous les joueurs
+    players.forEach((player, id) => {
+        const input = playerInputs.get(id);
+        if (input) {
+            if (player.role === PlayerRole.PROP && player.isLocked) {
+                return; // Si le joueur Prop est verrouillé, on ne met pas à jour sa position
+            }
+
+            // Le serveur calcule et impose la position validée via movement.ts
+            updatePlayerPosition(player, input.vx, input.vy, deltaTime, staticObstacles);
+
+        }
+    });
+
+    // Diffusion de l'état officiel mis à jour du monde à tous les clients à chaque tick
+    const playersList = Array.from(players.values());
+    if (playersList.length > 0) {
+        broadcast({
+            type: MessageType.GAME_STATE_UPDATE,
+            payload: { players: playersList }
+        });
+    }
+});
+
+// Démarrage de la boucle de jeu
+gameLoop.start();
