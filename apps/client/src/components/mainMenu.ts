@@ -45,7 +45,7 @@ export function renderMainMenu(): string {
         <div class="menu-divider-line"></div>
         <button disabled class="main-menu-btn purple-text" id="btn-online">PARTIE EN LIGNE</button>
         <div class="menu-divider-line"></div>
-        <button disabled class="main-menu-btn purple-text" id="btn-freeplay">FREEPLAY</button>
+        <button class="main-menu-btn purple-text" id="btn-freeplay">FREEPLAY</button>
 
         <div class="quit-container">
           <button class="main-menu-btn quit-btn purple-text" id="btn-quit">QUITTER</button>
@@ -82,7 +82,10 @@ export function initMainMenu(): void {
     btnOnline.addEventListener('click', () => switchView(viewMain, viewLobby));
   }
   if (btnFreeplay) {
-    btnFreeplay.addEventListener('click', () => switchView(viewMain, viewLocal));
+    const viewGame = document.getElementById('view-game');
+    btnFreeplay.addEventListener('click', () => {
+      if (viewGame) switchView(viewMain, viewGame);
+    });
   }
   if (btnQuit) {
     btnQuit.addEventListener('click', () => {

@@ -1,6 +1,6 @@
 import { app, BrowserWindow } from 'electron';
 import path from 'path';
-import { GAME_NAME } from 'shared';
+import { GAME_NAME } from '@prop-hunt/shared';
 
 function createWindow() {
   const win = new BrowserWindow({

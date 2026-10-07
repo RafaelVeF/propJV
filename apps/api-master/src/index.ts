@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { GAME_NAME } from 'shared';
+import { GAME_NAME } from '@prop-hunt/shared';
 import mysql from 'mysql2/promise';
 
 // a changer plus tard pour utiliser directement les constantes de .env
