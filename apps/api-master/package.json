@@ -18,10 +18,15 @@
     "cors": "^2.8.6",
     "dotenv": "^18.0.3",
     "express": "^5.2.1",
+<<<<<<< HEAD
     "express-rate-limit": "^8.7.0",
     "jsonwebtoken": "^9.0.3",
     "mysql2": "^3.24.4",
     "zod": "^4.6.5"
+=======
+    "mysql2": "^3.24.4",
+    "@prop-hunt/shared": "workspace:*"
+>>>>>>> d6245a01ea09a47335a1e487d0b7d111bd44d9b2
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
