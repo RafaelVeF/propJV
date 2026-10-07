@@ -1,5 +1,5 @@
 import './style.css';
-import { GAME_NAME } from 'shared';
+import { GAME_NAME } from '@prop-hunt/shared';
 
 // Import des Composants UI (Template + Contrôleur)
 import { renderMainMenu, initMainMenu } from './components/mainMenu';
@@ -10,6 +10,7 @@ import { renderProfile, initProfile } from './components/profile';
 import { renderHowToPlay, initHowToPlay } from './components/howToPlay';
 import { renderFriends, initFriends } from './components/friends';
 import { renderStats, initStats } from './components/stats';
+import { renderGame, initGame } from './components/game';
 
 //Montage dynamique du HTML dans le conteneur UI
 const uiLayer = document.getElementById('ui-layer');
@@ -23,6 +24,7 @@ if (uiLayer) {
     renderHowToPlay(),
     renderFriends(),
     renderStats(),
+    renderGame(),
   ].join('\n');
 }
 
@@ -41,3 +43,4 @@ initProfile();
 initHowToPlay();
 initFriends();
 initStats();
+initGame();
