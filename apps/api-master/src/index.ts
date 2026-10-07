@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { GAME_NAME } from '@prop-hunt/shared';
 import authRoutes from './routes/auth.js';
+import { requireAuth } from './middlewares/requireAuth.js';
 import { pool } from './db.js'; 
 
 dotenv.config();
