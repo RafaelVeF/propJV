@@ -65,7 +65,7 @@ router.post('/login', loginLimiter, async (req: Request, res: Response): Promise
     } catch (error) {
         // Interception des erreurs de validation (ex: mot de passe trop court)
         if (error instanceof z.ZodError) {
-            res.status(400).json({ success: false, message: "Format invalide", errors: error.errors });
+            res.status(400).json({ success: false, message: "Format invalide", errors: error.issues });
             return;
         }
         
