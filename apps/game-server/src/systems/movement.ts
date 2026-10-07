@@ -15,7 +15,7 @@ export function updatePlayerPosition(
     let normalizedVx = vx;
     let normalizedVy = vy;
 
-    if (normalizedVx !== 0 || normalizedVy !== 0) {
+    if (normalizedVx !== 0 && normalizedVy !== 0) {
         normalizedVx *= Math.SQRT1_2;
         normalizedVy *= Math.SQRT1_2;
     }

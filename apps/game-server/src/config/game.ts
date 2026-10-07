@@ -7,7 +7,7 @@ export const GAME_CONFIG = {
 
     //Paramètres physiques du joueur
     PLAYER_SPEED: 200, // Vitesse de déplacement maximale du joueur en pixels par tick
-    PLAYER_RADIUS: 16, // Taille de la hitbox du joueur en pixels
+    PLAYER_RADIUS: 8, // Taille de la hitbox du joueur en pixels (rayon 8 = diamètre 16)
     VISION_RADIUS: 50, // Rayon de vision du joueur en pixels a adapter selon les tests
 
     // Paramètres physiques des projectiles
