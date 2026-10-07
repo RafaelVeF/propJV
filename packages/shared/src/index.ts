@@ -12,7 +12,14 @@ export enum MessageType {
     HUNTER_SHOOT = 'HUNTER_SHOOT',
     PLAYER_HIT = 'PLAYER_HIT',
     PROP_LOCK = 'PROP_LOCK',
-    PROP_WHISTLE = 'PROP_WHISTLE'
+    PROP_WHISTLE = 'PROP_WHISTLE',
+
+    // Etat Générale
+    GAME_START = 'GAME_START',
+    ROUND_START = 'ROUND_START',
+    ROUND_END = 'ROUND_END',
+    GAME_END = 'GAME_END',
+    GAME_STATE_UPDATE = 'GAME_STATE_UPDATE'
 }
 
 // Les roles existants dans le jeu
@@ -54,8 +61,6 @@ export type Player = PropPlayer | HunterPlayer | SpectatorPlayer;
 
 export interface PlayerMovePayload {
     playerId: string;
-    x: number;
-    y: number;
     vx : number;
     vy: number;
 }
@@ -93,4 +98,23 @@ export interface PropLockPayload {
 export interface PropWhistlePayload {
   playerId: string;
   soundKey?: string;
+}
+
+// Démarage d'une partie
+export interface GameStartPayload {
+    mapId: string;
+}
+
+// Gestion des colisions
+export interface Rectangle {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+}
+
+export interface Circle {
+    x: number;
+    y: number;
+    radius: number;
 }
