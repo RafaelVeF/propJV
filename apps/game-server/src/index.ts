@@ -1,10 +1,12 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import { 
-    MessageType, 
-    PlayerRole, 
-    type Player, 
-    type NetworkMessage, 
-    type PlayerMovePayload, 
+import fs from 'fs';
+import path from 'path';
+import {
+    MessageType,
+    PlayerRole,
+    type Player,
+    type NetworkMessage,
+    type PlayerMovePayload,
     type TransformPropPayload,
     type PropLockPayload,
     type PropWhistlePayload,
@@ -37,7 +39,20 @@ const clients = new Map<WebSocket, string>();    // Set pour stocker les sockets
 // Stockage temporaire des dernières entrées (vélocité) reçues pour chaque joueur
 const playerInputs = new Map<string, { vx: number; vy: number }>();
 
-const staticObstacles: Rectangle[] = [] // Temporairement vide en attendant l'implémentation BDD
+let staticObstacles: Rectangle[] = [];
+try {
+    // Chargement temporaire de la carte depuis le dossier client
+    const mapPath = path.resolve(process.cwd(), '../client/public/assets/maps/map_01_test.tmj');
+    if (fs.existsSync(mapPath)) {
+        const mapData = JSON.parse(fs.readFileSync(mapPath, 'utf8'));
+        staticObstacles = parseTiledCollisions(mapData);
+        console.log('[GameServer] Collisions chargées avec succès depuis map_01_test.tmj');
+    } else {
+        console.warn(`[GameServer] Carte introuvable au chemin : ${mapPath}`);
+    }
+} catch (err) {
+    console.error('[GameServer] Erreur lors du chargement des collisions statiques :', err);
+}
 
 
 wss.on('connection', (ws) => {
@@ -48,8 +63,8 @@ wss.on('connection', (ws) => {
     const newPlayer: Player = {
         id: playerId,
         name: `Player_${playerId.substring(0, 4)}`,
-        x: 200,
-        y: 200,
+        x: 250,
+        y: 250,
         health: 100,
         role: PlayerRole.PROP,
         isLocked: false,
@@ -61,9 +76,9 @@ wss.on('connection', (ws) => {
     playerInputs.set(playerId, { vx: 0, vy: 0 });
 
     // Envoi du message de bienvenue au joueur qui vient de se connecter
-    ws.send(JSON.stringify({ 
-        type: MessageType.WELCOME, 
-        payload: { player: newPlayer } 
+    ws.send(JSON.stringify({
+        type: MessageType.WELCOME,
+        payload: { player: newPlayer }
     } satisfies NetworkMessage));
 
     // Notifie les autres joueurs qu'un nouveau joueur a rejoint
@@ -75,16 +90,16 @@ wss.on('connection', (ws) => {
     ws.on('message', (data) => {
         try {
             const message: NetworkMessage = JSON.parse(data.toString());
-            
+
             switch (message.type) {
                 case MessageType.PLAYER_MOVE: {
 
-                    const payload = message.payload as PlayerMovePayload; 
+                    const payload = message.payload as PlayerMovePayload;
                     // On enregistre l'intention demandée par le joueur
                     // Elle sera traitée et validée de manière autoritaire par la GameLoop
                     playerInputs.set(playerId, { vx: payload.vx, vy: payload.vy });
                     break;
-                
+
                 }
                 case MessageType.TRANSFORM_PROP: {
 
@@ -95,7 +110,7 @@ wss.on('connection', (ws) => {
                     if (playerToTransform && playerToTransform.role === PlayerRole.PROP) {
                         playerToTransform.currentSpriteKey = payload.spriteKey;
                         players.set(playerId, playerToTransform);
-                        
+
                         broadcast({
                             type: MessageType.TRANSFORM_PROP,
                             payload: { playerId, spriteKey: payload.spriteKey }
@@ -116,7 +131,7 @@ wss.on('connection', (ws) => {
                             type: MessageType.PROP_LOCK,
                             payload: { playerId, isLocked: payload.isLocked }
                         });
-                        
+
                     }
                     break;
                 }
@@ -158,14 +173,14 @@ wss.on('connection', (ws) => {
         console.log('[GameServer] Client déconnecté', playerId);
         players.delete(playerId);
         clients.delete(ws);
-        playerInputs.delete(playerId); 
-        
+        playerInputs.delete(playerId);
+
         broadcast({
             type: MessageType.PLAYER_LEFT,
             payload: { playerId }
         });
     });
-}); 
+});
 
 // Fonction utilitaire pour diffuser un message à tous les clients connectés (avec option d'exclusion)
 function broadcast(message: NetworkMessage, excludeWs?: WebSocket) {
