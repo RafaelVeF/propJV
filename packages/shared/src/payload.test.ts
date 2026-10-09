@@ -36,7 +36,7 @@ const hunterPlayer: Player = {
 // 2. Test des paquets d'actions de jeu
 const moveMessage: NetworkMessage<PlayerMovePayload> = {
   type: MessageType.PLAYER_MOVE,
-  payload: { playerId: propPlayer.id, x: 105, y: 200, vx: 1.5, vy: 0 },
+  payload: { playerId: propPlayer.id, vx: 1.5, vy: 0 },
   timestamp: Date.now()
 };
 

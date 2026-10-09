@@ -9,7 +9,10 @@
     "dev:server": "pnpm --filter game-server dev",
     "dev:desktop": "pnpm --filter desktop dev",
     "dev": "concurrently -k -p \"[{name}]\" -n \"CLIENT,API,SERVER\" -c \"cyan.bold,magenta.bold,yellow.bold\" \"pnpm dev:client\" \"pnpm dev:api\" \"pnpm dev:server\"",
-    "build": "pnpm --recursive run build"
+    "build": "pnpm --recursive run build",
+    "test": "pnpm -r --if-present run test",
+    "lint": "pnpm -r --if-present run lint",
+    "typecheck": "pnpm -r exec tsc --noEmit"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
