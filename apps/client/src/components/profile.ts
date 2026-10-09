@@ -191,51 +191,34 @@ function renderTauntsShowcaseHtml(): string {
     const isEquipped = slotIndex !== -1;
 
     let statusBadgeHtml = '';
-    let actionAreaHtml = '';
+    let actionBtnHtml = '';
 
     if (!taunt.isOwned) {
-      statusBadgeHtml = `<span class="tile-status-badge locked-badge">🔒 À ACHETER • ${taunt.price} 🪙</span>`;
-      actionAreaHtml = `
+      statusBadgeHtml = `<span class="tile-status-badge locked-badge">🔒 ${taunt.price} 🪙</span>`;
+      actionBtnHtml = `
         <button class="tile-action-btn btn-buy-taunt" data-taunt-id="${taunt.id}">
           Acheter (${taunt.price} 🪙)
         </button>
       `;
     } else if (isEquipped) {
       statusBadgeHtml = `<span class="tile-status-badge equipped-badge">✓ SLOT ${slotIndex + 1}</span>`;
-      actionAreaHtml = `
+      actionBtnHtml = `
         <button class="tile-action-btn btn-unequip-taunt" data-taunt-id="${taunt.id}">
           Retirer du Slot ${slotIndex + 1}
         </button>
       `;
     } else {
-      statusBadgeHtml = `<span class="tile-status-badge owned-badge">POSSÉDÉ</span>`;
-      if (state.selectedSlotIndex !== null) {
-        actionAreaHtml = `
-          <button class="tile-action-btn btn-assign-selected-slot" data-taunt-id="${taunt.id}" data-target-slot="${state.selectedSlotIndex}">
-            Assigner au Slot ${state.selectedSlotIndex + 1}
-          </button>
-        `;
-      } else {
-        actionAreaHtml = `
-          <div class="tile-equip-options">
-            <button class="tile-action-btn btn-quick-equip" data-taunt-id="${taunt.id}">Équiper</button>
-            <div class="mini-slots-picker">
-              ${[0, 1, 2, 3, 4]
-                .map(
-                  (i) => `
-                <button class="mini-slot-circle ${state.tauntSlots[i] === taunt.id ? 'active' : ''}" 
-                        data-taunt-id="${taunt.id}" 
-                        data-target-slot="${i}" 
-                        title="Placer sur le Slot ${i + 1}">
-                  ${i + 1}
-                </button>
-              `
-                )
-                .join('')}
-            </div>
-          </div>
-        `;
-      }
+      statusBadgeHtml = `<span class="tile-status-badge owned-badge">DISPONIBLE</span>`;
+      const targetText =
+        state.selectedSlotIndex !== null
+          ? `Équiper sur Slot #${state.selectedSlotIndex + 1}`
+          : `Équiper`;
+      actionBtnHtml = `
+        <button class="tile-action-btn btn-equip-taunt ${state.selectedSlotIndex !== null ? 'is-targeted' : ''}" 
+                data-taunt-id="${taunt.id}">
+          ${targetText}
+        </button>
+      `;
     }
 
     return `
@@ -257,7 +240,7 @@ function renderTauntsShowcaseHtml(): string {
         </div>
 
         <div class="tile-bottom">
-          ${actionAreaHtml}
+          ${actionBtnHtml}
         </div>
       </div>
     `;
@@ -269,15 +252,13 @@ function renderTauntsShowcaseHtml(): string {
 // ----------------------------------------------------
 function renderSeekerClassesShowcaseHtml(): string {
   return SEEKER_CLASSES.map((cls) => {
-    const isAffordable = state.coins >= cls.price;
-
     return `
       <div class="class-showcase-card ${cls.isOwned ? 'card-owned' : 'card-locked'}" data-class-id="${cls.id}">
         <div class="card-status-banner">
           ${
             cls.isOwned
-              ? `<span class="status-pill owned-pill">✓ DANS VOTRE INVENTAIRE</span>`
-              : `<span class="status-pill locked-pill">🔒 DISPONIBLE EN BOUTIQUE</span>`
+              ? `<span class="tile-status-badge owned-badge">POSSÉDÉ</span>`
+              : `<span class="tile-status-badge locked-badge">🔒 ${cls.price} 🪙</span>`
           }
           <span class="class-hp-tag">${cls.hp} PV</span>
         </div>
@@ -299,28 +280,24 @@ function renderSeekerClassesShowcaseHtml(): string {
             <strong>${cls.hp} PV</strong>
           </div>
           <div class="spec-row">
-            <span>Vitesse de déplacement</span>
+            <span>Vitesse</span>
             <strong>${cls.speed}</strong>
           </div>
         </div>
 
         <p class="card-desc">${cls.description}</p>
 
-        <div class="card-footer-info">
-          ${
-            cls.isOwned
-              ? `<div class="owned-confirmation-tag">Classe débloquée et prête pour le combat</div>`
-              : `
-                <div class="locked-price-box">
-                  <span class="price-label">Prix :</span>
-                  <span class="price-value">🪙 ${cls.price} pièces</span>
-                  <button class="btn-attempt-buy-class ${isAffordable ? 'affordable' : 'unaffordable'}" data-class-id="${cls.id}">
-                    ${isAffordable ? `Acheter (${cls.price} 🪙)` : `Pièces insuffisantes (${state.coins}/${cls.price})`}
-                  </button>
-                </div>
-              `
-          }
-        </div>
+        ${
+          !cls.isOwned
+            ? `
+              <div class="card-footer-info">
+                <button class="tile-action-btn btn-buy-taunt btn-attempt-buy-class" data-class-id="${cls.id}">
+                  Acheter (${cls.price} 🪙)
+                </button>
+              </div>
+            `
+            : ''
+        }
       </div>
     `;
   }).join('');
@@ -342,7 +319,9 @@ export function renderProfile(): string {
           <h2 class="view-title blue-text">PROFIL & INVENTAIRE</h2>
           <span class="top-subtitle">Gérez vos répliques sonores et consultez votre équipement de traqueur</span>
         </div>
-        <button class="modal-close-icon-btn" id="btn-close-profile-top" title="Fermer">✕</button>
+        <button class="btn back top-back-btn" id="btn-back-main-from-profile-top">
+          ← RETOUR
+        </button>
       </div>
 
       <!-- Toast contextuel pour retours d'actions -->
@@ -416,8 +395,8 @@ export function renderProfile(): string {
                 <span class="hud-helper-text">
                   ${
                     state.selectedSlotIndex !== null
-                      ? `<strong class="gold-highlight">Slot #${state.selectedSlotIndex + 1} sélectionné</strong> — Choisissez un taunt ci-dessous`
-                      : 'Cliquez sur un emplacement pour le cibler ou le vider'
+                      ? `<strong class="gold-highlight">Slot #${state.selectedSlotIndex + 1} sélectionné</strong> — Cliquez sur « Équiper » pour l'assigner`
+                      : 'Cliquez sur un emplacement pour le cibler, ou directement sur « Équiper » pour remplir le prochain slot'
                   }
                 </span>
               </div>
@@ -477,14 +456,10 @@ export function renderProfile(): string {
 export function initProfile(): void {
   const viewMain = document.getElementById('view-main');
   const viewProfile = document.getElementById('view-profile');
-  const btnBackMain = document.getElementById('btn-back-main-from-profile');
-  const btnCloseTop = document.getElementById('btn-close-profile-top');
+  const btnBackTop = document.getElementById('btn-back-main-from-profile-top');
 
-  if (btnBackMain) {
-    btnBackMain.addEventListener('click', () => switchView(viewProfile, viewMain));
-  }
-  if (btnCloseTop) {
-    btnCloseTop.addEventListener('click', () => switchView(viewProfile, viewMain));
+  if (btnBackTop) {
+    btnBackTop.addEventListener('click', () => switchView(viewProfile, viewMain));
   }
 
   const updateProfileUI = () => {
@@ -539,8 +514,8 @@ export function initProfile(): void {
     if (helperText) {
       helperText.innerHTML =
         state.selectedSlotIndex !== null
-          ? `<strong class="gold-highlight">Slot #${state.selectedSlotIndex + 1} sélectionné</strong> — Choisissez un taunt ci-dessous`
-          : 'Cliquez sur un emplacement pour le cibler ou le vider';
+          ? `<strong class="gold-highlight">Slot #${state.selectedSlotIndex + 1} sélectionné</strong> — Cliquez sur « Équiper » pour l'assigner`
+          : 'Cliquez sur un emplacement pour le cibler, ou directement sur « Équiper » pour remplir le prochain slot';
     }
 
     const hudHeader = document.querySelector('.taunt-hud-section .hud-header');
@@ -618,9 +593,11 @@ export function initProfile(): void {
     if (clearBtn) {
       const slotIdx = Number(clearBtn.getAttribute('data-slot-index'));
       if (!isNaN(slotIdx)) {
+        const clearedTauntId = state.tauntSlots[slotIdx];
+        const clearedTaunt = TAUNTS_COLLECTION.find((t) => t.id === clearedTauntId);
         state.tauntSlots[slotIdx] = null;
         if (state.selectedSlotIndex === slotIdx) state.selectedSlotIndex = null;
-        showToast(`Emplacement #${slotIdx + 1} vidé.`);
+        showToast(`Slot #${slotIdx + 1} (${clearedTaunt?.name || 'Taunt'}) vidé.`);
         updateProfileUI();
       }
       return;
@@ -657,64 +634,44 @@ export function initProfile(): void {
     const unequipBtn = target.closest('.btn-unequip-taunt');
     if (unequipBtn) {
       const tauntId = unequipBtn.getAttribute('data-taunt-id');
+      const taunt = TAUNTS_COLLECTION.find((t) => t.id === tauntId);
       if (tauntId) {
         state.tauntSlots = state.tauntSlots.map((s) => (s === tauntId ? null : s));
-        showToast('Taunt retiré de la roue.');
+        showToast(`« ${taunt?.name || 'Taunt'} » retiré de la roue.`);
         updateProfileUI();
       }
       return;
     }
 
-    // G. Assigner au slot cible sélectionné
-    const assignTargetBtn = target.closest('.btn-assign-selected-slot');
-    if (assignTargetBtn) {
-      const tauntId = assignTargetBtn.getAttribute('data-taunt-id');
-      const targetSlot = Number(assignTargetBtn.getAttribute('data-target-slot'));
-      if (tauntId && !isNaN(targetSlot)) {
-        state.tauntSlots = state.tauntSlots.map((s, idx) =>
-          idx === targetSlot ? tauntId : s === tauntId ? null : s
-        );
-        state.selectedSlotIndex = null;
-        showToast(`Assigné au Slot #${targetSlot + 1} !`);
-        updateProfileUI();
-      }
-      return;
-    }
-
-    // H. Mini sélecteur de slot direct (1 à 5)
-    const miniSlotCircle = target.closest('.mini-slot-circle');
-    if (miniSlotCircle) {
-      const tauntId = miniSlotCircle.getAttribute('data-taunt-id');
-      const targetSlot = Number(miniSlotCircle.getAttribute('data-target-slot'));
-      if (tauntId && !isNaN(targetSlot)) {
-        state.tauntSlots = state.tauntSlots.map((s, idx) =>
-          idx === targetSlot ? tauntId : s === tauntId ? null : s
-        );
-        showToast(`Équipé sur le Slot #${targetSlot + 1} !`);
-        updateProfileUI();
-      }
-      return;
-    }
-
-    // I. Bouton rapide "Équiper" (sur premier emplacement libre)
-    const quickEquipBtn = target.closest('.btn-quick-equip');
-    if (quickEquipBtn) {
-      const tauntId = quickEquipBtn.getAttribute('data-taunt-id');
-      if (tauntId) {
-        const firstEmptySlot = state.tauntSlots.indexOf(null);
-        if (firstEmptySlot !== -1) {
-          state.tauntSlots[firstEmptySlot] = tauntId;
-          showToast(`Équipé sur le Slot #${firstEmptySlot + 1} !`);
+    // G. Équiper un taunt (Slot sélectionné ou premier slot libre)
+    const equipBtn = target.closest('.btn-equip-taunt');
+    if (equipBtn) {
+      const tauntId = equipBtn.getAttribute('data-taunt-id');
+      const taunt = TAUNTS_COLLECTION.find((t) => t.id === tauntId);
+      if (taunt) {
+        if (state.selectedSlotIndex !== null) {
+          const targetSlot = state.selectedSlotIndex;
+          state.tauntSlots = state.tauntSlots.map((s, idx) =>
+            idx === targetSlot ? tauntId : s === tauntId ? null : s
+          );
+          state.selectedSlotIndex = null;
+          showToast(`« ${taunt.name} » placé sur le Slot #${targetSlot + 1} !`);
         } else {
-          state.tauntSlots[0] = tauntId;
-          showToast('Tous les slots étaient pleins : remplacé sur le Slot #1 !');
+          const firstEmptySlot = state.tauntSlots.indexOf(null);
+          if (firstEmptySlot !== -1) {
+            state.tauntSlots[firstEmptySlot] = tauntId;
+            showToast(`« ${taunt.name} » équipé sur le Slot #${firstEmptySlot + 1} !`);
+          } else {
+            state.tauntSlots[0] = tauntId;
+            showToast(`Roue pleine : « ${taunt.name} » assigné sur le Slot #1 !`);
+          }
         }
         updateProfileUI();
       }
       return;
     }
 
-    // J. Achat d'un taunt en boutique (Simulation interactive)
+    // H. Achat d'un taunt en boutique (Simulation interactive)
     const buyTauntBtn = target.closest('.btn-buy-taunt');
     if (buyTauntBtn) {
       const tauntId = buyTauntBtn.getAttribute('data-taunt-id');
@@ -732,7 +689,7 @@ export function initProfile(): void {
       return;
     }
 
-    // K. Tentative d'achat de classe Seeker (Colosse à 500 pièces)
+    // I. Tentative d'achat de classe Seeker (Colosse à 500 pièces)
     const buyClassBtn = target.closest('.btn-attempt-buy-class');
     if (buyClassBtn) {
       const classId = buyClassBtn.getAttribute('data-class-id');

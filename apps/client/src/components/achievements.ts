@@ -128,7 +128,6 @@ export function renderAchievements(): string {
         <div class="achievements-grid-wide">
           ${achievementsCardsHtml}
         </div>
-
       </div>
     </div>
   `;
@@ -137,14 +136,10 @@ export function renderAchievements(): string {
 export function initAchievements(): void {
   const viewMain = document.getElementById('view-main');
   const viewAchievements = document.getElementById('view-achievements');
-  const btnBackMainFromAchievements = document.getElementById('btn-back-main-from-achievements');
   const btnBackTop = document.getElementById('btn-back-main-from-achievements-top');
 
   const goBack = () => switchView(viewAchievements, viewMain);
 
-  if (btnBackMainFromAchievements) {
-    btnBackMainFromAchievements.addEventListener('click', goBack);
-  }
   if (btnBackTop) {
     btnBackTop.addEventListener('click', goBack);
   }
