@@ -11,7 +11,10 @@ import {
     type PropLockPayload,
     type PropWhistlePayload,
     type HunterShootPayload,
-    Rectangle
+    Rectangle,
+    DEFAULT_PROPS,
+    type PropDefinition,
+    GAMEPLAY_CONFIG
 } from '@prop-hunt/shared';
 import { GameLoop } from './GameLoop.js';
 import { updatePlayerPosition } from './systems/movement.js';
@@ -39,6 +42,8 @@ const clients = new Map<WebSocket, string>();    // Set pour stocker les sockets
 
 // Stockage temporaire des dernières entrées (vélocité) reçues pour chaque joueur
 const playerInputs = new Map<string, { vx: number; vy: number }>();
+// Horodatage du dernier tick de régénération pour chaque joueur
+const playerRegenTimers = new Map<string, number>();
 
 let staticObstacles: Rectangle[] = [];
 try {
@@ -67,16 +72,19 @@ wss.on('connection', (ws) => {
     console.log('[GameServer] Nouveau client connecté');
     const playerId = Math.random().toString(36).substring(2, 15); // ID aléatoire assigné au joueur
 
-    // Initialisation d'un nouveau joueur (par défaut en tant que Prop)
+    // Initialisation d'un nouveau joueur (par défaut en tant que Prop humain)
+    const defaultProp = DEFAULT_PROPS[0];
     const newPlayer: Player = {
         id: playerId,
         name: `Player_${playerId.substring(0, 4)}`,
         x: 250,
         y: 250,
-        health: 100,
+        health: defaultProp.health,
+        maxHealth: defaultProp.health,
         role: PlayerRole.PROP,
         isLocked: false,
-        currentSpriteKey: 'default_box'
+        currentProp: defaultProp,
+        currentSpriteKey: defaultProp.internalName
     };
 
     players.set(playerId, newPlayer);
@@ -113,16 +121,30 @@ wss.on('connection', (ws) => {
 
                     const payload = message.payload as TransformPropPayload;
 
-                    // Met à jour le sprite du joueur Prop dans le serveur
+                    // Met à jour le prop et sa hitbox physique dans le serveur
                     const playerToTransform = players.get(playerId);
                     if (playerToTransform && playerToTransform.role === PlayerRole.PROP) {
-                        playerToTransform.currentSpriteKey = payload.spriteKey;
-                        players.set(playerId, playerToTransform);
+                        const targetProp = DEFAULT_PROPS.find(p => 
+                            (payload.propId !== undefined && p.id === payload.propId) ||
+                            (payload.spriteKey && p.internalName === payload.spriteKey)
+                        );
 
-                        broadcast({
-                            type: MessageType.TRANSFORM_PROP,
-                            payload: { playerId, spriteKey: payload.spriteKey }
-                        });
+                        if (targetProp) {
+                            playerToTransform.currentProp = targetProp;
+                            playerToTransform.currentSpriteKey = targetProp.internalName;
+                            playerToTransform.maxHealth = targetProp.health;
+                            if (playerToTransform.health > targetProp.health) {
+                                playerToTransform.health = targetProp.health;
+                            }
+                            players.set(playerId, playerToTransform);
+
+                            console.log(`[GameServer] ${playerToTransform.name} transformé en ${targetProp.displayName} (hitbox: r${targetProp.hitboxRadius}px, HP: ${playerToTransform.health}/${playerToTransform.maxHealth})`);
+
+                            broadcast({
+                                type: MessageType.TRANSFORM_PROP,
+                                payload: { playerId, propId: targetProp.id, spriteKey: targetProp.internalName, currentProp: targetProp }
+                            });
+                        }
                     }
                     break;
                 }
@@ -163,12 +185,31 @@ wss.on('connection', (ws) => {
                 }
 
                 case MessageType.PLAYER_HIT: {
-                    const payload = message.payload as { playerId: string; damage: number };
+                    const payload = message.payload as { targetPlayerId?: string; playerId?: string; damage: number };
+                    const targetId = payload.targetPlayerId || payload.playerId;
+                    if (targetId && players.has(targetId)) {
+                        const targetPlayer = players.get(targetId)!;
+                        const damage = payload.damage ?? 10;
+                        targetPlayer.health = Math.max(0, targetPlayer.health - damage);
+                        targetPlayer.lastHitTimestamp = Date.now();
+                        playerRegenTimers.delete(targetId); // Réinitialise le délai de régénération
+                        players.set(targetId, targetPlayer);
 
-                    broadcast({
-                        type: MessageType.PLAYER_HIT,
-                        payload
-                    });
+                        console.log(`[GameServer] ${targetPlayer.name} a subi ${damage} dégâts (HP: ${targetPlayer.health}/${targetPlayer.maxHealth || 100})`);
+
+                        broadcast({
+                            type: MessageType.PLAYER_HIT,
+                            payload: {
+                                targetPlayerId: targetId,
+                                playerId: targetId,
+                                damage: damage,
+                                health: targetPlayer.health,
+                                maxHealth: targetPlayer.maxHealth,
+                                lastHitTimestamp: targetPlayer.lastHitTimestamp,
+                                isKilled: targetPlayer.health <= 0
+                            }
+                        });
+                    }
                     break;
                 }
             }
@@ -182,6 +223,7 @@ wss.on('connection', (ws) => {
         players.delete(playerId);
         clients.delete(ws);
         playerInputs.delete(playerId);
+        playerRegenTimers.delete(playerId);
 
         broadcast({
             type: MessageType.PLAYER_LEFT,
@@ -203,18 +245,31 @@ function broadcast(message: NetworkMessage, excludeWs?: WebSocket) {
 
 // Boucle de jeu principale
 const gameLoop = new GameLoop((deltaTime: number) => {
+    const now = Date.now();
 
-    // Mise à jour de la physique de tous les joueurs
+    // Mise à jour de la physique et des mécaniques de survie de tous les joueurs
     players.forEach((player, id) => {
         const input = playerInputs.get(id);
         if (input) {
             if (player.role === PlayerRole.PROP && player.isLocked) {
-                return; // Si le joueur Prop est verrouillé, on ne met pas à jour sa position
+                // Si le joueur Prop est verrouillé, on ne met pas à jour sa position
+            } else {
+                // Le serveur calcule et impose la position validée via movement.ts
+                updatePlayerPosition(player, input.vx, input.vy, deltaTime, staticObstacles);
             }
+        }
 
-            // Le serveur calcule et impose la position validée via movement.ts
-            updatePlayerPosition(player, input.vx, input.vy, deltaTime, staticObstacles);
-
+        // Régénération passive autoritaire : 1 PV par demi-seconde (500ms) après 10s sans dégât
+        const maxHealth = player.maxHealth || 100;
+        if (player.health < maxHealth && player.health > 0) {
+            const lastHit = player.lastHitTimestamp || 0;
+            if (now - lastHit >= GAMEPLAY_CONFIG.regeneration_cooldown) {
+                const lastRegen = playerRegenTimers.get(id) || 0;
+                if (now - lastRegen >= GAMEPLAY_CONFIG.regeneration_interval) {
+                    player.health = Math.min(maxHealth, player.health + GAMEPLAY_CONFIG.regeneration_amount);
+                    playerRegenTimers.set(id, now);
+                }
+            }
         }
     });
 

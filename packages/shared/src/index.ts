@@ -29,18 +29,84 @@ export enum PlayerRole {
   SPECTATOR = 'SPECTATOR'
 }
 
+// Configuration du gameplay et des mécaniques de survie
+export interface GameplayConfig {
+  /** Durée d'affichage des infos et de la barre de vie après un hit (en ms, ex: 5000 = 5s) */
+  shows_infos_duration: number;
+  /** Temps sans dégâts avant que la régénération ne commence (en ms, ex: 10000 = 10s) */
+  regeneration_cooldown: number;
+  /** Intervalle entre chaque tick de régénération (en ms, ex: 500 = 0.5s) */
+  regeneration_interval: number;
+  /** PVs régénérés à chaque intervalle */
+  regeneration_amount: number;
+}
+
+export const GAMEPLAY_CONFIG: GameplayConfig = {
+  shows_infos_duration: 5000,      // 5 secondes
+  regeneration_cooldown: 10000,    // 10 secondes après le dernier hit
+  regeneration_interval: 500,      // Toutes les 0.5 secondes
+  regeneration_amount: 1           // +1 PV
+};
+
 export interface BasePlayer {
   id: string;
   name: string;
   x: number;
   y: number;
   health: number;
+  maxHealth?: number;
+  lastHitTimestamp?: number; // Timestamp du dernier hit reçu
 }
+
+export interface PropDefinition {
+  id: number;
+  internalName: string;
+  displayName: string;
+  health: number;
+  assetPath: string;
+  width: number;
+  height: number;
+  hitboxRadius: number;
+}
+
+export const DEFAULT_PROPS: PropDefinition[] = [
+  {
+    id: 1,
+    internalName: 'prop_human',
+    displayName: 'Humain',
+    health: 100,
+    assetPath: '',
+    width: 24,
+    height: 48,
+    hitboxRadius: 12
+  },
+  {
+    id: 2,
+    internalName: 'prop_wall_painting',
+    displayName: 'Tableau Mural',
+    health: 50,
+    assetPath: '/assets/props/Tableau_Mur.png',
+    width: 32,
+    height: 32,
+    hitboxRadius: 10
+  },
+  {
+    id: 3,
+    internalName: 'prop_wall_painting_test',
+    displayName: 'Tableau Mural Test',
+    health: 30,
+    assetPath: '/assets/props/Tableau_Mur_test.png',
+    width: 32,
+    height: 32,
+    hitboxRadius: 10
+  }
+];
 
 // Joueur Prop
 export interface PropPlayer extends BasePlayer {
   role: PlayerRole.PROP;
   isLocked: boolean;
+  currentProp?: PropDefinition;
   currentSpriteKey?: string;
 }
 
@@ -63,11 +129,14 @@ export interface PlayerMovePayload {
     playerId: string;
     vx : number;
     vy: number;
+    x?: number;
+    y?: number;
 }
 
 export interface TransformPropPayload {
     playerId: string;
-    spriteKey: string; // Objet de la transformation
+    propId?: number;
+    spriteKey?: string; // Objet de la transformation
 }
 
 export interface HunterShootPayload {

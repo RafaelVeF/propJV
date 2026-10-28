@@ -28,10 +28,12 @@ export function updatePlayerPosition(
     const nextX = player.x + finalVx * deltaTime;
     const nextY = player.y + finalVy * deltaTime;
 
-    // Récupération des dimensions fixes de la carte et la hitbox du joueur
+    // Récupération des dimensions de la carte et la hitbox dynamique du joueur
     const mapWidth = GAME_CONFIG.MAP_WIDTH;
     const mapHeight = GAME_CONFIG.MAP_HEIGHT;
-    const playerRadius = GAME_CONFIG.PLAYER_RADIUS;
+    const playerRadius = ('currentProp' in player && player.currentProp?.hitboxRadius)
+        ? player.currentProp.hitboxRadius
+        : GAME_CONFIG.PLAYER_RADIUS;
 
     // 1. Test et application du mouvement sur l'axe X (permet de glisser le long d'un obstacle vertical)
     if (isValidMovement(nextX, player.y, playerRadius, mapWidth, mapHeight, obstacles)) {

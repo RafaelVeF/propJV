@@ -1,5 +1,5 @@
 import { switchView } from './viewManager';
-import { MessageType, type NetworkMessage, type Player } from '@prop-hunt/shared';
+import { MessageType, type NetworkMessage, type Player, DEFAULT_PROPS, type PropDefinition, GAMEPLAY_CONFIG } from '@prop-hunt/shared';
 
 export function renderGame(): string {
   return `
@@ -57,21 +57,43 @@ export function initGame(): void {
     })
     .catch(err => console.error('[MAP] Erreur de chargement de la carte:', err));
 
+  // Préchargement des textures de props
+  const propImages = new Map<string, HTMLImageElement>();
+  DEFAULT_PROPS.forEach(p => {
+    if (p.assetPath) {
+      const img = new Image();
+      img.src = p.assetPath;
+      propImages.set(p.assetPath, img);
+    }
+  });
+
   // État du joueur local
   let localPlayerId: string | null = null;
   let showHitbox = true; // Activer l'affichage visuel de la hitbox (touche 'H' pour activer/désactiver)
+  let currentPropIndex = 0;
   const player = {
     x: 250,
     y: 250,
     targetX: 250,
     targetY: 250,
-    width: 24,
-    height: 48,
-    hitboxRadius: 12, // Rayon de collision physique géré par le serveur (24px de diamètre)
+    health: 100,
+    maxHealth: 100,
+    lastHitTimestamp: 0,
+    currentProp: DEFAULT_PROPS[0],
     speed: 5
   };
 
-  const otherPlayers = new Map<string, { x: number; y: number; targetX: number; targetY: number; name?: string }>();
+  const otherPlayers = new Map<string, {
+    x: number;
+    y: number;
+    targetX: number;
+    targetY: number;
+    health: number;
+    maxHealth: number;
+    lastHitTimestamp?: number;
+    name?: string;
+    currentProp?: PropDefinition;
+  }>();
 
   // Connexion WebSocket au game-server (port 8080)
   let socket: WebSocket | null = null;
@@ -82,7 +104,7 @@ export function initGame(): void {
     socket.onopen = () => {
       console.log('[WS] Connecté au serveur de jeu (ws://localhost:8080)');
       if (wsStatus) {
-        wsStatus.innerText = 'WS: Connecté (ws://localhost:8080)';
+        wsStatus.innerText = 'WS: Connecté | E: Changer Prop | K: Dégâts (-15) | H: Hitbox';
         wsStatus.style.color = '#4ade80';
       }
     };
@@ -92,14 +114,75 @@ export function initGame(): void {
         const msg: NetworkMessage = JSON.parse(event.data);
         if (msg.type === MessageType.WELCOME) {
           localPlayerId = msg.payload.player.id;
-          console.log('[WS] Bienvenue ! Mon ID joueur :', localPlayerId);
+          if (msg.payload.player.currentProp) {
+            player.currentProp = msg.payload.player.currentProp;
+          }
+          player.health = msg.payload.player.health ?? player.currentProp.health;
+          player.maxHealth = msg.payload.player.maxHealth ?? player.currentProp.health;
+          player.lastHitTimestamp = msg.payload.player.lastHitTimestamp ?? 0;
+          console.log('[WS] Bienvenue ! Mon ID joueur :', localPlayerId, `(HP: ${player.health}/${player.maxHealth})`);
         } else if (msg.type === MessageType.PLAYER_JOINED) {
           const newP: Player = msg.payload.player;
-          otherPlayers.set(newP.id, { x: newP.x, y: newP.y, targetX: newP.x, targetY: newP.y, name: newP.name });
+          const propDef = ('currentProp' in newP && newP.currentProp) ? newP.currentProp : DEFAULT_PROPS[0];
+          otherPlayers.set(newP.id, {
+            x: newP.x,
+            y: newP.y,
+            targetX: newP.x,
+            targetY: newP.y,
+            health: newP.health ?? propDef.health,
+            maxHealth: ('maxHealth' in newP && newP.maxHealth) ? newP.maxHealth : propDef.health,
+            lastHitTimestamp: newP.lastHitTimestamp ?? 0,
+            name: newP.name,
+            currentProp: propDef
+          });
           console.log('[WS] Nouveau joueur rejoint :', newP.id);
         } else if (msg.type === MessageType.PLAYER_LEFT) {
           otherPlayers.delete(msg.payload.playerId);
           console.log('[WS] Joueur déconnecté :', msg.payload.playerId);
+        } else if (msg.type === MessageType.TRANSFORM_PROP) {
+          const payload = msg.payload;
+          const newProp: PropDefinition | undefined = payload.currentProp || DEFAULT_PROPS.find(p =>
+            (payload.propId !== undefined && p.id === payload.propId) ||
+            (payload.spriteKey && p.internalName === payload.spriteKey)
+          );
+          if (newProp) {
+            if (payload.playerId === localPlayerId) {
+              player.currentProp = newProp;
+              player.maxHealth = newProp.health;
+              if (player.health > newProp.health) {
+                player.health = newProp.health;
+              }
+              console.log(`[PROP] Transformation réussie en : ${newProp.displayName} (${player.health}/${player.maxHealth} HP)`);
+            } else if (otherPlayers.has(payload.playerId)) {
+              const op = otherPlayers.get(payload.playerId)!;
+              op.currentProp = newProp;
+              op.maxHealth = newProp.health;
+              if (op.health > newProp.health) {
+                op.health = newProp.health;
+              }
+            }
+          }
+        } else if (msg.type === MessageType.PLAYER_HIT) {
+          const payload = msg.payload;
+          const targetId = payload.targetPlayerId || payload.playerId;
+          const hitTime = payload.lastHitTimestamp || Date.now();
+          if (targetId === localPlayerId) {
+            player.lastHitTimestamp = hitTime;
+            if (payload.health !== undefined) {
+              player.health = payload.health;
+            } else {
+              player.health = Math.max(0, player.health - (payload.damage || 10));
+            }
+            console.log(`[COMBAT] Dégâts subis : -${payload.damage} HP (Vie restante : ${player.health}/${player.maxHealth}) - Barre de vie affichée pendant 5s`);
+          } else if (targetId && otherPlayers.has(targetId)) {
+            const op = otherPlayers.get(targetId)!;
+            op.lastHitTimestamp = hitTime;
+            if (payload.health !== undefined) {
+              op.health = payload.health;
+            } else {
+              op.health = Math.max(0, op.health - (payload.damage || 10));
+            }
+          }
         } else if (msg.type === MessageType.GAME_STATE_UPDATE) {
           const playersList = msg.payload.players as Player[];
           const currentIds = new Set<string>();
@@ -108,13 +191,34 @@ export function initGame(): void {
             if (p.id === localPlayerId) {
               player.targetX = p.x;
               player.targetY = p.y;
+              if (p.health !== undefined) player.health = p.health;
+              if ('maxHealth' in p && p.maxHealth !== undefined) player.maxHealth = p.maxHealth;
+              if ('lastHitTimestamp' in p && p.lastHitTimestamp !== undefined) player.lastHitTimestamp = p.lastHitTimestamp;
+              if ('currentProp' in p && p.currentProp) {
+                player.currentProp = p.currentProp;
+              }
             } else {
+              const propDef = ('currentProp' in p && p.currentProp) ? p.currentProp : DEFAULT_PROPS[0];
               if (otherPlayers.has(p.id)) {
                 const op = otherPlayers.get(p.id)!;
                 op.targetX = p.x;
                 op.targetY = p.y;
+                if (p.health !== undefined) op.health = p.health;
+                if ('maxHealth' in p && p.maxHealth !== undefined) op.maxHealth = p.maxHealth;
+                if ('lastHitTimestamp' in p && p.lastHitTimestamp !== undefined) op.lastHitTimestamp = p.lastHitTimestamp;
+                op.currentProp = propDef;
               } else {
-                otherPlayers.set(p.id, { x: p.x, y: p.y, targetX: p.x, targetY: p.y, name: p.name });
+                otherPlayers.set(p.id, {
+                  x: p.x,
+                  y: p.y,
+                  targetX: p.x,
+                  targetY: p.y,
+                  health: p.health ?? propDef.health,
+                  maxHealth: ('maxHealth' in p && p.maxHealth) ? p.maxHealth : propDef.health,
+                  lastHitTimestamp: p.lastHitTimestamp ?? 0,
+                  name: p.name,
+                  currentProp: propDef
+                });
               }
             }
           });
@@ -155,6 +259,44 @@ export function initGame(): void {
     if (e.key.toLowerCase() === 'h') {
       showHitbox = !showHitbox;
       console.log(`[DEBUG] Affichage des hitboxes : ${showHitbox ? 'ACTIVÉ' : 'DÉSACTIVÉ'}`);
+    }
+    // Touche 'E' : Se transformer en prop suivant du catalogue
+    if (e.key.toLowerCase() === 'e') {
+      currentPropIndex = (currentPropIndex + 1) % DEFAULT_PROPS.length;
+      const nextProp = DEFAULT_PROPS[currentPropIndex];
+      player.currentProp = nextProp;
+      player.maxHealth = nextProp.health;
+      if (player.health > nextProp.health) {
+        player.health = nextProp.health;
+      }
+      console.log(`[PROP] Demande de transformation en : ${nextProp.displayName}`);
+      if (socket && socket.readyState === WebSocket.OPEN && localPlayerId) {
+        socket.send(JSON.stringify({
+          type: MessageType.TRANSFORM_PROP,
+          payload: {
+            playerId: localPlayerId,
+            propId: nextProp.id,
+            spriteKey: nextProp.internalName
+          }
+        }));
+      }
+    }
+    // Touche 'K' : Simuler des dégâts (-15 HP) pour tester l'apparition de la barre et la régénération
+    if (e.key.toLowerCase() === 'k') {
+      const damage = 15;
+      player.health = Math.max(0, player.health - damage);
+      player.lastHitTimestamp = Date.now();
+      console.log(`[TEST] Dégâts appliqués : -${damage} HP (Vie restante: ${player.health}/${player.maxHealth}) - Régénération dans 10s`);
+      if (socket && socket.readyState === WebSocket.OPEN && localPlayerId) {
+        socket.send(JSON.stringify({
+          type: MessageType.PLAYER_HIT,
+          payload: {
+            targetPlayerId: localPlayerId,
+            damage: damage,
+            lastHitTimestamp: player.lastHitTimestamp
+          }
+        }));
+      }
     }
   });
 
@@ -239,22 +381,26 @@ export function initGame(): void {
         });
       }
 
-      // --- 2. FONCTION UTILITAIRE DE RENDU D'UN PERSONNAGE (CORPS 24x48 + HITBOX) ---
+      // --- 2. FONCTION UTILITAIRE DE RENDU D'UN PERSONNAGE OU PROP DYNAMIQUE ---
       const drawCharacter = (
         posX: number,
         posY: number,
+        prop: PropDefinition,
+        health: number,
+        maxHealth: number,
+        lastHitTimestamp: number | undefined,
         bodyColor: string,
         glowColor: string,
         label?: string
       ) => {
-        const bodyW = player.width;   // 24 px
-        const bodyH = player.height;  // 48 px
-        const radius = player.hitboxRadius; // 12 px (côté serveur)
+        const bodyW = prop.width;
+        const bodyH = prop.height;
+        const radius = prop.hitboxRadius;
 
         // Point d'ancrage : (posX, posY) est le centre de la hitbox physique au sol
-        // Le corps du personnage s'étend au-dessus des pieds
+        // Le corps du prop/personnage s'élève au-dessus de ses pieds
         const bodyX = posX - bodyW / 2;
-        const bodyY = posY + radius - bodyH; // La base des pieds touche le bas de la hitbox
+        const bodyY = posY + radius - bodyH;
 
         // A. Ombre au sol (effet de perspective top-down)
         ctx!.save();
@@ -264,30 +410,111 @@ export function initGame(): void {
         ctx!.fill();
         ctx!.restore();
 
-        // B. Corps du joueur : Rectangle de 24 x 48 px
-        ctx!.save();
-        ctx!.shadowColor = glowColor;
-        ctx!.shadowBlur = 10;
-        ctx!.fillStyle = bodyColor;
-        // Corps principal
-        ctx!.beginPath();
-        ctx!.roundRect(bodyX, bodyY, bodyW, bodyH, 4);
-        ctx!.fill();
-        ctx!.lineWidth = 1.5;
-        ctx!.strokeStyle = 'rgba(255, 255, 255, 0.4)';
-        ctx!.stroke();
-        ctx!.shadowBlur = 0;
+        // B. Rendu du Prop (Texture PNG ou forme géométrique de repli)
+        const propImg = prop.assetPath ? propImages.get(prop.assetPath) : null;
+        if (propImg && propImg.complete && propImg.naturalWidth > 0) {
+          ctx!.save();
+          ctx!.imageSmoothingEnabled = false; // Rendu pixel art net
+          ctx!.drawImage(propImg, bodyX, bodyY, bodyW, bodyH);
+          ctx!.restore();
+        } else {
+          // Rendu géométrique par défaut (ex: forme humanoïde ou boîte)
+          ctx!.save();
+          ctx!.shadowColor = glowColor;
+          ctx!.shadowBlur = 10;
+          ctx!.fillStyle = bodyColor;
+          ctx!.beginPath();
+          ctx!.roundRect(bodyX, bodyY, bodyW, bodyH, 4);
+          ctx!.fill();
+          ctx!.lineWidth = 1.5;
+          ctx!.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+          ctx!.stroke();
+          ctx!.shadowBlur = 0;
 
-        // Petit repère visuel de tête/yeux (pour voir l'orientation)
-        ctx!.fillStyle = 'rgba(255, 255, 255, 0.8)';
-        ctx!.fillRect(bodyX + 4, bodyY + 6, bodyW - 8, 8);
-        ctx!.restore();
+          // Repère visuel pour le mode humanoïde
+          if (prop.internalName === 'prop_human') {
+            ctx!.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            ctx!.fillRect(bodyX + 4, bodyY + 6, bodyW - 8, 8);
+          }
+          ctx!.restore();
+        }
 
-        // C. Visualisation DEBUG de la Hitbox (activable via touche 'H')
+        // C. BARRE DE VIE DYNAMIQUE (Visible UNIQUEMENT pendant shows_infos_duration après un hit)
+        const now = Date.now();
+        const timeSinceHit = now - (lastHitTimestamp || 0);
+        const isHealthBarVisible = (lastHitTimestamp !== undefined && lastHitTimestamp > 0) &&
+                                   (timeSinceHit < GAMEPLAY_CONFIG.shows_infos_duration);
+
+        if (isHealthBarVisible) {
+          const safeMax = Math.max(1, maxHealth);
+          const safeHealth = Math.max(0, Math.min(safeMax, health));
+          const healthRatio = safeHealth / safeMax;
+
+          // Couleurs selon les pourcentages demandés :
+          // - Vert par défaut (> 50%)
+          // - Jaune à 50% ou moins (<= 0.50)
+          // - Rouge à 25% ou moins (<= 0.25)
+          let healthColor = '#22c55e'; // Vert
+          if (healthRatio <= 0.25) {
+            healthColor = '#ef4444'; // Rouge
+          } else if (healthRatio <= 0.50) {
+            healthColor = '#eab308'; // Jaune
+          }
+
+          const barW = Math.max(34, bodyW + 4);
+          const barH = 5;
+          const barX = posX - barW / 2;
+          const barY = bodyY - 12;
+
+          // Fondu progressif d'estompement sur la dernière seconde
+          const timeRemaining = GAMEPLAY_CONFIG.shows_infos_duration - timeSinceHit;
+          const fadeAlpha = timeRemaining < 1000 ? Math.max(0, timeRemaining / 1000) : 1;
+
+          ctx!.save();
+          ctx!.globalAlpha = fadeAlpha;
+
+          // 1. Fond sombre de la barre de vie
+          ctx!.fillStyle = 'rgba(10, 10, 10, 0.85)';
+          ctx!.beginPath();
+          ctx!.roundRect(barX, barY, barW, barH, 2);
+          ctx!.fill();
+
+          // 2. Remplissage coloré de la vie restante
+          const fillW = Math.max(0, (barW - 2) * healthRatio);
+          if (fillW > 0) {
+            ctx!.fillStyle = healthColor;
+            ctx!.shadowColor = healthColor;
+            ctx!.shadowBlur = 6;
+            ctx!.beginPath();
+            ctx!.roundRect(barX + 1, barY + 1, fillW, barH - 2, 1);
+            ctx!.fill();
+            ctx!.shadowBlur = 0;
+          }
+
+          // 3. Bordure fine
+          ctx!.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+          ctx!.lineWidth = 0.8;
+          ctx!.beginPath();
+          ctx!.roundRect(barX, barY, barW, barH, 2);
+          ctx!.stroke();
+
+          // 4. Texte des HP au-dessus de la barre
+          ctx!.font = 'bold 8px monospace';
+          ctx!.textAlign = 'center';
+          ctx!.lineWidth = 2;
+          ctx!.strokeStyle = 'rgba(0, 0, 0, 0.85)';
+          ctx!.strokeText(`${Math.ceil(safeHealth)} / ${safeMax} HP`, posX, barY - 3);
+          ctx!.fillStyle = '#ffffff';
+          ctx!.fillText(`${Math.ceil(safeHealth)} / ${safeMax} HP`, posX, barY - 3);
+
+          ctx!.restore();
+        }
+
+        // D. Visualisation DEBUG de la Hitbox (activable via touche 'H')
         if (showHitbox) {
           ctx!.save();
 
-          // 1. Hitbox physique active (Cercle de rayon 12 utilisé par le serveur)
+          // 1. Hitbox physique active (Cercle physique utilisé par le serveur)
           ctx!.beginPath();
           ctx!.arc(posX, posY, radius, 0, Math.PI * 2);
           ctx!.fillStyle = 'rgba(34, 197, 94, 0.25)'; // Vert translucide
@@ -296,7 +523,7 @@ export function initGame(): void {
           ctx!.strokeStyle = '#22c55e'; // Vert fluo
           ctx!.stroke();
 
-          // 2. Croix centrale de la hitbox physique
+          // 2. Croix centrale de la hitbox physique (point de collision)
           ctx!.beginPath();
           ctx!.moveTo(posX - 4, posY);
           ctx!.lineTo(posX + 4, posY);
@@ -306,28 +533,50 @@ export function initGame(): void {
           ctx!.lineWidth = 1;
           ctx!.stroke();
 
-          // 3. Cadre englobant le corps entier (24 x 48)
+          // 3. Cadre englobant le sprite du prop (width x height)
           ctx!.setLineDash([3, 3]);
           ctx!.strokeStyle = 'rgba(234, 179, 8, 0.8)'; // Jaune pointillé
           ctx!.lineWidth = 1;
           ctx!.strokeRect(bodyX, bodyY, bodyW, bodyH);
 
-          // 4. Label debug au-dessus
+          // 4. Label debug au-dessus (adapté selon la présence de la barre de vie)
+          const debugLabelY = isHealthBarVisible ? (bodyY - 24) : (bodyY - 6);
           ctx!.font = '9px monospace';
           ctx!.fillStyle = '#ffffff';
           ctx!.textAlign = 'center';
-          ctx!.fillText(label || '24x48 [Pieds: R12]', posX, bodyY - 4);
+          ctx!.fillText(label || `${prop.displayName} [R${radius}]`, posX, debugLabelY);
 
           ctx!.restore();
         }
       };
 
       // DESSINER LE JOUEUR LOCAL
-      drawCharacter(player.x, player.y, '#ef4444', '#dc2626', 'Moi (24x48)');
+      drawCharacter(
+        player.x,
+        player.y,
+        player.currentProp,
+        player.health,
+        player.maxHealth,
+        player.lastHitTimestamp,
+        '#ef4444',
+        '#dc2626',
+        `Moi : ${player.currentProp.displayName}`
+      );
 
       // DESSINER LES AUTRES JOUEURS
       otherPlayers.forEach((op) => {
-        drawCharacter(op.x, op.y, '#a855f7', '#7c3aed', op.name || 'Joueur');
+        const propToDraw = op.currentProp || DEFAULT_PROPS[0];
+        drawCharacter(
+          op.x,
+          op.y,
+          propToDraw,
+          op.health ?? propToDraw.health,
+          op.maxHealth ?? propToDraw.health,
+          op.lastHitTimestamp,
+          '#a855f7',
+          '#7c3aed',
+          `${op.name || 'Joueur'} : ${propToDraw.displayName}`
+        );
       });
 
       // --- 4. DESSINER LA CARTE (Above) ---

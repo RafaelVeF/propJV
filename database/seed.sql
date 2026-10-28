@@ -100,9 +100,9 @@ INSERT INTO maps_translations (map_translation_id, map_id, language_id, display_
 (1, 1, 1, 'The Test map', 1),
 (2, 1, 2, 'La map de test', 1);
 
-INSERT INTO props (prop_id, internal_name, health, asset_path, created_by) VALUES
-(1, 'prop_wall_painting',      50, '/assets/props/Tableau_Mur.png',      1),
-(2, 'prop_wall_painting_test', 30, '/assets/props/Tableau_Mur_test.png', 1);
+INSERT INTO props (prop_id, internal_name, health, asset_path, width, height, hitbox_radius, created_by) VALUES
+(1, 'prop_wall_painting',      50, '/assets/props/Tableau_Mur.png',      32, 32, 10, 1),
+(2, 'prop_wall_painting_test', 30, '/assets/props/Tableau_Mur_test.png', 32, 32, 10, 1);
 
 INSERT INTO props_translations (prop_translation_id, prop_id, language_id, display_name, created_by) VALUES
 (1, 1, 1, 'Wall Painting', 1),
