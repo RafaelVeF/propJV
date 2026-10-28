@@ -59,12 +59,15 @@ export function initGame(): void {
 
   // État du joueur local
   let localPlayerId: string | null = null;
+  let showHitbox = true; // Activer l'affichage visuel de la hitbox (touche 'H' pour activer/désactiver)
   const player = {
     x: 250,
     y: 250,
     targetX: 250,
     targetY: 250,
-    size: 24,
+    width: 24,
+    height: 48,
+    hitboxRadius: 12, // Rayon de collision physique géré par le serveur (24px de diamètre)
     speed: 5
   };
 
@@ -149,6 +152,10 @@ export function initGame(): void {
 
   window.addEventListener('keydown', (e) => {
     keys[e.key.toLowerCase()] = true;
+    if (e.key.toLowerCase() === 'h') {
+      showHitbox = !showHitbox;
+      console.log(`[DEBUG] Affichage des hitboxes : ${showHitbox ? 'ACTIVÉ' : 'DÉSACTIVÉ'}`);
+    }
   });
 
   window.addEventListener('keyup', (e) => {
@@ -232,19 +239,95 @@ export function initGame(): void {
         });
       }
 
+      // --- 2. FONCTION UTILITAIRE DE RENDU D'UN PERSONNAGE (CORPS 24x48 + HITBOX) ---
+      const drawCharacter = (
+        posX: number,
+        posY: number,
+        bodyColor: string,
+        glowColor: string,
+        label?: string
+      ) => {
+        const bodyW = player.width;   // 24 px
+        const bodyH = player.height;  // 48 px
+        const radius = player.hitboxRadius; // 12 px (côté serveur)
+
+        // Point d'ancrage : (posX, posY) est le centre de la hitbox physique au sol
+        // Le corps du personnage s'étend au-dessus des pieds
+        const bodyX = posX - bodyW / 2;
+        const bodyY = posY + radius - bodyH; // La base des pieds touche le bas de la hitbox
+
+        // A. Ombre au sol (effet de perspective top-down)
+        ctx!.save();
+        ctx!.beginPath();
+        ctx!.ellipse(posX, posY, radius + 2, radius * 0.5, 0, 0, Math.PI * 2);
+        ctx!.fillStyle = 'rgba(0, 0, 0, 0.35)';
+        ctx!.fill();
+        ctx!.restore();
+
+        // B. Corps du joueur : Rectangle de 24 x 48 px
+        ctx!.save();
+        ctx!.shadowColor = glowColor;
+        ctx!.shadowBlur = 10;
+        ctx!.fillStyle = bodyColor;
+        // Corps principal
+        ctx!.beginPath();
+        ctx!.roundRect(bodyX, bodyY, bodyW, bodyH, 4);
+        ctx!.fill();
+        ctx!.lineWidth = 1.5;
+        ctx!.strokeStyle = 'rgba(255, 255, 255, 0.4)';
+        ctx!.stroke();
+        ctx!.shadowBlur = 0;
+
+        // Petit repère visuel de tête/yeux (pour voir l'orientation)
+        ctx!.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        ctx!.fillRect(bodyX + 4, bodyY + 6, bodyW - 8, 8);
+        ctx!.restore();
+
+        // C. Visualisation DEBUG de la Hitbox (activable via touche 'H')
+        if (showHitbox) {
+          ctx!.save();
+
+          // 1. Hitbox physique active (Cercle de rayon 12 utilisé par le serveur)
+          ctx!.beginPath();
+          ctx!.arc(posX, posY, radius, 0, Math.PI * 2);
+          ctx!.fillStyle = 'rgba(34, 197, 94, 0.25)'; // Vert translucide
+          ctx!.fill();
+          ctx!.lineWidth = 1.5;
+          ctx!.strokeStyle = '#22c55e'; // Vert fluo
+          ctx!.stroke();
+
+          // 2. Croix centrale de la hitbox physique
+          ctx!.beginPath();
+          ctx!.moveTo(posX - 4, posY);
+          ctx!.lineTo(posX + 4, posY);
+          ctx!.moveTo(posX, posY - 4);
+          ctx!.lineTo(posX, posY + 4);
+          ctx!.strokeStyle = '#ffffff';
+          ctx!.lineWidth = 1;
+          ctx!.stroke();
+
+          // 3. Cadre englobant le corps entier (24 x 48)
+          ctx!.setLineDash([3, 3]);
+          ctx!.strokeStyle = 'rgba(234, 179, 8, 0.8)'; // Jaune pointillé
+          ctx!.lineWidth = 1;
+          ctx!.strokeRect(bodyX, bodyY, bodyW, bodyH);
+
+          // 4. Label debug au-dessus
+          ctx!.font = '9px monospace';
+          ctx!.fillStyle = '#ffffff';
+          ctx!.textAlign = 'center';
+          ctx!.fillText(label || '24x48 [Pieds: R12]', posX, bodyY - 4);
+
+          ctx!.restore();
+        }
+      };
+
       // DESSINER LE JOUEUR LOCAL
-      ctx!.fillStyle = '#ff0000ff';
-      ctx!.shadowColor = '#a50909ff';
-      ctx!.shadowBlur = 15;
-      ctx!.fillRect(player.x - player.size / 2, player.y - player.size / 2, player.size, player.size);
-      ctx!.shadowBlur = 0;
+      drawCharacter(player.x, player.y, '#ef4444', '#dc2626', 'Moi (24x48)');
 
       // DESSINER LES AUTRES JOUEURS
       otherPlayers.forEach((op) => {
-        ctx!.fillStyle = '#a855f7';
-        ctx!.shadowColor = '#a855f7';
-        ctx!.shadowBlur = 10;
-        ctx!.fillRect(op.x - player.size / 2, op.y - player.size / 2, player.size, player.size);
+        drawCharacter(op.x, op.y, '#a855f7', '#7c3aed', op.name || 'Joueur');
       });
 
       // --- 4. DESSINER LA CARTE (Above) ---
