@@ -47,9 +47,9 @@ export function initGame(): void {
   // Chargement de la Map et du Tileset
   let mapData: any = null;
   const tilesetImg = new Image();
-  tilesetImg.src = '/assets/tilesets/PropJVTailSetMap.png';
+  tilesetImg.src = '/assets/tilesets/PropJVTileSetMap32.png';
 
-  fetch('/assets/maps/map_01_test.tmj')
+  fetch('/assets/maps/map_01_32p.tmj')
     .then(res => res.json())
     .then(data => {
       mapData = data;
@@ -60,11 +60,11 @@ export function initGame(): void {
   // État du joueur local
   let localPlayerId: string | null = null;
   const player = {
-    x: canvas.width / 2,
-    y: canvas.height / 2,
-    targetX: canvas.width / 2,
-    targetY: canvas.height / 2,
-    size: 16,
+    x: 250,
+    y: 250,
+    targetX: 250,
+    targetY: 250,
+    size: 24,
     speed: 5
   };
 

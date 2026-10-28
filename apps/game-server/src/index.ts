@@ -16,6 +16,7 @@ import {
 import { GameLoop } from './GameLoop.js';
 import { updatePlayerPosition } from './systems/movement.js';
 import { parseTiledCollisions } from './utils/mapLoader.js';
+import { GAME_CONFIG } from './config/game.js';
 
 // =========================================================================
 // TODO FUTUR : Chargement dynamique de la carte via son ID (stockée en BDD)
@@ -41,12 +42,19 @@ const playerInputs = new Map<string, { vx: number; vy: number }>();
 
 let staticObstacles: Rectangle[] = [];
 try {
-    // Chargement temporaire de la carte depuis le dossier client
-    const mapPath = path.resolve(process.cwd(), '../client/public/assets/maps/map_01_test.tmj');
+    // Chargement de la carte depuis le dossier client
+    const mapPath = path.resolve(process.cwd(), '../client/public/assets/maps/map_01_32p.tmj');
     if (fs.existsSync(mapPath)) {
         const mapData = JSON.parse(fs.readFileSync(mapPath, 'utf8'));
         staticObstacles = parseTiledCollisions(mapData);
-        console.log('[GameServer] Collisions chargées avec succès depuis map_01_test.tmj');
+        // Mise à jour modulaire des dimensions de la carte selon le fichier Tiled
+        if (mapData.width && mapData.tilewidth) {
+            GAME_CONFIG.MAP_WIDTH = mapData.width * mapData.tilewidth;
+        }
+        if (mapData.height && mapData.tileheight) {
+            GAME_CONFIG.MAP_HEIGHT = mapData.height * mapData.tileheight;
+        }
+        console.log(`[GameServer] Carte map_01_32p.tmj chargée : ${GAME_CONFIG.MAP_WIDTH}x${GAME_CONFIG.MAP_HEIGHT} px (${staticObstacles.length} obstacles)`);
     } else {
         console.warn(`[GameServer] Carte introuvable au chemin : ${mapPath}`);
     }
