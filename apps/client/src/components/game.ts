@@ -57,10 +57,17 @@ export function initGame(): void {
     })
     .catch(err => console.error('[MAP] Erreur de chargement de la carte:', err));
 
-  // Préchargement des textures de props
+  // Préchargement des textures de props (y compris toutes les orientations/variantes)
   const propImages = new Map<string, HTMLImageElement>();
   DEFAULT_PROPS.forEach(p => {
-    if (p.assetPath) {
+    p.variants?.forEach(v => {
+      if (v.assetPath && !propImages.has(v.assetPath)) {
+        const img = new Image();
+        img.src = v.assetPath;
+        propImages.set(v.assetPath, img);
+      }
+    });
+    if (p.assetPath && !propImages.has(p.assetPath)) {
       const img = new Image();
       img.src = p.assetPath;
       propImages.set(p.assetPath, img);
@@ -80,6 +87,7 @@ export function initGame(): void {
     maxHealth: 100,
     lastHitTimestamp: 0,
     currentProp: DEFAULT_PROPS[0],
+    variantIndex: 0, // Index de l'orientation/variante actuelle du prop
     speed: 5
   };
 
@@ -93,6 +101,7 @@ export function initGame(): void {
     lastHitTimestamp?: number;
     name?: string;
     currentProp?: PropDefinition;
+    variantIndex?: number;
   }>();
 
   // Connexion WebSocket au game-server (port 8080)
@@ -104,7 +113,7 @@ export function initGame(): void {
     socket.onopen = () => {
       console.log('[WS] Connecté au serveur de jeu (ws://localhost:8080)');
       if (wsStatus) {
-        wsStatus.innerText = 'WS: Connecté | E: Changer Prop | K: Dégâts (-15) | H: Hitbox';
+        wsStatus.innerText = 'WS: Connecté | E: Changer Prop | R: Tourner Prop | K: Dégâts (-15) | H: Hitbox';
         wsStatus.style.color = '#4ade80';
       }
     };
@@ -116,6 +125,9 @@ export function initGame(): void {
           localPlayerId = msg.payload.player.id;
           if (msg.payload.player.currentProp) {
             player.currentProp = msg.payload.player.currentProp;
+          }
+          if ('variantIndex' in msg.payload.player && msg.payload.player.variantIndex !== undefined) {
+            player.variantIndex = msg.payload.player.variantIndex;
           }
           player.health = msg.payload.player.health ?? player.currentProp.health;
           player.maxHealth = msg.payload.player.maxHealth ?? player.currentProp.health;
@@ -133,7 +145,8 @@ export function initGame(): void {
             maxHealth: ('maxHealth' in newP && newP.maxHealth) ? newP.maxHealth : propDef.health,
             lastHitTimestamp: newP.lastHitTimestamp ?? 0,
             name: newP.name,
-            currentProp: propDef
+            currentProp: propDef,
+            variantIndex: ('variantIndex' in newP && newP.variantIndex !== undefined) ? newP.variantIndex : 0
           });
           console.log('[WS] Nouveau joueur rejoint :', newP.id);
         } else if (msg.type === MessageType.PLAYER_LEFT) {
@@ -148,14 +161,20 @@ export function initGame(): void {
           if (newProp) {
             if (payload.playerId === localPlayerId) {
               player.currentProp = newProp;
+              if (payload.variantIndex !== undefined) {
+                player.variantIndex = payload.variantIndex;
+              }
               player.maxHealth = newProp.health;
               if (player.health > newProp.health) {
                 player.health = newProp.health;
               }
-              console.log(`[PROP] Transformation réussie en : ${newProp.displayName} (${player.health}/${player.maxHealth} HP)`);
+              console.log(`[PROP] Transformation réussie en : ${newProp.displayName} (orientation: ${player.variantIndex}) (${player.health}/${player.maxHealth} HP)`);
             } else if (otherPlayers.has(payload.playerId)) {
               const op = otherPlayers.get(payload.playerId)!;
               op.currentProp = newProp;
+              if (payload.variantIndex !== undefined) {
+                op.variantIndex = payload.variantIndex;
+              }
               op.maxHealth = newProp.health;
               if (op.health > newProp.health) {
                 op.health = newProp.health;
@@ -197,8 +216,12 @@ export function initGame(): void {
               if ('currentProp' in p && p.currentProp) {
                 player.currentProp = p.currentProp;
               }
+              if ('variantIndex' in p && p.variantIndex !== undefined) {
+                player.variantIndex = p.variantIndex;
+              }
             } else {
               const propDef = ('currentProp' in p && p.currentProp) ? p.currentProp : DEFAULT_PROPS[0];
+              const pVariantIndex = ('variantIndex' in p && p.variantIndex !== undefined) ? p.variantIndex : 0;
               if (otherPlayers.has(p.id)) {
                 const op = otherPlayers.get(p.id)!;
                 op.targetX = p.x;
@@ -207,6 +230,7 @@ export function initGame(): void {
                 if ('maxHealth' in p && p.maxHealth !== undefined) op.maxHealth = p.maxHealth;
                 if ('lastHitTimestamp' in p && p.lastHitTimestamp !== undefined) op.lastHitTimestamp = p.lastHitTimestamp;
                 op.currentProp = propDef;
+                op.variantIndex = pVariantIndex;
               } else {
                 otherPlayers.set(p.id, {
                   x: p.x,
@@ -217,7 +241,8 @@ export function initGame(): void {
                   maxHealth: ('maxHealth' in p && p.maxHealth) ? p.maxHealth : propDef.health,
                   lastHitTimestamp: p.lastHitTimestamp ?? 0,
                   name: p.name,
-                  currentProp: propDef
+                  currentProp: propDef,
+                  variantIndex: pVariantIndex
                 });
               }
             }
@@ -265,6 +290,7 @@ export function initGame(): void {
       currentPropIndex = (currentPropIndex + 1) % DEFAULT_PROPS.length;
       const nextProp = DEFAULT_PROPS[currentPropIndex];
       player.currentProp = nextProp;
+      player.variantIndex = 0; // Réinitialise l'orientation par défaut (Face)
       player.maxHealth = nextProp.health;
       if (player.health > nextProp.health) {
         player.health = nextProp.health;
@@ -276,9 +302,32 @@ export function initGame(): void {
           payload: {
             playerId: localPlayerId,
             propId: nextProp.id,
+            variantIndex: 0,
             spriteKey: nextProp.internalName
           }
         }));
+      }
+    }
+    // Touche 'R' : Tourner le prop actuel (boucler sur ses variantes d'orientation)
+    if (e.key.toLowerCase() === 'r') {
+      const variants = player.currentProp.variants || [];
+      if (variants.length > 1) {
+        player.variantIndex = (player.variantIndex + 1) % variants.length;
+        const currentVariant = variants[player.variantIndex];
+        console.log(`[PROP] Rotation : ${player.currentProp.displayName} -> ${currentVariant.orientationName || `Variante ${player.variantIndex}`} (${currentVariant.width}x${currentVariant.height})`);
+        if (socket && socket.readyState === WebSocket.OPEN && localPlayerId) {
+          socket.send(JSON.stringify({
+            type: MessageType.TRANSFORM_PROP,
+            payload: {
+              playerId: localPlayerId,
+              propId: player.currentProp.id,
+              variantIndex: player.variantIndex,
+              spriteKey: player.currentProp.internalName
+            }
+          }));
+        }
+      } else {
+        console.log(`[PROP] ${player.currentProp.displayName} n'a pas d'autre orientation disponible.`);
       }
     }
     // Touche 'K' : Simuler des dégâts (-15 HP) pour tester l'apparition de la barre et la régénération
@@ -386,6 +435,7 @@ export function initGame(): void {
         posX: number,
         posY: number,
         prop: PropDefinition,
+        variantIndex: number,
         health: number,
         maxHealth: number,
         lastHitTimestamp: number | undefined,
@@ -393,9 +443,18 @@ export function initGame(): void {
         glowColor: string,
         label?: string
       ) => {
-        const bodyW = prop.width;
-        const bodyH = prop.height;
-        const radius = prop.hitboxRadius;
+        const variants = prop.variants || [];
+        const variant = variants[variantIndex] || variants[0] || {
+          assetPath: prop.assetPath,
+          width: prop.width,
+          height: prop.height,
+          orientationName: 'Défaut'
+        };
+
+        const bodyW = variant.width || prop.width || 32;
+        const bodyH = variant.height || prop.height || 32;
+        const radius = prop.hitboxRadius || 10;
+        const assetPath = variant.assetPath || prop.assetPath;
 
         // Point d'ancrage : (posX, posY) est le centre de la hitbox physique au sol
         // Le corps du prop/personnage s'élève au-dessus de ses pieds
@@ -410,8 +469,8 @@ export function initGame(): void {
         ctx!.fill();
         ctx!.restore();
 
-        // B. Rendu du Prop (Texture PNG ou forme géométrique de repli)
-        const propImg = prop.assetPath ? propImages.get(prop.assetPath) : null;
+        // B. Rendu du Prop (Texture PNG de la variante active ou forme géométrique de repli)
+        const propImg = assetPath ? propImages.get(assetPath) : null;
         if (propImg && propImg.complete && propImg.naturalWidth > 0) {
           ctx!.save();
           ctx!.imageSmoothingEnabled = false; // Rendu pixel art net
@@ -533,49 +592,88 @@ export function initGame(): void {
           ctx!.lineWidth = 1;
           ctx!.stroke();
 
-          // 3. Cadre englobant le sprite du prop (width x height)
+          // 3. Cadre englobant le sprite du prop (width x height de la variante)
           ctx!.setLineDash([3, 3]);
           ctx!.strokeStyle = 'rgba(234, 179, 8, 0.8)'; // Jaune pointillé
           ctx!.lineWidth = 1;
           ctx!.strokeRect(bodyX, bodyY, bodyW, bodyH);
 
-          // 4. Label debug au-dessus (adapté selon la présence de la barre de vie)
+          // 4. Label debug au-dessus (incluant l'orientation courante)
           const debugLabelY = isHealthBarVisible ? (bodyY - 24) : (bodyY - 6);
+          const orientationTag = variant.orientationName ? ` [${variant.orientationName}]` : '';
           ctx!.font = '9px monospace';
           ctx!.fillStyle = '#ffffff';
           ctx!.textAlign = 'center';
-          ctx!.fillText(label || `${prop.displayName} [R${radius}]`, posX, debugLabelY);
+          ctx!.fillText(label ? `${label}${orientationTag}` : `${prop.displayName}${orientationTag} [R${radius}]`, posX, debugLabelY);
 
           ctx!.restore();
         }
       };
 
-      // DESSINER LE JOUEUR LOCAL
-      drawCharacter(
-        player.x,
-        player.y,
-        player.currentProp,
-        player.health,
-        player.maxHealth,
-        player.lastHitTimestamp,
-        '#ef4444',
-        '#dc2626',
-        `Moi : ${player.currentProp.displayName}`
-      );
+      // --- 3. RENDU DES JOUEURS / ENTITÉS AVEC PROFONDEUR DE PERSPECTIVE (Y-Sorting) ---
+      // On regroupe tous les acteurs dans une même liste et on les trie par leur position Y au sol (posY).
+      // Règle d'or 2D top-down : plus Y est petit (plus haut / plus au fond), plus l'entité est dessinée tôt.
+      // Plus Y est grand (plus bas / au premier plan), plus l'entité est dessinée tard (devant les autres).
+      interface RenderableCharacter {
+        x: number;
+        y: number;
+        prop: PropDefinition;
+        variantIndex: number;
+        health: number;
+        maxHealth: number;
+        lastHitTimestamp: number | undefined;
+        bodyColor: string;
+        glowColor: string;
+        label: string;
+      }
 
-      // DESSINER LES AUTRES JOUEURS
+      const charactersToDraw: RenderableCharacter[] = [
+        {
+          x: player.x,
+          y: player.y,
+          prop: player.currentProp,
+          variantIndex: player.variantIndex,
+          health: player.health,
+          maxHealth: player.maxHealth,
+          lastHitTimestamp: player.lastHitTimestamp,
+          bodyColor: '#ef4444',
+          glowColor: '#dc2626',
+          label: `Moi : ${player.currentProp.displayName}`
+        }
+      ];
+
       otherPlayers.forEach((op) => {
         const propToDraw = op.currentProp || DEFAULT_PROPS[0];
+        charactersToDraw.push({
+          x: op.x,
+          y: op.y,
+          prop: propToDraw,
+          variantIndex: op.variantIndex ?? 0,
+          health: op.health ?? propToDraw.health,
+          maxHealth: op.maxHealth ?? propToDraw.health,
+          lastHitTimestamp: op.lastHitTimestamp,
+          bodyColor: '#a855f7',
+          glowColor: '#7c3aed',
+          label: `${op.name || 'Joueur'} : ${propToDraw.displayName}`
+        });
+      });
+
+      // Tri automatique par Y croissant : ceux qui sont plus haut sont dessinés d'abord, ceux plus bas passent devant
+      charactersToDraw.sort((a, b) => a.y - b.y);
+
+      // Dessin dans l'ordre de profondeur exact
+      charactersToDraw.forEach((c) => {
         drawCharacter(
-          op.x,
-          op.y,
-          propToDraw,
-          op.health ?? propToDraw.health,
-          op.maxHealth ?? propToDraw.health,
-          op.lastHitTimestamp,
-          '#a855f7',
-          '#7c3aed',
-          `${op.name || 'Joueur'} : ${propToDraw.displayName}`
+          c.x,
+          c.y,
+          c.prop,
+          c.variantIndex,
+          c.health,
+          c.maxHealth,
+          c.lastHitTimestamp,
+          c.bodyColor,
+          c.glowColor,
+          c.label
         );
       });
 

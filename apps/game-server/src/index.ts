@@ -84,6 +84,7 @@ wss.on('connection', (ws) => {
         role: PlayerRole.PROP,
         isLocked: false,
         currentProp: defaultProp,
+        variantIndex: 0,
         currentSpriteKey: defaultProp.internalName
     };
 
@@ -127,22 +128,31 @@ wss.on('connection', (ws) => {
                         const targetProp = DEFAULT_PROPS.find(p => 
                             (payload.propId !== undefined && p.id === payload.propId) ||
                             (payload.spriteKey && p.internalName === payload.spriteKey)
-                        );
+                        ) || playerToTransform.currentProp;
 
                         if (targetProp) {
                             playerToTransform.currentProp = targetProp;
                             playerToTransform.currentSpriteKey = targetProp.internalName;
+                            if (payload.variantIndex !== undefined) {
+                                playerToTransform.variantIndex = payload.variantIndex;
+                            }
                             playerToTransform.maxHealth = targetProp.health;
                             if (playerToTransform.health > targetProp.health) {
                                 playerToTransform.health = targetProp.health;
                             }
                             players.set(playerId, playerToTransform);
 
-                            console.log(`[GameServer] ${playerToTransform.name} transformé en ${targetProp.displayName} (hitbox: r${targetProp.hitboxRadius}px, HP: ${playerToTransform.health}/${playerToTransform.maxHealth})`);
+                            console.log(`[GameServer] ${playerToTransform.name} transformé en ${targetProp.displayName} (orientation index: ${playerToTransform.variantIndex ?? 0}, hitbox: r${targetProp.hitboxRadius}px, HP: ${playerToTransform.health}/${playerToTransform.maxHealth})`);
 
                             broadcast({
                                 type: MessageType.TRANSFORM_PROP,
-                                payload: { playerId, propId: targetProp.id, spriteKey: targetProp.internalName, currentProp: targetProp }
+                                payload: {
+                                    playerId,
+                                    propId: targetProp.id,
+                                    variantIndex: playerToTransform.variantIndex ?? 0,
+                                    spriteKey: targetProp.internalName,
+                                    currentProp: targetProp
+                                }
                             });
                         }
                     }

@@ -101,19 +101,23 @@ INSERT INTO maps_translations (map_translation_id, map_id, language_id, display_
 (2, 1, 2, 'La map de test', 1);
 
 INSERT INTO props (prop_id, internal_name, health, asset_path, width, height, hitbox_radius, created_by) VALUES
-(1, 'prop_wall_painting',      50, '/assets/props/Tableau_Mur.png',      32, 32, 10, 1),
-(2, 'prop_wall_painting_test', 30, '/assets/props/Tableau_Mur_test.png', 32, 32, 10, 1);
+(1, 'prop_wall_painting', 50, '/assets/props/board/Tableau_Mur.png', 32, 32, 15, 1),
+(2, 'prop_chair',         40, '/assets/props/chair/Chair_F.png',     32, 64, 15, 1),
+(3, 'prop_desk',          80, '/assets/props/desk/Desk_F.png',       64, 32, 15, 1);
 
 INSERT INTO props_translations (prop_translation_id, prop_id, language_id, display_name, created_by) VALUES
 (1, 1, 1, 'Wall Painting', 1),
 (2, 1, 2, 'Tableau mural', 1),
-(3, 2, 1, 'Wall Painting (Test)', 1),
-(4, 2, 2, 'Tableau mural de test', 1);
+(3, 2, 1, 'Chair', 1),
+(4, 2, 2, 'Chaise', 1),
+(5, 3, 1, 'Desk', 1),
+(6, 3, 2, 'Bureau', 1);
 
--- Association Props <-> Carte (Uniquement la map 1 avec les props 1 et 2)
+-- Association Props <-> Carte (Map 1 avec tous les props 1, 2 et 3)
 INSERT INTO maps_props (map_prop_id, prop_id, map_id, created_by) VALUES
 (1, 1, 1, 1),
-(2, 2, 1, 1);
+(2, 2, 1, 1),
+(3, 3, 1, 1);
 
 -- 9. Historique d'une partie et participants
 INSERT INTO matches (match_id, start_time, end_time, winning_team, map_id, created_by) VALUES
