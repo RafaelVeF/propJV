@@ -128,7 +128,8 @@ export const DEFAULT_PROPS: PropDefinition[] = [
     health: 80,
     hitboxRadius: 15,
     variants: [
-      { assetPath: '/assets/props/desk/Desk_F.png', width: 64, height: 32, orientationName: 'Face' }
+      { assetPath: '/assets/props/desk/Desk_F.png', width: 64, height: 32, orientationName: 'Face' },
+      { assetPath: '/assets/props/desk/Desk_R.png', width: 32, height: 64, orientationName: 'Droite (Est)' }
     ],
     assetPath: '/assets/props/desk/Desk_F.png',
     width: 64,
