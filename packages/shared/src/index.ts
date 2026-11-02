@@ -128,12 +128,53 @@ export const DEFAULT_PROPS: PropDefinition[] = [
     health: 80,
     hitboxRadius: 15,
     variants: [
-      { assetPath: '/assets/props/desk/Desk_F.png', width: 64, height: 32, orientationName: 'Face' },
+      { assetPath: '/assets/props/desk/Desk_F.png', width: 64, height: 32, orientationName: 'Face (Sud)' },
       { assetPath: '/assets/props/desk/Desk_R.png', width: 32, height: 64, orientationName: 'Droite (Est)' }
     ],
     assetPath: '/assets/props/desk/Desk_F.png',
     width: 64,
     height: 32
+  },
+  {
+    id: 5,
+    internalName: 'prop_bag',
+    displayName: 'Sac à dos',
+    health: 45,
+    hitboxRadius: 14,
+    variants: [
+      { assetPath: '/assets/props/bag/Bag_F.png', width: 32, height: 32, orientationName: 'Face (Sud)' },
+      { assetPath: '/assets/props/bag/Bag_B.png', width: 32, height: 32, orientationName: 'Dos (Nord)' }
+    ],
+    assetPath: '/assets/props/bag/Bag_F.png',
+    width: 32,
+    height: 32
+  },
+  {
+    id: 6,
+    internalName: 'prop_can',
+    displayName: 'Canette',
+    health: 20,
+    hitboxRadius: 10,
+    variants: [
+      { assetPath: '/assets/props/can/Can_F.png', width: 32, height: 32, orientationName: 'Face (Sud)' },
+      { assetPath: '/assets/props/can/Can_B.png', width: 32, height: 32, orientationName: 'Dos (Nord)' }
+    ],
+    assetPath: '/assets/props/can/Can_F.png',
+    width: 32,
+    height: 32
+  },
+  {
+    id: 7,
+    internalName: 'prop_vending_machine',
+    displayName: 'Distributeur',
+    health: 150,
+    hitboxRadius: 22,
+    variants: [
+      { assetPath: '/assets/props/vending_machine/Vending_machine_F.png', width: 48, height: 64, orientationName: 'Face (Sud)' }
+    ],
+    assetPath: '/assets/props/vending_machine/Vending_machine_F.png',
+    width: 48,
+    height: 64
   }
 ];
 
