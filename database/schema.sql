@@ -334,6 +334,9 @@ CREATE TABLE props (
     internal_name VARCHAR(100) NOT NULL,
     health INT NOT NULL DEFAULT 100,
     asset_path VARCHAR(255) NOT NULL,
+    width INT NOT NULL DEFAULT 32, --Ajout
+    height INT NOT NULL DEFAULT 32, --Ajout
+    hitbox_radius INT NOT NULL DEFAULT 12, --Ajout
     created_by INT NULL,
     creation_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     modified_by INT NULL,
