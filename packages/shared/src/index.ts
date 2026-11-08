@@ -13,6 +13,7 @@ export enum MessageType {
   PLAYER_HIT = 'PLAYER_HIT',
   PROP_LOCK = 'PROP_LOCK',
   PROP_WHISTLE = 'PROP_WHISTLE',
+  SWITCH_ROLE = 'SWITCH_ROLE',
 
   // Etat Générale
   GAME_START = 'GAME_START',
@@ -170,7 +171,9 @@ export const DEFAULT_PROPS: PropDefinition[] = [
     health: 150,
     hitboxRadius: 22,
     variants: [
-      { assetPath: '/assets/props/vending_machine/Vending_machine_F.png', width: 48, height: 64, orientationName: 'Face (Sud)' }
+      { assetPath: '/assets/props/vending_machine/Vending_machine_F.png', width: 48, height: 64, orientationName: 'Face (Sud)' },
+      { assetPath: '/assets/props/vending_machine/Vending_machine_R.png', width: 20, height: 64, orientationName: 'Droite (Est)' },
+      { assetPath: '/assets/props/vending_machine/Vending_machine_L.png', width: 20, height: 64, orientationName: 'Gauche (Ouest)' }
     ],
     assetPath: '/assets/props/vending_machine/Vending_machine_F.png',
     width: 48,
@@ -187,10 +190,56 @@ export interface PropPlayer extends BasePlayer {
   currentSpriteKey?: string;
 }
 
+// Définition d'une Arme Hunter
+export interface WeaponDefinition {
+  id: string;
+  displayName: string;
+  slotIndex: number; // 0: Mêlée (Crowbar), 1: Arme de poing (Pistol), 2: Jet (Grenade), 3: Spécial
+  iconPath: string;
+  damage: number;
+  ammoMax: number; // -1 pour illimité
+  fireRateMs: number;
+  type: 'MELEE' | 'HITSCAN' | 'PROJECTILE';
+}
+
+export const DEFAULT_WEAPONS: WeaponDefinition[] = [
+  {
+    id: 'weapon_crowbar',
+    displayName: 'Pied-de-biche',
+    slotIndex: 0,
+    iconPath: '/assets/weapons/crowbar.png',
+    damage: 25,
+    ammoMax: -1,
+    fireRateMs: 400,
+    type: 'MELEE'
+  },
+  {
+    id: 'weapon_pistol',
+    displayName: 'Pistolet 9mm',
+    slotIndex: 1,
+    iconPath: '/assets/weapons/pistol.png',
+    damage: 15,
+    ammoMax: 60,
+    fireRateMs: 250,
+    type: 'HITSCAN'
+  },
+  {
+    id: 'weapon_grenade',
+    displayName: 'Grenade Frag',
+    slotIndex: 2,
+    iconPath: '',
+    damage: 80,
+    ammoMax: 2,
+    fireRateMs: 1000,
+    type: 'PROJECTILE'
+  }
+];
+
 // Joueur Hunter
 export interface HunterPlayer extends BasePlayer {
   role: PlayerRole.HUNTER;
   ammo?: number;
+  currentWeapon?: WeaponDefinition;
 }
 
 // Joueur Spectateur
@@ -228,6 +277,11 @@ export interface PlayerHitPayload {
   targetPlayerId: string;
   damage: number;
   isKilled: boolean;
+}
+
+export interface SwitchRolePayload {
+  playerId: string;
+  role: PlayerRole;
 }
 
 // Enveloppe globale du paquet réseau

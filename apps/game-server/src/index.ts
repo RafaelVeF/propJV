@@ -11,6 +11,7 @@ import {
     type PropLockPayload,
     type PropWhistlePayload,
     type HunterShootPayload,
+    type SwitchRolePayload,
     Rectangle,
     DEFAULT_PROPS,
     type PropDefinition,
@@ -182,6 +183,37 @@ wss.on('connection', (ws) => {
                         type: MessageType.PROP_WHISTLE,
                         payload: { playerId, soundKey: payload.soundKey }
                     });
+                    break;
+                }
+                case MessageType.SWITCH_ROLE: {
+                    const payload = message.payload as SwitchRolePayload;
+                    const playerToSwitch = players.get(playerId);
+                    if (playerToSwitch && payload.role) {
+                        playerToSwitch.role = payload.role;
+                        if (payload.role === PlayerRole.HUNTER) {
+                            playerToSwitch.health = 100;
+                            playerToSwitch.maxHealth = 100;
+                            if ('isLocked' in playerToSwitch) {
+                                (playerToSwitch as any).isLocked = false;
+                            }
+                        } else if (payload.role === PlayerRole.PROP) {
+                            const defProp = DEFAULT_PROPS[0];
+                            (playerToSwitch as any).currentProp = defProp;
+                            playerToSwitch.health = defProp.health;
+                            playerToSwitch.maxHealth = defProp.health;
+                        }
+                        players.set(playerId, playerToSwitch);
+                        console.log(`[GameServer] ${playerToSwitch.name} (${playerId}) a changé de rôle en : ${payload.role}`);
+
+                        broadcast({
+                            type: MessageType.SWITCH_ROLE,
+                            payload: {
+                                playerId,
+                                role: payload.role,
+                                player: playerToSwitch
+                            }
+                        });
+                    }
                     break;
                 }
                 case MessageType.HUNTER_SHOOT: {
