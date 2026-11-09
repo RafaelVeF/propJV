@@ -1,0 +1,333 @@
+/* =========================================================================
+   STYLE DU CHAT TEXTUEL EN JEU (PROPJEV)
+   Palette : Gris semi-opaque, bordures blanches subtiles, typographie blanc cassé
+   ========================================================================= */
+
+/* Bouton Bulle en haut à gauche (Gris semi-opaque & blanc cassé) */
+.btn-chat-toggle {
+  position: absolute;
+  top: 20px;
+  left: 135px;
+  z-index: 25;
+  width: 42px;
+  height: 42px;
+  background: rgba(20, 24, 35, 0.85);
+  color: #f8fafc;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+}
+
+.btn-chat-toggle:hover {
+  background: rgba(35, 42, 58, 0.95);
+  border-color: rgba(255, 255, 255, 0.45);
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.2);
+}
+
+.chat-unread-badge {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  width: 10px;
+  height: 10px;
+  background: #f8fafc;
+  border-radius: 50%;
+  box-shadow: 0 0 6px rgba(255, 255, 255, 0.85);
+}
+
+/* Racine du conteneur de chat */
+.chat-root {
+  position: absolute;
+  top: 75px;
+  left: 20px;
+  width: 410px;
+  max-width: 88vw;
+  z-index: 25;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+  user-select: text;
+  transition: all 0.2s ease;
+}
+
+/* MODE FERMÉ : Pas de cadre, clics à travers */
+.chat-closed {
+  pointer-events: none;
+}
+
+.chat-closed .chat-frame {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+.chat-closed .chat-header,
+.chat-closed .chat-suggestions-box,
+.chat-closed .chat-input-wrapper {
+  display: none !important;
+}
+
+.chat-closed .chat-messages-list {
+  max-height: 220px;
+  overflow: hidden;
+}
+
+/* MODE OUVERT : Cadre rectangulaire flottant gris semi-opaque */
+.chat-open {
+  pointer-events: auto;
+}
+
+.chat-open .chat-frame {
+  background: rgba(18, 22, 32, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 10px;
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.65);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.chat-open .chat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.chat-open .chat-messages-list {
+  max-height: 230px;
+  height: 230px;
+  overflow-y: auto;
+}
+
+/* Header */
+.chat-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chat-tag {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.8px;
+  color: #f8fafc;
+  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.chat-hint {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.chat-close-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+
+.chat-close-btn:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* Liste des messages */
+.chat-messages-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px 12px;
+}
+
+.chat-messages-list::-webkit-scrollbar {
+  width: 5px;
+}
+
+.chat-messages-list::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.chat-messages-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.22);
+  border-radius: 3px;
+}
+
+.chat-messages-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.38);
+}
+
+/* Ligne de message individuel */
+.chat-msg-row {
+  word-break: break-word;
+  color: #f8fafc; /* Blanc cassé */
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+  transition: opacity 0.5s ease-out, transform 0.2s ease-out;
+}
+
+/* Message flottant (chat fermé) : petit badge gris semi-opaque élégant */
+.chat-msg-floating {
+  background: rgba(20, 24, 35, 0.82);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  padding: 4px 8px;
+  border-radius: 5px;
+  align-self: flex-start;
+  border-left: 2.5px solid rgba(255, 255, 255, 0.45);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.chat-msg-fading {
+  opacity: 0;
+  transform: translateY(-3px);
+}
+
+.chat-msg-time {
+  font-size: 10px;
+  color: #94a3b8;
+  margin-right: 4px;
+}
+
+.chat-msg-sender {
+  margin-right: 5px;
+}
+
+.chat-msg-content {
+  color: #f8fafc;
+}
+
+/* Boîte de suggestions / autocomplétion des commandes */
+.chat-suggestions-box {
+  background: rgba(16, 20, 30, 0.96);
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+  max-height: 155px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.chat-suggestions-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: #94a3b8;
+  padding: 4px 10px;
+  font-weight: 700;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.chat-suggestion-item {
+  padding: 6px 10px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  transition: background 0.15s;
+  border-left: 2px solid transparent;
+}
+
+.chat-suggestion-item:hover,
+.chat-suggestion-item.selected {
+  background: rgba(255, 255, 255, 0.12);
+  border-left-color: #ffffff;
+}
+
+.chat-sug-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chat-sug-name {
+  font-weight: 800;
+  font-size: 12px;
+  color: #ffffff;
+  font-family: monospace;
+}
+
+.chat-sug-syntax {
+  font-size: 11px;
+  color: #cbd5e1;
+  font-family: monospace;
+}
+
+.chat-sug-desc {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.chat-sug-ex {
+  color: #f8fafc;
+  font-style: italic;
+}
+
+/* Zone de saisie (Input) */
+.chat-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  background: rgba(14, 18, 26, 0.95);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.chat-input {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: #f8fafc;
+  font-size: 13px;
+  padding: 7px 10px;
+  border-radius: 6px;
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+}
+
+.chat-input:focus {
+  border-color: #ffffff;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.chat-input::placeholder {
+  color: #94a3b8;
+}
+
+.chat-send-btn {
+  background: rgba(255, 255, 255, 0.15);
+  color: #f8fafc;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  font-weight: bold;
+  font-size: 12px;
+  padding: 7px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.chat-send-btn:hover {
+  background: rgba(255, 255, 255, 0.28);
+  color: #ffffff;
+  border-color: #ffffff;
+}
+

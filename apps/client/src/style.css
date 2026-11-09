@@ -1,4 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Outfit:wght@300;400;600;800&display=swap');
+@import './styles/chat.css';
 
 :root {
   --color-bg: #131316;
