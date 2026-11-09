@@ -1,5 +1,14 @@
 import { switchView } from './viewManager';
-import { MessageType, type NetworkMessage, type Player, DEFAULT_PROPS, type PropDefinition, GAMEPLAY_CONFIG } from '@prop-hunt/shared';
+import {
+  MessageType,
+  type NetworkMessage,
+  type Player,
+  DEFAULT_PROPS,
+  type PropDefinition,
+  GAMEPLAY_CONFIG,
+  type ChatMessagePayload
+} from '@prop-hunt/shared';
+import { ChatManager } from '../game/ui/ChatManager';
 
 export function renderGame(): string {
   return `
@@ -27,9 +36,27 @@ export function initGame(): void {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
+  // Initialisation du Chat textuel
+  let socket: WebSocket | null = null;
+  let localPlayerId: string | null = null;
+
+  const chatManager = new ChatManager({
+    onSendMessage: (text: string) => {
+      if (socket && socket.readyState === WebSocket.OPEN && localPlayerId) {
+        socket.send(JSON.stringify({
+          type: MessageType.CHAT_MESSAGE,
+          payload: { text }
+        }));
+      }
+    },
+    getLocalPlayerId: () => localPlayerId
+  });
+  chatManager.mount(viewGame);
+
   // Gestion du retour au menu
   if (btnLeaveGame) {
     btnLeaveGame.addEventListener('click', () => {
+      chatManager.destroy();
       switchView(viewGame, viewMain);
     });
   }
@@ -75,7 +102,6 @@ export function initGame(): void {
   });
 
   // État du joueur local
-  let localPlayerId: string | null = null;
   let showHitbox = true; // Activer l'affichage visuel de la hitbox (touche 'H' pour activer/désactiver)
   let currentPropIndex = 0;
   const player = {
@@ -105,15 +131,13 @@ export function initGame(): void {
   }>();
 
   // Connexion WebSocket au game-server (port 8080)
-  let socket: WebSocket | null = null;
-
   try {
     socket = new WebSocket('ws://localhost:8080');
 
     socket.onopen = () => {
       console.log('[WS] Connecté au serveur de jeu (ws://localhost:8080)');
       if (wsStatus) {
-        wsStatus.innerText = 'WS: Connecté | E: Changer Prop | R: Tourner Prop | K: Dégâts (-15) | H: Hitbox';
+        wsStatus.innerText = 'WS: Connecté | [T] Chat | E: Changer Prop | R: Tourner Prop | K: Dégâts (-15) | H: Hitbox';
         wsStatus.style.color = '#4ade80';
       }
     };
@@ -251,6 +275,8 @@ export function initGame(): void {
           otherPlayers.forEach((_, id) => {
             if (!currentIds.has(id)) otherPlayers.delete(id);
           });
+        } else if (msg.type === MessageType.CHAT_MESSAGE) {
+          chatManager.addMessage(msg.payload as ChatMessagePayload);
         }
       } catch (err) {
         console.error('[WS] Erreur parsing message :', err);
@@ -280,6 +306,18 @@ export function initGame(): void {
   const keys: { [key: string]: boolean } = {};
 
   window.addEventListener('keydown', (e) => {
+    // Si le chat est ouvert, il capture prioritairement les touches
+    if (chatManager.getIsOpen()) {
+      return;
+    }
+
+    // Touche 'T' : Ouvrir le chat textuel
+    if (e.key.toLowerCase() === 't') {
+      e.preventDefault();
+      chatManager.open();
+      return;
+    }
+
     keys[e.key.toLowerCase()] = true;
     if (e.key.toLowerCase() === 'h') {
       showHitbox = !showHitbox;
@@ -362,11 +400,13 @@ export function initGame(): void {
     if (viewGame?.classList.contains('active')) {
       let vx = 0;
       let vy = 0;
-      // Input Handler (Intention)
-      if (keys['z'] || keys['arrowup']) { vy -= 1; }
-      if (keys['s'] || keys['arrowdown']) { vy += 1; }
-      if (keys['q'] || keys['arrowleft']) { vx -= 1; }
-      if (keys['d'] || keys['arrowright']) { vx += 1; }
+      // Input Handler (Intention) - bloqué si le chat est ouvert
+      if (!chatManager.getIsOpen()) {
+        if (keys['z'] || keys['arrowup']) { vy -= 1; }
+        if (keys['s'] || keys['arrowdown']) { vy += 1; }
+        if (keys['q'] || keys['arrowleft']) { vx -= 1; }
+        if (keys['d'] || keys['arrowright']) { vx += 1; }
+      }
 
       // Envoi de la vélocité brute (non normalisée) via WebSocket
       // La normalisation diagonale se fera sur le serveur !

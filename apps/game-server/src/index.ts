@@ -14,7 +14,10 @@ import {
     Rectangle,
     DEFAULT_PROPS,
     type PropDefinition,
-    GAMEPLAY_CONFIG
+    GAMEPLAY_CONFIG,
+    type ChatMessagePayload,
+    CHAT_COMMANDS,
+    type ChatCommandDefinition
 } from '@prop-hunt/shared';
 import { GameLoop } from './GameLoop.js';
 import { updatePlayerPosition } from './systems/movement.js';
@@ -190,6 +193,355 @@ wss.on('connection', (ws) => {
                     broadcast({
                         type: MessageType.HUNTER_SHOOT,
                         payload
+                    });
+                    break;
+                }
+
+                case MessageType.CHAT_MESSAGE: {
+                    const payload = message.payload as { text?: string };
+                    if (!payload || typeof payload.text !== 'string') break;
+                    const trimmed = payload.text.trim();
+                    if (trimmed.length === 0 || trimmed.length > 250) break;
+
+                    const sender = players.get(playerId);
+                    const senderName = sender?.name || `Joueur ${playerId.substring(0, 4)}`;
+
+                    // Fonction utilitaire pour envoyer un message système privé au joueur
+                    const sendSystemMessage = (text: string) => {
+                        ws.send(JSON.stringify({
+                            type: MessageType.CHAT_MESSAGE,
+                            payload: {
+                                id: `${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+                                senderId: 'system',
+                                senderName: 'Système',
+                                text,
+                                timestamp: Date.now(),
+                                isSystem: true
+                            } satisfies ChatMessagePayload
+                        }));
+                    };
+
+                    // Fonction utilitaire pour diffuser un message système à tous les joueurs
+                    const broadcastSystemMessage = (text: string) => {
+                        broadcast({
+                            type: MessageType.CHAT_MESSAGE,
+                            payload: {
+                                id: `${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+                                senderId: 'system',
+                                senderName: 'Système',
+                                text,
+                                timestamp: Date.now(),
+                                isSystem: true
+                            } satisfies ChatMessagePayload
+                        });
+                    };
+
+                    // --- TRAITEMENT DES COMMANDES COMMENÇANT PAR '/' ---
+                    if (trimmed.startsWith('/')) {
+                        const parts = trimmed.slice(1).split(' ').filter(p => p.length > 0);
+                        if (parts.length === 0) {
+                            sendSystemMessage(`Tapez /help pour afficher la liste des commandes disponibles.`);
+                            break;
+                        }
+
+                        const rawCmd = parts[0].toLowerCase();
+                        const def = CHAT_COMMANDS.find(c => c.name === rawCmd || c.aliases?.includes(rawCmd));
+
+                        if (!def) {
+                            sendSystemMessage(`Commande inconnue "/${rawCmd}". Tapez /help pour afficher les commandes disponibles.`);
+                            break;
+                        }
+
+                        switch (def.name) {
+                            case 'help': {
+                                if (parts.length > 1) {
+                                    const subQuery = parts[1].toLowerCase().replace(/^\//, '');
+                                    const subDef = CHAT_COMMANDS.find(c => c.name === subQuery || c.aliases?.includes(subQuery));
+                                    if (subDef) {
+                                        sendSystemMessage(`Commande /${subDef.name} : ${subDef.description}\n• Utilisation : ${subDef.syntax}\n• Exemple : ${subDef.example}`);
+                                    } else {
+                                        sendSystemMessage(`Commande "${subQuery}" introuvable. Tapez /help pour afficher toutes les commandes.`);
+                                    }
+                                } else {
+                                    const listStr = CHAT_COMMANDS.map(c => `/${c.name}`).join(', ');
+                                    sendSystemMessage(`Commandes disponibles : ${listStr}\n Tapez /help <commande> pour voir la syntaxe et un exemple détaillé.`);
+                                }
+                                break;
+                            }
+
+                            case 'role': {
+                                if (parts.length < 2) {
+                                    sendSystemMessage(`Argument manquant. Utilisation : ${def.syntax} (Exemple : ${def.example})`);
+                                    break;
+                                }
+                                const target = parts[1].toLowerCase();
+                                let targetRole: PlayerRole | null = null;
+                                if (target === 'hunter' || target === 'chasseur') targetRole = PlayerRole.HUNTER;
+                                if (target === 'prop') targetRole = PlayerRole.PROP;
+
+                                if (!targetRole) {
+                                    sendSystemMessage(`Rôle "${parts[1]}" invalide. Choix : hunter, prop. (Exemple : /role hunter)`);
+                                    break;
+                                }
+
+                                if (sender) {
+                                    sender.role = targetRole;
+                                    if (targetRole === PlayerRole.HUNTER) {
+                                        sender.health = 100;
+                                        sender.maxHealth = 100;
+                                    } else if (targetRole === PlayerRole.PROP) {
+                                        const defP = DEFAULT_PROPS[0];
+                                        (sender as any).currentProp = defP;
+                                        sender.health = defP.health;
+                                        sender.maxHealth = defP.health;
+                                    }
+                                    players.set(playerId, sender);
+                                    broadcastSystemMessage(`${senderName} a changé son rôle en ${targetRole === PlayerRole.HUNTER ? 'CHASSEUR' : 'PROP'}.`);
+                                }
+                                break;
+                            }
+
+                            case 'switch': {
+                                if (sender) {
+                                    const newRole = sender.role === PlayerRole.HUNTER ? PlayerRole.PROP : PlayerRole.HUNTER;
+                                    sender.role = newRole;
+                                    if (newRole === PlayerRole.HUNTER) {
+                                        sender.health = 100;
+                                        sender.maxHealth = 100;
+                                    } else {
+                                        const defP = DEFAULT_PROPS[0];
+                                        (sender as any).currentProp = defP;
+                                        sender.health = defP.health;
+                                        sender.maxHealth = defP.health;
+                                    }
+                                    players.set(playerId, sender);
+                                    broadcastSystemMessage(`${senderName} est maintenant ${newRole === PlayerRole.HUNTER ? 'CHASSEUR' : 'PROP'}.`);
+                                }
+                                break;
+                            }
+
+                            case 'prop': {
+                                if (!sender || sender.role !== PlayerRole.PROP) {
+                                    sendSystemMessage(`Vous devez être en rôle PROP pour changer de prop. (Tapez /role prop pour changer de rôle)`);
+                                    break;
+                                }
+                                if (parts.length < 2) {
+                                    const propNames = DEFAULT_PROPS.filter(p => p.internalName !== 'prop_human').map(p => p.displayName).join(', ');
+                                    sendSystemMessage(`Nom de prop manquant. Utilisation : ${def.syntax} (Exemple : ${def.example})\n• Props disponibles : ${propNames}`);
+                                    break;
+                                }
+                                const query = parts.slice(1).join(' ').toLowerCase();
+                                const matchedProp = DEFAULT_PROPS.find(p =>
+                                    p.internalName.toLowerCase().includes(query) ||
+                                    p.displayName.toLowerCase().includes(query)
+                                );
+
+                                if (!matchedProp) {
+                                    const propNames = DEFAULT_PROPS.filter(p => p.internalName !== 'prop_human').map(p => p.displayName).join(', ');
+                                    sendSystemMessage(`Prop "${query}" introuvable. Props disponibles : ${propNames} (Exemple : /prop chaise)`);
+                                    break;
+                                }
+
+                                sender.currentProp = matchedProp;
+                                sender.maxHealth = matchedProp.health;
+                                sender.health = Math.min(sender.health, matchedProp.health);
+                                sender.variantIndex = 0;
+                                players.set(playerId, sender);
+
+                                broadcast({
+                                    type: MessageType.TRANSFORM_PROP,
+                                    payload: {
+                                        playerId,
+                                        propId: matchedProp.id,
+                                        variantIndex: 0,
+                                        spriteKey: matchedProp.internalName,
+                                        currentProp: matchedProp
+                                    }
+                                });
+                                broadcastSystemMessage(`✨ ${senderName} s'est transformé en ${matchedProp.displayName} (${matchedProp.health} HP).`);
+                                break;
+                            }
+
+                            case 'tp': {
+                                if (parts.length < 3 || isNaN(Number(parts[1])) || isNaN(Number(parts[2]))) {
+                                    sendSystemMessage(`Coordonnées manquantes ou invalides. Utilisation : ${def.syntax} (Exemple : ${def.example})`);
+                                    break;
+                                }
+                                const targetX = Math.round(Number(parts[1]));
+                                const targetY = Math.round(Number(parts[2]));
+                                if (sender) {
+                                    sender.x = targetX;
+                                    sender.y = targetY;
+                                    players.set(playerId, sender);
+                                    broadcast({
+                                        type: MessageType.PLAYER_MOVE,
+                                        payload: {
+                                            playerId,
+                                            x: targetX,
+                                            y: targetY,
+                                            vx: 0,
+                                            vy: 0
+                                        }
+                                    });
+                                    sendSystemMessage(`Téléportation réussie vers (${targetX}, ${targetY}).`);
+                                }
+                                break;
+                            }
+
+                            case 'heal': {
+                                if (sender) {
+                                    const maxH = (sender as any).currentProp?.health || sender.maxHealth || 100;
+                                    let amount = maxH;
+                                    if (parts.length > 1) {
+                                        const parsed = Number(parts[1]);
+                                        if (isNaN(parsed) || parsed <= 0) {
+                                            sendSystemMessage(`Montant de soin invalide. Utilisation : ${def.syntax} (Exemple : ${def.example})`);
+                                            break;
+                                        }
+                                        amount = parsed;
+                                    }
+                                    sender.health = Math.min(maxH, sender.health + amount);
+                                    players.set(playerId, sender);
+
+                                    broadcast({
+                                        type: MessageType.PLAYER_HIT,
+                                        payload: {
+                                            targetPlayerId: playerId,
+                                            playerId,
+                                            damage: 0,
+                                            health: sender.health,
+                                            maxHealth: maxH,
+                                            lastHitTimestamp: sender.lastHitTimestamp || 0,
+                                            isKilled: false
+                                        }
+                                    });
+                                    sendSystemMessage(`Soin appliqué : ${sender.health}/${maxH} HP.`);
+                                }
+                                break;
+                            }
+
+                            case 'damage': {
+                                if (parts.length < 2 || isNaN(Number(parts[1])) || Number(parts[1]) <= 0) {
+                                    sendSystemMessage(`Montant de dégâts invalide. Utilisation : ${def.syntax} (Exemple : ${def.example})`);
+                                    break;
+                                }
+                                if (sender) {
+                                    const dmg = Number(parts[1]);
+                                    const maxH = (sender as any).currentProp?.health || sender.maxHealth || 100;
+                                    sender.health = Math.max(0, sender.health - dmg);
+                                    sender.lastHitTimestamp = Date.now();
+                                    playerRegenTimers.delete(playerId);
+                                    players.set(playerId, sender);
+
+                                    broadcast({
+                                        type: MessageType.PLAYER_HIT,
+                                        payload: {
+                                            targetPlayerId: playerId,
+                                            playerId,
+                                            damage: dmg,
+                                            health: sender.health,
+                                            maxHealth: maxH,
+                                            lastHitTimestamp: sender.lastHitTimestamp,
+                                            isKilled: sender.health <= 0
+                                        }
+                                    });
+                                    sendSystemMessage(`Dégâts subis : -${dmg} HP (${sender.health}/${maxH} HP).`);
+                                }
+                                break;
+                            }
+
+                            case 'speed': {
+                                if (parts.length < 2) {
+                                    sendSystemMessage(`Valeur manquante. Utilisation : ${def.syntax} (Exemple : ${def.example})`);
+                                    break;
+                                }
+                                if (sender) {
+                                    if (parts[1].toLowerCase() === 'reset') {
+                                        (sender as any).speed = 5;
+                                        sendSystemMessage(`Vitesse réinitialisée à 5.`);
+                                    } else {
+                                        const spd = Number(parts[1]);
+                                        if (isNaN(spd) || spd < 1 || spd > 20) {
+                                            sendSystemMessage(`Vitesse invalide (1 à 20). Utilisation : ${def.syntax} (Exemple : ${def.example})`);
+                                            break;
+                                        }
+                                        (sender as any).speed = spd;
+                                        sendSystemMessage(`Vitesse définie à ${spd}.`);
+                                    }
+                                    players.set(playerId, sender);
+                                }
+                                break;
+                            }
+
+                            case 'roll': {
+                                let max = 100;
+                                if (parts.length > 1) {
+                                    const parsed = Number(parts[1]);
+                                    if (isNaN(parsed) || parsed < 2) {
+                                        sendSystemMessage(`Nombre maximal invalide (minimum 2). Utilisation : ${def.syntax} (Exemple : ${def.example})`);
+                                        break;
+                                    }
+                                    max = Math.floor(parsed);
+                                }
+                                const result = Math.floor(Math.random() * max) + 1;
+                                broadcastSystemMessage(`${senderName} a lancé un dé (1-${max}) et obtient : ${result} !`);
+                                break;
+                            }
+
+                            case 'me': {
+                                if (parts.length < 2) {
+                                    sendSystemMessage(`Action manquante. Utilisation : ${def.syntax} (Exemple : ${def.example})`);
+                                    break;
+                                }
+                                const action = parts.slice(1).join(' ');
+                                broadcastSystemMessage(`* ${senderName} ${action}`);
+                                break;
+                            }
+
+                            case 'whistle': {
+                                broadcast({
+                                    type: MessageType.PROP_WHISTLE,
+                                    payload: { playerId, soundKey: 'whistle_default' }
+                                });
+                                broadcastSystemMessage(`🎵 ${senderName} a sifflé !`);
+                                break;
+                            }
+
+                            case 'list': {
+                                const playerLines: string[] = [];
+                                players.forEach((p, id) => {
+                                    const isMe = id === playerId;
+                                    const roleStr = p.role === PlayerRole.HUNTER ? 'CHASSEUR' : 'PROP';
+                                    const propInfo = p.role === PlayerRole.PROP && (p as any).currentProp ? ` [${(p as any).currentProp.displayName}]` : '';
+                                    playerLines.push(`• ${p.name || `Joueur ${id.substring(0, 4)}`} (${roleStr}${propInfo}) - ${p.health}/${p.maxHealth || 100} HP${isMe ? ' (Vous)' : ''}`);
+                                });
+                                sendSystemMessage(`👥 Joueurs connectés (${players.size}) :\n${playerLines.join('\n')}`);
+                                break;
+                            }
+
+                            case 'ping': {
+                                sendSystemMessage(`Pong ! Connexion WebSocket active (Port 8080).`);
+                                break;
+                            }
+                        }
+                        break;
+                    }
+
+                    // --- MESSAGE STANDARD NORMAL ---
+                    const chatMsg: ChatMessagePayload = {
+                        id: `${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+                        senderId: playerId,
+                        senderName,
+                        senderRole: sender?.role,
+                        text: trimmed,
+                        timestamp: Date.now()
+                    };
+
+                    console.log(`[Chat] [${senderName}]: ${trimmed}`);
+
+                    broadcast({
+                        type: MessageType.CHAT_MESSAGE,
+                        payload: chatMsg
                     });
                     break;
                 }
