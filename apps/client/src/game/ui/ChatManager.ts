@@ -30,7 +30,6 @@ export class ChatManager {
   private isOpen: boolean = false;
   private messages: ChatMessagePayload[] = [];
   private options: ChatManagerOptions;
-  private openTimestamp: number = 0;
   private unreadCount: number = 0;
 
   // Autocomplétion des commandes
@@ -375,7 +374,6 @@ export class ChatManager {
   public open(): void {
     if (this.isOpen) return;
     this.isOpen = true;
-    this.openTimestamp = Date.now();
 
     if (this.chatRoot) {
       this.chatRoot.classList.remove('chat-closed');
