@@ -13,6 +13,7 @@ export enum MessageType {
   PLAYER_HIT = 'PLAYER_HIT',
   PROP_LOCK = 'PROP_LOCK',
   PROP_WHISTLE = 'PROP_WHISTLE',
+  CHAT_MESSAGE = 'CHAT_MESSAGE',
 
   // Etat Générale
   GAME_START = 'GAME_START',
@@ -266,3 +267,6 @@ export interface Circle {
   y: number;
   radius: number;
 }
+
+// Module Chat textuel et commandes
+export * from './chat.js';

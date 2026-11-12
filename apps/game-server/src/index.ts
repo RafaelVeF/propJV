@@ -18,6 +18,7 @@ import {
 } from '@prop-hunt/shared';
 import { GameLoop } from './GameLoop.js';
 import { updatePlayerPosition } from './systems/movement.js';
+import { handleChatMessage } from './systems/chat.js';
 import { parseTiledCollisions } from './utils/mapLoader.js';
 import { GAME_CONFIG } from './config/game.js';
 
@@ -45,94 +46,107 @@ const playerInputs = new Map<string, { vx: number; vy: number }>();
 // Horodatage du dernier tick de régénération pour chaque joueur
 const playerRegenTimers = new Map<string, number>();
 
+// --- PARSING DES COLLISIONS DE LA CARTE ---
+// Chargement du fichier Tiled JSON exporté pour extraire la couche d'obstacles
 let staticObstacles: Rectangle[] = [];
+let mapData: any = null;
 try {
-    // Chargement de la carte depuis le dossier client
+    // Résolution robuste du chemin menant à la carte Tiled partagée
+    // Remonte depuis apps/game-server vers la racine puis cible apps/client/public/...
     const mapPath = path.resolve(process.cwd(), '../client/public/assets/maps/map_01_32p.tmj');
+    
     if (fs.existsSync(mapPath)) {
-        const mapData = JSON.parse(fs.readFileSync(mapPath, 'utf8'));
+        const rawData = fs.readFileSync(mapPath, 'utf-8');
+        mapData = JSON.parse(rawData);
         staticObstacles = parseTiledCollisions(mapData);
-        // Mise à jour modulaire des dimensions de la carte selon le fichier Tiled
         if (mapData.width && mapData.tilewidth) {
             GAME_CONFIG.MAP_WIDTH = mapData.width * mapData.tilewidth;
-        }
-        if (mapData.height && mapData.tileheight) {
             GAME_CONFIG.MAP_HEIGHT = mapData.height * mapData.tileheight;
+            console.log(`[GameServer] Dimensions carte Tiled : ${GAME_CONFIG.MAP_WIDTH}x${GAME_CONFIG.MAP_HEIGHT} px (${mapData.width}x${mapData.height} tuiles)`);
         }
-        console.log(`[GameServer] Carte map_01_32p.tmj chargée : ${GAME_CONFIG.MAP_WIDTH}x${GAME_CONFIG.MAP_HEIGHT} px (${staticObstacles.length} obstacles)`);
+        console.log(`[GameServer] ${staticObstacles.length} boîtes de collision chargées depuis Tiled !`);
     } else {
-        console.warn(`[GameServer] Carte introuvable au chemin : ${mapPath}`);
+        console.warn(`[GameServer] Attention : Carte introuvable à l'emplacement ${mapPath}. Aucune collision chargée.`);
     }
 } catch (err) {
-    console.error('[GameServer] Erreur lors du chargement des collisions statiques :', err);
+    console.error('[GameServer] Erreur lors du chargement des collisions de la carte :', err);
 }
 
-
+// Gestion des connexions clients WebSocket
 wss.on('connection', (ws) => {
-    console.log('[GameServer] Nouveau client connecté');
-    const playerId = Math.random().toString(36).substring(2, 15); // ID aléatoire assigné au joueur
+    // Identifiant temporaire généré pour la session
+    const playerId = `player_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
 
-    // Initialisation d'un nouveau joueur (par défaut en tant que Prop humain)
-    const defaultProp = DEFAULT_PROPS[0];
-    const newPlayer: Player = {
+    console.log(`[GameServer] Nouveau client connecté. ID attribué: ${playerId}`);
+
+    // Création de l'état initial du joueur avec une position de départ aléatoire
+    const initialPlayer: Player = {
         id: playerId,
-        name: `Player_${playerId.substring(0, 4)}`,
-        x: 250,
-        y: 250,
-        health: defaultProp.health,
-        maxHealth: defaultProp.health,
+        name: `Joueur ${playerId.substr(-4)}`,
+        x: Math.floor(Math.random() * (GAME_CONFIG.MAP_WIDTH - 200)) + 100,
+        y: Math.floor(Math.random() * (GAME_CONFIG.MAP_HEIGHT - 200)) + 100,
         role: PlayerRole.PROP,
+        health: DEFAULT_PROPS[0].health,
+        maxHealth: DEFAULT_PROPS[0].health,
+        lastHitTimestamp: 0,
         isLocked: false,
-        currentProp: defaultProp,
-        variantIndex: 0,
-        currentSpriteKey: defaultProp.internalName
+        currentProp: DEFAULT_PROPS[0],
+        variantIndex: 0
     };
 
-    players.set(playerId, newPlayer);
+    // Enregistrement du joueur
+    players.set(playerId, initialPlayer);
     clients.set(ws, playerId);
+
+    // Initialisation des entrées du joueur
     playerInputs.set(playerId, { vx: 0, vy: 0 });
 
-    // Envoi du message de bienvenue au joueur qui vient de se connecter
+    // 1. Envoi du message de bienvenue au joueur venant de se connecter
     ws.send(JSON.stringify({
         type: MessageType.WELCOME,
-        payload: { player: newPlayer }
-    } satisfies NetworkMessage));
+        payload: {
+            player: initialPlayer
+        }
+    }));
 
-    // Notifie les autres joueurs qu'un nouveau joueur a rejoint
+    // 2. Notification aux autres clients qu'un nouveau joueur a rejoint
     broadcast({
         type: MessageType.PLAYER_JOINED,
-        payload: { player: newPlayer }
-    }, ws);
+        payload: {
+            player: initialPlayer
+        }
+    }, ws); // Exclut l'expéditeur
 
+    // Réception des messages envoyés par le client
     ws.on('message', (data) => {
         try {
             const message: NetworkMessage = JSON.parse(data.toString());
 
             switch (message.type) {
                 case MessageType.PLAYER_MOVE: {
-
                     const payload = message.payload as PlayerMovePayload;
-                    // On enregistre l'intention demandée par le joueur
-                    // Elle sera traitée et validée de manière autoritaire par la GameLoop
-                    playerInputs.set(playerId, { vx: payload.vx, vy: payload.vy });
-                    break;
 
+                    // Mise à jour de l'intention de mouvement (vélocité)
+                    if (payload && typeof payload.vx === 'number' && typeof payload.vy === 'number') {
+                        playerInputs.set(playerId, {
+                            vx: payload.vx,
+                            vy: payload.vy
+                        });
+                    }
+                    break;
                 }
                 case MessageType.TRANSFORM_PROP: {
-
                     const payload = message.payload as TransformPropPayload;
-
-                    // Met à jour le prop et sa hitbox physique dans le serveur
                     const playerToTransform = players.get(playerId);
+
                     if (playerToTransform && playerToTransform.role === PlayerRole.PROP) {
-                        const targetProp = DEFAULT_PROPS.find(p => 
+                        const targetProp: PropDefinition | undefined = payload.currentProp || DEFAULT_PROPS.find(p =>
                             (payload.propId !== undefined && p.id === payload.propId) ||
                             (payload.spriteKey && p.internalName === payload.spriteKey)
-                        ) || playerToTransform.currentProp;
+                        );
 
                         if (targetProp) {
                             playerToTransform.currentProp = targetProp;
-                            playerToTransform.currentSpriteKey = targetProp.internalName;
                             if (payload.variantIndex !== undefined) {
                                 playerToTransform.variantIndex = payload.variantIndex;
                             }
@@ -142,7 +156,7 @@ wss.on('connection', (ws) => {
                             }
                             players.set(playerId, playerToTransform);
 
-                            console.log(`[GameServer] ${playerToTransform.name} transformé en ${targetProp.displayName} (orientation index: ${playerToTransform.variantIndex ?? 0}, hitbox: r${targetProp.hitboxRadius}px, HP: ${playerToTransform.health}/${playerToTransform.maxHealth})`);
+                            console.log(`[GameServer] ${playerToTransform.name} s'est transformé en ${targetProp.displayName} (orientation: ${playerToTransform.variantIndex}) (HP: ${playerToTransform.health}/${playerToTransform.maxHealth})`);
 
                             broadcast({
                                 type: MessageType.TRANSFORM_PROP,
@@ -159,10 +173,8 @@ wss.on('connection', (ws) => {
                     break;
                 }
                 case MessageType.PROP_LOCK: {
-
                     const payload = message.payload as PropLockPayload;
 
-                    // Met à jour l'état de verrouillage du joueur Prop dans le serveur
                     const playerToLock = players.get(playerId);
                     if (playerToLock && playerToLock.role === PlayerRole.PROP) {
                         playerToLock.isLocked = payload.isLocked;
@@ -171,7 +183,6 @@ wss.on('connection', (ws) => {
                             type: MessageType.PROP_LOCK,
                             payload: { playerId, isLocked: payload.isLocked }
                         });
-
                     }
                     break;
                 }
@@ -190,6 +201,20 @@ wss.on('connection', (ws) => {
                     broadcast({
                         type: MessageType.HUNTER_SHOOT,
                         payload
+                    });
+                    break;
+                }
+
+                // Délégation propre au module métier systems/chat.ts
+                case MessageType.CHAT_MESSAGE: {
+                    handleChatMessage(message.payload, {
+                        ws,
+                        playerId,
+                        players,
+                        broadcast,
+                        playerRegenTimers,
+                        mapData,
+                        staticObstacles
                     });
                     break;
                 }
@@ -251,7 +276,6 @@ function broadcast(message: NetworkMessage, excludeWs?: WebSocket) {
         }
     });
 }
-
 
 // Boucle de jeu principale
 const gameLoop = new GameLoop((deltaTime: number) => {
