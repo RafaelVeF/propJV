@@ -176,15 +176,6 @@ export class ChatManager {
           }
           return;
         }
-
-        // Si l'utilisateur appuie sur 't' ou 'T' alors que le champ est vide :
-        // Ferme le chat (comportement toggle demandé).
-        if (e.key.toLowerCase() === 't' && this.inputEl!.value.trim() === '') {
-          if (Date.now() - this.openTimestamp > 150 && !e.shiftKey) {
-            e.preventDefault();
-            this.close();
-          }
-        }
       });
     }
 
