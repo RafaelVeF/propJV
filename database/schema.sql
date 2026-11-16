@@ -7,6 +7,7 @@ CREATE TABLE users (
     currency_balance INT NOT NULL DEFAULT 0,
     admin_flag BOOLEAN NOT NULL DEFAULT FALSE,
     settings JSON NULL,
+    last_connection DATETIME NULL DEFAULT NULL,
     created_by INT NULL,
     creation_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     modified_by INT NULL,
@@ -42,6 +43,15 @@ CREATE TABLE users_stats (
     hider_wins INT NOT NULL DEFAULT 0,
     seeker_wins INT NOT NULL DEFAULT 0,
     matches_played INT NOT NULL DEFAULT 0,
+    total_playtime_seconds INT NOT NULL DEFAULT 0,
+    total_eliminations INT NOT NULL DEFAULT 0,
+    taunts_used_total INT NOT NULL DEFAULT 0,
+    props_transformed_total INT NOT NULL DEFAULT 0,
+    props_destroyed_total INT NOT NULL DEFAULT 0,
+    damage_dealt_total INT NOT NULL DEFAULT 0,
+    damage_taken_total INT NOT NULL DEFAULT 0,
+    win_streak_current INT NOT NULL DEFAULT 0,
+    win_streak_best INT NOT NULL DEFAULT 0,
     created_by INT NULL,
     creation_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     modified_by INT NULL,
@@ -95,12 +105,14 @@ CREATE TABLE achievements (
     achievement_id INT AUTO_INCREMENT NOT NULL,
     internal_name VARCHAR(100) NOT NULL,
     reward INT NOT NULL DEFAULT 0,
+    target_value INT NOT NULL DEFAULT 1,
     created_by INT NULL,
     creation_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     modified_by INT NULL,
     modification_date DATETIME NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP,
     CONSTRAINT pk_achievements PRIMARY KEY (achievement_id),
     CONSTRAINT uq_achievements_name UNIQUE (internal_name),
+    CONSTRAINT chk_achievements_target CHECK (target_value >= 1),
     CONSTRAINT fk_achievements_created_by FOREIGN KEY (created_by) REFERENCES users (user_id) ON DELETE SET NULL,
     CONSTRAINT fk_achievements_modified_by FOREIGN KEY (modified_by) REFERENCES users (user_id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -124,12 +136,14 @@ CREATE TABLE achievements_translations (
     CONSTRAINT fk_ach_trans_modified_by FOREIGN KEY (modified_by) REFERENCES users (user_id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 8. Succès débloqués par les joueurs
+-- 8. Succès débloqués ou en cours par les joueurs
 CREATE TABLE users_achievements (
     user_achievement_id INT AUTO_INCREMENT NOT NULL,
     user_id INT NOT NULL,
     achievement_id INT NOT NULL,
-    unlocked_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    progress INT NOT NULL DEFAULT 0,
+    is_unlocked BOOLEAN NOT NULL DEFAULT FALSE,
+    unlocked_at DATETIME NULL DEFAULT NULL,
     created_by INT NULL,
     creation_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     modified_by INT NULL,
@@ -334,9 +348,9 @@ CREATE TABLE props (
     internal_name VARCHAR(100) NOT NULL,
     health INT NOT NULL DEFAULT 100,
     asset_path VARCHAR(255) NOT NULL,
-    width INT NOT NULL DEFAULT 32, --Ajout
-    height INT NOT NULL DEFAULT 32, --Ajout
-    hitbox_radius INT NOT NULL DEFAULT 12, --Ajout
+    width INT NOT NULL DEFAULT 32,
+    height INT NOT NULL DEFAULT 32, 
+    hitbox_radius INT NOT NULL DEFAULT 12, 
     created_by INT NULL,
     creation_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     modified_by INT NULL,
@@ -385,8 +399,10 @@ CREATE TABLE maps_props (
 -- 22. Historique des sessions de parties
 CREATE TABLE matches (
     match_id INT AUTO_INCREMENT NOT NULL,
+    server_id VARCHAR(64) NULL,
     start_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     end_time DATETIME NULL,
+    duration_seconds INT NULL,
     winning_team ENUM('HIDER', 'SEEKER', 'DRAW') NULL,
     map_id INT NOT NULL,
     created_by INT NULL,
@@ -408,7 +424,16 @@ CREATE TABLE matches_users (
     score_earned INT NOT NULL DEFAULT 0,
     currency_earned INT NOT NULL DEFAULT 0,
     is_survivor BOOLEAN NULL,
+    survival_time_seconds INT NOT NULL DEFAULT 0,
+    eliminations INT NOT NULL DEFAULT 0,
+    transformations_count INT NOT NULL DEFAULT 0,
+    taunts_used INT NOT NULL DEFAULT 0,
     props_destroyed INT NOT NULL DEFAULT 0,
+    damage_dealt INT NOT NULL DEFAULT 0,
+    damage_taken INT NOT NULL DEFAULT 0,
+    shots_fired INT NOT NULL DEFAULT 0,
+    shots_hit INT NOT NULL DEFAULT 0,
+    final_prop_id INT NULL,
     seeker_class_id INT NULL,
     created_by INT NULL,
     creation_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -418,6 +443,7 @@ CREATE TABLE matches_users (
     CONSTRAINT uq_matches_users_entry UNIQUE (match_id, user_id),
     CONSTRAINT fk_matches_users_match FOREIGN KEY (match_id) REFERENCES matches (match_id) ON DELETE CASCADE,
     CONSTRAINT fk_matches_users_user FOREIGN KEY (user_id) REFERENCES users (user_id) ON DELETE CASCADE,
+    CONSTRAINT fk_matches_users_final_prop FOREIGN KEY (final_prop_id) REFERENCES props (prop_id) ON DELETE SET NULL,
     CONSTRAINT fk_matches_users_seeker_class FOREIGN KEY (seeker_class_id) REFERENCES seeker_classes (seeker_class_id) ON DELETE SET NULL,
     CONSTRAINT fk_matches_users_created_by FOREIGN KEY (created_by) REFERENCES users (user_id) ON DELETE SET NULL,
     CONSTRAINT fk_matches_users_modified_by FOREIGN KEY (modified_by) REFERENCES users (user_id) ON DELETE SET NULL
