@@ -4,6 +4,7 @@ import jwt from 'jsonwebtoken';
 import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import { RowDataPacket, ResultSetHeader } from 'mysql2';
+import { AuthUser, AuthResponsePayload } from '@prop-hunt/shared';
 import { pool } from '../db.js';
 import { requireAuth, AuthRequest } from '../middlewares/requireAuth.js';
 
