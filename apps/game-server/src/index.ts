@@ -11,6 +11,9 @@ import {
     type PropLockPayload,
     type PropWhistlePayload,
     type HunterShootPayload,
+    type PlayerDiedPayload,
+    type SpectatorPlayer,
+    isAlive,
     Rectangle,
     DEFAULT_PROPS,
     type PropDefinition,
@@ -38,7 +41,7 @@ const wss = new WebSocketServer({ port: 8080 }); // Serveur WebSocket sur le por
 console.log('[GameServer] Serveur WebSocket démarré sur le port 8080');
 
 const players = new Map<string, Player>(); // Map pour stocker les états des joueurs
-const clients = new Map<WebSocket, string>();    // Set pour stocker les sockets actifs
+const clients = new Map<WebSocket, string>();    // Map pour stocker les sockets actifs
 
 // Stockage temporaire des dernières entrées (vélocité) reçues pour chaque joueur
 const playerInputs = new Map<string, { vx: number; vy: number }>();
@@ -112,6 +115,9 @@ wss.on('connection', (ws) => {
                 case MessageType.PLAYER_MOVE: {
 
                     const payload = message.payload as PlayerMovePayload;
+                    // Un spectateur ne contrôle plus de personnage : on ignore ses déplacements
+                    const mover = players.get(playerId);
+                    if (!mover || !isAlive(mover)) break;
                     // On enregistre l'intention demandée par le joueur
                     // Elle sera traitée et validée de manière autoritaire par la GameLoop
                     playerInputs.set(playerId, { vx: payload.vx, vy: payload.vy });
@@ -125,7 +131,7 @@ wss.on('connection', (ws) => {
                     // Met à jour le prop et sa hitbox physique dans le serveur
                     const playerToTransform = players.get(playerId);
                     if (playerToTransform && playerToTransform.role === PlayerRole.PROP) {
-                        const targetProp = DEFAULT_PROPS.find(p => 
+                        const targetProp = DEFAULT_PROPS.find(p =>
                             (payload.propId !== undefined && p.id === payload.propId) ||
                             (payload.spriteKey && p.internalName === payload.spriteKey)
                         ) || playerToTransform.currentProp;
@@ -177,6 +183,8 @@ wss.on('connection', (ws) => {
                 }
                 case MessageType.PROP_WHISTLE: {
                     const payload = message.payload as PropWhistlePayload;
+                    const whistler = players.get(playerId);
+                    if (!whistler || !isAlive(whistler)) break; // Les morts ne sifflent pas
 
                     broadcast({
                         type: MessageType.PROP_WHISTLE,
@@ -197,7 +205,9 @@ wss.on('connection', (ws) => {
                 case MessageType.PLAYER_HIT: {
                     const payload = message.payload as { targetPlayerId?: string; playerId?: string; damage: number };
                     const targetId = payload.targetPlayerId || payload.playerId;
-                    if (targetId && players.has(targetId)) {
+                    const attacker = players.get(playerId);
+                    if (attacker && !isAlive(attacker)) break; // Un spectateur ne peut pas infliger de dégâts
+                    if (targetId && players.has(targetId) && isAlive(players.get(targetId)!)) {
                         const targetPlayer = players.get(targetId)!;
                         const damage = payload.damage ?? 10;
                         targetPlayer.health = Math.max(0, targetPlayer.health - damage);
@@ -219,6 +229,10 @@ wss.on('connection', (ws) => {
                                 isKilled: targetPlayer.health <= 0
                             }
                         });
+
+                        if (targetPlayer.health <= 0) {
+                            killPlayer(targetId, playerId !== targetId ? playerId : undefined);
+                        }
                     }
                     break;
                 }
@@ -242,6 +256,45 @@ wss.on('connection', (ws) => {
     });
 });
 
+// Passe un joueur en mode spectateur après sa mort et prévient tout le monde
+function killPlayer(victimId: string, killerId?: string) {
+    const victim = players.get(victimId);
+    if (!victim || victim.role === PlayerRole.SPECTATOR) return;
+
+    const propDisplayName = 'currentProp' in victim ? victim.currentProp?.displayName : undefined;
+    const killer = killerId ? players.get(killerId) : undefined;
+
+    // On remplace l'entité par un spectateur : plus de prop, plus de hitbox, plus de collisions
+    const spectator: SpectatorPlayer = {
+        id: victim.id,
+        name: victim.name,
+        x: victim.x,
+        y: victim.y,
+        health: 0,
+        maxHealth: victim.maxHealth,
+        lastHitTimestamp: victim.lastHitTimestamp,
+        role: PlayerRole.SPECTATOR
+    };
+    players.set(victimId, spectator);
+    playerInputs.set(victimId, { vx: 0, vy: 0 });
+    playerRegenTimers.delete(victimId);
+
+    console.log(`[GameServer] ${victim.name} est mort${killer ? ` (tué par ${killer.name})` : ''} -> passage en spectateur`);
+
+    broadcast({
+        type: MessageType.PLAYER_DIED,
+        payload: {
+            playerId: victimId,
+            playerName: victim.name,
+            killerId: killer?.id,
+            killerName: killer?.name,
+            x: victim.x,
+            y: victim.y,
+            propDisplayName
+        } satisfies PlayerDiedPayload
+    });
+}
+
 // Fonction utilitaire pour diffuser un message à tous les clients connectés (avec option d'exclusion)
 function broadcast(message: NetworkMessage, excludeWs?: WebSocket) {
     const dataString = JSON.stringify(message);
@@ -259,6 +312,8 @@ const gameLoop = new GameLoop((deltaTime: number) => {
 
     // Mise à jour de la physique et des mécaniques de survie de tous les joueurs
     players.forEach((player, id) => {
+        if (!isAlive(player)) return; // Les spectateurs ne bougent pas et ne régénèrent pas
+
         const input = playerInputs.get(id);
         if (input) {
             if (player.role === PlayerRole.PROP && player.isLocked) {
