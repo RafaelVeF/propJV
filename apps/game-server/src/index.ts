@@ -20,19 +20,7 @@ import { GameLoop } from './GameLoop.js';
 import { updatePlayerPosition } from './systems/movement.js';
 import { parseTiledCollisions } from './utils/mapLoader.js';
 import { GAME_CONFIG } from './config/game.js';
-
-// =========================================================================
-// TODO FUTUR : Chargement dynamique de la carte via son ID (stockée en BDD)
-// Lorsque l'hôte sélectionne une carte dans le lobby, l'ID de la map est transmis
-// au serveur (par exemple via les arguments de démarrage ou une requête initiale).
-//
-// 1. Récupérer l'ID de la map (ex: const mapId = process.argv.find(...))
-// 2. Faire un fetch vers l'API Maître pour récupérer le JSON Tiled brut :
-//    const response = await fetch(`http://localhost:3000/api/maps/${mapId}`);
-//    const mapData = await response.json();
-// 3. Parser les collisions dynamiquement pour remplacer le tableau vide :
-//    const staticObstacles: Rectangle[] = parseTiledCollisions(mapData);
-// =========================================================================
+import { RoundManager } from './RoundManager.js';
 
 const wss = new WebSocketServer({ port: 8080 }); // Serveur WebSocket sur le port 8080
 console.log('[GameServer] Serveur WebSocket démarré sur le port 8080');
@@ -40,10 +28,110 @@ console.log('[GameServer] Serveur WebSocket démarré sur le port 8080');
 const players = new Map<string, Player>(); // Map pour stocker les états des joueurs
 const clients = new Map<WebSocket, string>();    // Set pour stocker les sockets actifs
 
+// Coordonnées de spawn autoritaires
+const SPAWN_HUNTER = { x: 250, y: 250 };
+const SPAWN_PROP = { x: 600, y: 600 };
+
 // Stockage temporaire des dernières entrées (vélocité) reçues pour chaque joueur
 const playerInputs = new Map<string, { vx: number; vy: number }>();
 // Horodatage du dernier tick de régénération pour chaque joueur
 const playerRegenTimers = new Map<string, number>();
+
+// Fonction utilitaire pour diffuser un message à tous les clients connectés (avec option d'exclusion)
+function broadcast(message: NetworkMessage, excludeWs?: WebSocket) {
+    const dataString = JSON.stringify(message);
+    clients.forEach((_, clientWs) => {
+        if (clientWs !== excludeWs && clientWs.readyState === WebSocket.OPEN) {
+            clientWs.send(dataString);
+        }
+    });
+}
+
+// Initialisation du gestionnaire de round autoritaire
+const roundManager = new RoundManager({
+    onLobbyStateChanged: (lobbyState) => {
+        broadcast({
+            type: MessageType.LOBBY_STATE,
+            payload: lobbyState
+        });
+    },
+    onCountdownStarted: (seconds) => {
+        broadcast({
+            type: MessageType.START_COUNTDOWN,
+            payload: { countdownSeconds: seconds }
+        });
+    },
+    onCountdownCancelled: () => {
+        broadcast({
+            type: MessageType.LOBBY_STATE,
+            payload: roundManager.getLobbyState()
+        });
+    },
+    onRoundStarted: (assignments) => {
+        console.log(`[GameServer] Démarrage de la manche #${roundManager.getRoundNumber()} ! Affectation des rôles :`);
+        assignments.forEach((role, assignedPlayerId) => {
+            const p = players.get(assignedPlayerId);
+            if (p) {
+                p.role = role;
+                p.health = 100;
+                p.maxHealth = 100;
+                if (role === PlayerRole.HUNTER) {
+                    p.x = SPAWN_HUNTER.x;
+                    p.y = SPAWN_HUNTER.y;
+                } else {
+                    p.x = SPAWN_PROP.x;
+                    p.y = SPAWN_PROP.y;
+                    if ('currentProp' in p && p.currentProp) {
+                        p.health = p.currentProp.health;
+                        p.maxHealth = p.currentProp.health;
+                    }
+                }
+                console.log(`  - ${p.name} : ${role} (Spawn: ${p.x}, ${p.y})`);
+            }
+
+            // Notification individuelle du rôle et des paramètres du round
+            clients.forEach((clientPlayerId, clientWs) => {
+                if (clientPlayerId === assignedPlayerId && clientWs.readyState === WebSocket.OPEN) {
+                    clientWs.send(JSON.stringify({
+                        type: MessageType.ROUND_START,
+                        payload: {
+                            roundNumber: roundManager.getRoundNumber(),
+                            role: role,
+                            hidingDuration: roundManager.config.hidingDuration,
+                            roundDuration: roundManager.config.huntingDuration + roundManager.config.hidingDuration,
+                            mapId: 'map_01_32p'
+                        }
+                    } satisfies NetworkMessage));
+                }
+            });
+        });
+    },
+    onTimerTick: (phase, timeRemaining) => {
+        broadcast({
+            type: MessageType.ROUND_TIMER_TICK,
+            payload: { phase, timeRemaining }
+        });
+    },
+    onPhaseChanged: (phase, timeRemaining) => {
+        broadcast({
+            type: MessageType.ROUND_TIMER_TICK,
+            payload: { phase, timeRemaining }
+        });
+    },
+    onRoundEnded: (results) => {
+        console.log(`[GameServer] Fin de manche ! Vainqueur : ${results.winner} (Raison: ${results.reason})`);
+        broadcast({
+            type: MessageType.ROUND_END,
+            payload: results
+        });
+    }
+}, {
+    minPlayers: 2,
+    countdownDuration: 5,
+    hidingDuration: 30,
+    huntingDuration: 210, // 3min30 de traque (total 4min avec les 30s de cachette)
+    roundEndDuration: 10
+});
 
 let staticObstacles: Rectangle[] = [];
 try {
@@ -66,7 +154,6 @@ try {
 } catch (err) {
     console.error('[GameServer] Erreur lors du chargement des collisions statiques :', err);
 }
-
 
 wss.on('connection', (ws) => {
     console.log('[GameServer] Nouveau client connecté');
@@ -92,10 +179,19 @@ wss.on('connection', (ws) => {
     clients.set(ws, playerId);
     playerInputs.set(playerId, { vx: 0, vy: 0 });
 
-    // Envoi du message de bienvenue au joueur qui vient de se connecter
+    // Enregistrement auprès du RoundManager
+    roundManager.addPlayer(playerId, newPlayer.name);
+
+    // Envoi du message de bienvenue au joueur
     ws.send(JSON.stringify({
         type: MessageType.WELCOME,
         payload: { player: newPlayer }
+    } satisfies NetworkMessage));
+
+    // Envoi de l'état actuel du salon au joueur
+    ws.send(JSON.stringify({
+        type: MessageType.LOBBY_STATE,
+        payload: roundManager.getLobbyState()
     } satisfies NetworkMessage));
 
     // Notifie les autres joueurs qu'un nouveau joueur a rejoint
@@ -109,17 +205,26 @@ wss.on('connection', (ws) => {
             const message: NetworkMessage = JSON.parse(data.toString());
 
             switch (message.type) {
+                case MessageType.PLAYER_TOGGLE_READY: {
+                    // Basculer l'état prêt dans le RoundManager autoritaire
+                    roundManager.toggleReady(playerId);
+                    break;
+                }
+
                 case MessageType.PLAYER_MOVE: {
+                    // Vérification autoritaire : le joueur a-t-il le droit de bouger ?
+                    // (Ex: Les Hunters sont strictement bloqués pendant la phase HIDING de 30s)
+                    if (!roundManager.canPlayerMove(playerId)) {
+                        playerInputs.set(playerId, { vx: 0, vy: 0 });
+                        break;
+                    }
 
                     const payload = message.payload as PlayerMovePayload;
-                    // On enregistre l'intention demandée par le joueur
-                    // Elle sera traitée et validée de manière autoritaire par la GameLoop
                     playerInputs.set(playerId, { vx: payload.vx, vy: payload.vy });
                     break;
-
                 }
-                case MessageType.TRANSFORM_PROP: {
 
+                case MessageType.TRANSFORM_PROP: {
                     const payload = message.payload as TransformPropPayload;
 
                     // Met à jour le prop et sa hitbox physique dans le serveur
@@ -142,7 +247,7 @@ wss.on('connection', (ws) => {
                             }
                             players.set(playerId, playerToTransform);
 
-                            console.log(`[GameServer] ${playerToTransform.name} transformé en ${targetProp.displayName} (orientation index: ${playerToTransform.variantIndex ?? 0}, hitbox: r${targetProp.hitboxRadius}px, HP: ${playerToTransform.health}/${playerToTransform.maxHealth})`);
+                            console.log(`[GameServer] ${playerToTransform.name} transformé en ${targetProp.displayName}`);
 
                             broadcast({
                                 type: MessageType.TRANSFORM_PROP,
@@ -158,11 +263,10 @@ wss.on('connection', (ws) => {
                     }
                     break;
                 }
-                case MessageType.PROP_LOCK: {
 
+                case MessageType.PROP_LOCK: {
                     const payload = message.payload as PropLockPayload;
 
-                    // Met à jour l'état de verrouillage du joueur Prop dans le serveur
                     const playerToLock = players.get(playerId);
                     if (playerToLock && playerToLock.role === PlayerRole.PROP) {
                         playerToLock.isLocked = payload.isLocked;
@@ -171,10 +275,10 @@ wss.on('connection', (ws) => {
                             type: MessageType.PROP_LOCK,
                             payload: { playerId, isLocked: payload.isLocked }
                         });
-
                     }
                     break;
                 }
+
                 case MessageType.PROP_WHISTLE: {
                     const payload = message.payload as PropWhistlePayload;
 
@@ -184,9 +288,14 @@ wss.on('connection', (ws) => {
                     });
                     break;
                 }
-                case MessageType.HUNTER_SHOOT: {
-                    const payload = message.payload as HunterShootPayload;
 
+                case MessageType.HUNTER_SHOOT: {
+                    // Vérification autoritaire : tir permis uniquement aux Hunters en phase HUNTING
+                    if (!roundManager.canPlayerShoot(playerId)) {
+                        break;
+                    }
+
+                    const payload = message.payload as HunterShootPayload;
                     broadcast({
                         type: MessageType.HUNTER_SHOOT,
                         payload
@@ -205,6 +314,12 @@ wss.on('connection', (ws) => {
                         playerRegenTimers.delete(targetId); // Réinitialise le délai de régénération
                         players.set(targetId, targetPlayer);
 
+                        const isKilled = targetPlayer.health <= 0;
+                        if (isKilled) {
+                            // Vérifie si cette élimination termine la manche (victoire des chasseurs)
+                            roundManager.handlePlayerDeath(targetId, playerId);
+                        }
+
                         console.log(`[GameServer] ${targetPlayer.name} a subi ${damage} dégâts (HP: ${targetPlayer.health}/${targetPlayer.maxHealth || 100})`);
 
                         broadcast({
@@ -216,7 +331,7 @@ wss.on('connection', (ws) => {
                                 health: targetPlayer.health,
                                 maxHealth: targetPlayer.maxHealth,
                                 lastHitTimestamp: targetPlayer.lastHitTimestamp,
-                                isKilled: targetPlayer.health <= 0
+                                isKilled
                             }
                         });
                     }
@@ -230,6 +345,7 @@ wss.on('connection', (ws) => {
 
     ws.on('close', () => {
         console.log('[GameServer] Client déconnecté', playerId);
+        roundManager.removePlayer(playerId);
         players.delete(playerId);
         clients.delete(ws);
         playerInputs.delete(playerId);
@@ -242,23 +358,17 @@ wss.on('connection', (ws) => {
     });
 });
 
-// Fonction utilitaire pour diffuser un message à tous les clients connectés (avec option d'exclusion)
-function broadcast(message: NetworkMessage, excludeWs?: WebSocket) {
-    const dataString = JSON.stringify(message);
-    clients.forEach((_, clientWs) => {
-        if (clientWs !== excludeWs && clientWs.readyState === clientWs.OPEN) {
-            clientWs.send(dataString);
-        }
-    });
-}
-
-
 // Boucle de jeu principale
 const gameLoop = new GameLoop((deltaTime: number) => {
     const now = Date.now();
 
     // Mise à jour de la physique et des mécaniques de survie de tous les joueurs
     players.forEach((player, id) => {
+        // Bloquer la mise à jour physique si le RoundManager l'interdit
+        if (!roundManager.canPlayerMove(id)) {
+            return;
+        }
+
         const input = playerInputs.get(id);
         if (input) {
             if (player.role === PlayerRole.PROP && player.isLocked) {
