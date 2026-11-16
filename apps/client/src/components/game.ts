@@ -107,12 +107,12 @@ export function initGame(): void {
   // Connexion WebSocket au game-server (port 8080)
   let socket: WebSocket | null = null;
 
-  try {
-    socket = new WebSocket('ws://localhost:8080');
+    const GAME_SERVER_URL = import.meta.env.VITE_GAME_SERVER_URL ?? 'ws://localhost:8080';
 
+  try {
+      socket = new WebSocket(GAME_SERVER_URL);
     socket.onopen = () => {
-      console.log('[WS] Connecté au serveur de jeu (ws://localhost:8080)');
-      if (wsStatus) {
+        console.log(`[WS] Connecté au serveur de jeu (${GAME_SERVER_URL})`);      if (wsStatus) {
         wsStatus.innerText = 'WS: Connecté | E: Changer Prop | R: Tourner Prop | K: Dégâts (-15) | H: Hitbox';
         wsStatus.style.color = '#4ade80';
       }
