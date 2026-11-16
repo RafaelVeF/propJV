@@ -14,7 +14,7 @@ targetDb.active_servers.insertMany([
   {
     serverId: 'srv-eu-01',
     name: 'Serveur Officiel #1 - FR',
-    host: '10.1.136.62',
+    host: 'localhost',
     port: 8080,
     map: 'map_01_32p',
     status: 'WAITING',
@@ -25,7 +25,7 @@ targetDb.active_servers.insertMany([
   {
     serverId: 'srv-eu-02',
     name: 'Serveur Compétitif #2 - FR',
-    host: '10.1.136.62',
+    host: 'localhost',
     port: 8081,
     map: 'map_01_16p',
     status: 'IN_GAME',
