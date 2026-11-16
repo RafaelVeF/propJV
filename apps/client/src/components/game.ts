@@ -52,7 +52,7 @@ export function renderGame(): string {
         <h2 id="round-end-winner" style="font-size: 2.8rem; font-weight: 900; letter-spacing: 2px; margin-bottom: 8px;"></h2>
         <p id="round-end-reason" style="font-size: 1.2rem; color: #cbd5e1; margin-bottom: 24px;"></p>
         <div id="round-end-scores" style="background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 18px 24px; width: 90%; max-width: 480px; margin-bottom: 24px;"></div>
-        <div style="font-size: 0.95rem; color: #94a3b8; font-style: italic;">Retour automatique au salon dans quelques secondes...</div>
+        <div style="font-size: 1rem; color: #94a3b8; font-style: italic;">Retour automatique au salon dans <span id="round-end-countdown" style="color: #38bdf8; font-weight: bold;">10</span>s...</div>
       </div>
 
       <canvas id="game-canvas" style="display: block;"></canvas>
@@ -77,6 +77,7 @@ export function initGame(): void {
   const roundEndWinner = document.getElementById('round-end-winner');
   const roundEndReason = document.getElementById('round-end-reason');
   const roundEndScores = document.getElementById('round-end-scores');
+  const roundEndCountdown = document.getElementById('round-end-countdown');
 
   if (!canvas || !viewGame || !viewMain) return;
 
@@ -343,6 +344,7 @@ export function initGame(): void {
   });
 
   networkManager.on<RoundTimerTickPayload>(MessageType.ROUND_TIMER_TICK, (payload) => {
+    const previousPhase = currentPhase;
     currentPhase = payload.phase;
     const timeRemaining = payload.timeRemaining;
     const minutes = Math.floor(timeRemaining / 60);
@@ -382,6 +384,19 @@ export function initGame(): void {
         hunterBlindfold.style.display = 'none';
       }
     }
+
+    if (payload.phase === GamePhase.ROUND_END && roundEndCountdown) {
+      roundEndCountdown.textContent = timeRemaining.toString();
+    }
+
+    // Retour automatique au salon lorsque le serveur repasse en LOBBY après ROUND_END
+    if (payload.phase === GamePhase.LOBBY && previousPhase === GamePhase.ROUND_END) {
+      if (roundEndOverlay) roundEndOverlay.style.display = 'none';
+      if (hunterBlindfold) hunterBlindfold.style.display = 'none';
+      if (viewGame && viewLobby && viewGame.classList.contains('active')) {
+        switchView(viewGame, viewLobby);
+      }
+    }
   });
 
   networkManager.on<RoundEndPayload>(MessageType.ROUND_END, (payload) => {
@@ -390,6 +405,7 @@ export function initGame(): void {
 
     if (roundEndOverlay && roundEndWinner && roundEndReason && roundEndScores) {
       roundEndOverlay.style.display = 'flex';
+      if (roundEndCountdown) roundEndCountdown.textContent = '10';
 
       const isHunterWin = payload.winner === PlayerRole.HUNTER;
       roundEndWinner.textContent = isHunterWin ? 'VICTOIRE DES CHASSEURS !' : 'VICTOIRE DES PROPS !';
