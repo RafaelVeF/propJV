@@ -18,7 +18,8 @@ const allowedOrigins = (process.env.CORS_ORIGINS ?? 'http://localhost:5173,http:
 app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 
-// Activation de la route
+// Activation des routes d'authentification (/auth et /api/auth pour compatibilité)
+app.use('/auth', authRoutes);
 app.use('/api/auth', authRoutes);
 
 // Test de la connexion au démarrage
