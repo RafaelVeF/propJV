@@ -26,7 +26,7 @@ export function renderLobby(): string {
       </div>
 
       <div id="lobby-countdown-banner" style="display: none; margin-bottom: 12px; padding: 10px 16px; background: rgba(56, 189, 248, 0.2); border: 1px solid #38bdf8; border-radius: 8px; color: #38bdf8; text-align: center; font-weight: bold;">
-        ⏱️ LA PARTIE COMMENCE DANS <span id="lobby-countdown-sec">5</span>s...
+         LA PARTIE COMMENCE DANS <span id="lobby-countdown-sec">5</span>s...
       </div>
 
       <div class="lobby-content">
