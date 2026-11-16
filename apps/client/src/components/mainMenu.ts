@@ -49,7 +49,7 @@ export function renderMainMenu(): string {
         <img src="${logoUrl}" alt="Prop JV Logo" class="main-logo" />
         <button class="main-menu-btn purple-text" id="btn-local">PARTIE LOCALE</button>
         <div class="menu-divider-line"></div>
-        <button disabled class="main-menu-btn purple-text" id="btn-online">PARTIE EN LIGNE</button>
+        <button class="main-menu-btn purple-text" id="btn-online">PARTIE EN LIGNE</button>
         <div class="menu-divider-line"></div>
         <button class="main-menu-btn purple-text" id="btn-freeplay">FREEPLAY</button>
 
