@@ -94,7 +94,7 @@ INSERT INTO users_seeker_classes (user_seeker_class_id, user_id, seeker_class_id
 
 -- 8. Cartes et Props
 INSERT INTO maps (map_id, internal_name, hiding_time, round_duration, asset_path, created_by) VALUES
-(1, 'map_test', 30, 240, '/assets/maps/Overworld.json', 1);
+(1, 'map_test', 30, 240, '/assets/maps/map_01_32p.tmj', 1);
 
 INSERT INTO maps_translations (map_translation_id, map_id, language_id, display_name, created_by) VALUES
 (1, 1, 1, 'The Test map', 1),

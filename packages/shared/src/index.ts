@@ -1,7 +1,7 @@
 export const GAME_NAME = "PropJV - Games";
 
 export enum MessageType {
-  // Les Etats
+  // Les États
   WELCOME = 'WELCOME',
   PLAYER_JOINED = 'PLAYER_JOINED',
   PLAYER_LEFT = 'PLAYER_LEFT',
@@ -14,7 +14,7 @@ export enum MessageType {
   PROP_LOCK = 'PROP_LOCK',
   PROP_WHISTLE = 'PROP_WHISTLE',
 
-  // Etat Générale
+  // État général
   GAME_START = 'GAME_START',
   ROUND_START = 'ROUND_START',
   ROUND_END = 'ROUND_END',
@@ -200,7 +200,7 @@ export interface SpectatorPlayer extends BasePlayer {
 
 export type Player = PropPlayer | HunterPlayer | SpectatorPlayer;
 
-// Les Payload pour chaque actions (les principaux)
+// Les Payloads pour chaque action (les principaux)
 
 export interface PlayerMovePayload {
   playerId: string;
@@ -237,7 +237,7 @@ export interface NetworkMessage<T = any> {
   timestamp?: number;
 }
 
-//Action de Props
+// Actions de Props
 export interface PropLockPayload {
   playerId: string;
   isLocked: boolean;
@@ -248,12 +248,12 @@ export interface PropWhistlePayload {
   soundKey?: string;
 }
 
-// Démarage d'une partie
+// Démarrage d'une partie
 export interface GameStartPayload {
   mapId: string;
 }
 
-// Gestion des colisions
+// Gestion des collisions
 export interface Rectangle {
   x: number;
   y: number;
