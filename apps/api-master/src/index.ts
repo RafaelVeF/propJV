@@ -10,8 +10,12 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const allowedOrigins = (process.env.CORS_ORIGINS ?? 'http://localhost:5173,http://localhost:5174')
+  .split(',')
+  .map(origin => origin.trim())
+  .filter(Boolean);
 
-app.use(cors());
+app.use(cors({ origin: allowedOrigins }));
 app.use(express.json());
 
 // Activation de la route
