@@ -15,7 +15,7 @@ class NetworkManager {
     this.connect();
   }
 
-  public connect(url: string = 'ws://localhost:8080'): void {
+  public connect(url: string = import.meta.env.VITE_GAME_SERVER_URL ?? `ws://${window.location.hostname || 'localhost'}:8080`): void {
     if (this.socket && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) {
       return;
     }
