@@ -68,7 +68,7 @@ const roundManager = new RoundManager({
         });
     },
     onRoundStarted: (assignments) => {
-        console.log(`[GameServer] Démarrage de la manche #${roundManager.getRoundNumber()} ! Affectation des rôles :`);
+        console.log(`[GameServer] Démarrage de la manche #${roundManager.getRoundNumber()}. Affectation des rôles :`);
         assignments.forEach((role, assignedPlayerId) => {
             const p = players.get(assignedPlayerId);
             if (p) {
