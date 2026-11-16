@@ -131,7 +131,7 @@ wss.on('connection', (ws) => {
                     // Met à jour le prop et sa hitbox physique dans le serveur
                     const playerToTransform = players.get(playerId);
                     if (playerToTransform && playerToTransform.role === PlayerRole.PROP) {
-                        const targetProp = DEFAULT_PROPS.find(p =>
+                        const targetProp = DEFAULT_PROPS.find(p => 
                             (payload.propId !== undefined && p.id === payload.propId) ||
                             (payload.spriteKey && p.internalName === payload.spriteKey)
                         ) || playerToTransform.currentProp;
