@@ -592,7 +592,7 @@ export function initProfile(): void {
     const clearBtn = target.closest('.capsule-clear-btn');
     if (clearBtn) {
       const slotIdx = Number(clearBtn.getAttribute('data-slot-index'));
-      if (!isNaN(slotIdx)) {
+      if (!Number.isNaN(slotIdx)) {
         const clearedTauntId = state.tauntSlots[slotIdx];
         const clearedTaunt = TAUNTS_COLLECTION.find((t) => t.id === clearedTauntId);
         state.tauntSlots[slotIdx] = null;
@@ -607,7 +607,7 @@ export function initProfile(): void {
     const slotCapsule = target.closest('.wheel-slot-capsule');
     if (slotCapsule) {
       const slotIdx = Number(slotCapsule.getAttribute('data-slot-index'));
-      if (!isNaN(slotIdx)) {
+      if (!Number.isNaN(slotIdx)) {
         if (state.selectedSlotIndex === slotIdx) {
           state.selectedSlotIndex = null;
         } else {
