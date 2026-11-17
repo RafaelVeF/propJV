@@ -7,14 +7,10 @@ export function renderHowToPlay(): string {
       <h2 class="view-title purple-text">COMMENT JOUER ?</h2>
       <div class="menu-container">
         <div class="info-card">
-          <p><strong>Objectifs : </strong><br>
-          <p style="margin-top: 10px;"><strong>Props : </strong>Cachez-vous ou débusquez les accessoires avant la fin
-            du temps imparti !</p>
-          <p style="margin-top: 10px;"><strong>Hunter : </strong>Trouvez tous les props avant la fin du temps imparti
-            !</p>
-          </p>
-          <p style="margin-top: 10px;"><strong>Touches :</strong> Utilisez ZQSD pour vous déplacer et la Souris pour
-            interagir avec les éléments du décor ou votre arme.</p>
+          <p><strong>Objectifs :</strong></p>
+          <p style="margin-top: 10px;"><strong>Props : </strong>Transformez-vous en élément du décor et cachez-vous avant la fin du temps imparti !</p>
+          <p style="margin-top: 10px;"><strong>Hunters : </strong>Trouvez et éliminez tous les props avant la fin du temps imparti !</p>
+          <p style="margin-top: 10px;"><strong>Touches :</strong> Utilisez ZQSD pour vous déplacer et la souris pour interagir avec les éléments du décor ou votre arme.</p>
         </div>
         <button class="btn back" id="btn-back-main-from-how-to-play">RETOUR</button>
       </div>

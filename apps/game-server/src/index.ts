@@ -38,7 +38,7 @@ const wss = new WebSocketServer({ port: 8080 }); // Serveur WebSocket sur le por
 console.log('[GameServer] Serveur WebSocket démarré sur le port 8080');
 
 const players = new Map<string, Player>(); // Map pour stocker les états des joueurs
-const clients = new Map<WebSocket, string>();    // Set pour stocker les sockets actifs
+const clients = new Map<WebSocket, string>();    // Map pour stocker les sockets actifs
 
 // Stockage temporaire des dernières entrées (vélocité) reçues pour chaque joueur
 const playerInputs = new Map<string, { vx: number; vy: number }>();

@@ -14,7 +14,7 @@ import { renderGame, initGame } from './components/game';
 import { renderAchievements, initAchievements } from './components/achievements';
 import { renderAuth, initAuth } from './components/auth';
 
-//Montage dynamique du HTML dans le conteneur UI
+// Montage dynamique du HTML dans le conteneur UI
 const uiLayer = document.getElementById('ui-layer');
 if (uiLayer) {
   uiLayer.innerHTML = [
@@ -32,13 +32,13 @@ if (uiLayer) {
   ].join('\n');
 }
 
-//Initialisation du titre
+// Initialisation du titre
 const titleElement = document.getElementById('main-title');
 if (titleElement) {
   titleElement.textContent = GAME_NAME;
 }
 
-//Initialisation de la logique et des événements de chaque composant
+// Initialisation de la logique et des événements de chaque composant
 initMainMenu();
 initLocalGame();
 initLobby();

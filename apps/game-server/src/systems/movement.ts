@@ -1,6 +1,6 @@
 import { Player } from '@prop-hunt/shared';
 import { GAME_CONFIG } from '../config/game.js';
-import { isValidMovement } from './colision.js';
+import { isValidMovement } from './collision.js';
 import { type Rectangle, type Circle } from '@prop-hunt/shared';
 
 export function updatePlayerPosition(
@@ -28,7 +28,7 @@ export function updatePlayerPosition(
     const nextX = player.x + finalVx * deltaTime;
     const nextY = player.y + finalVy * deltaTime;
 
-    // Récupération des dimensions de la carte et la hitbox dynamique du joueur
+    // Récupération des dimensions de la carte et de la hitbox dynamique du joueur
     const mapWidth = GAME_CONFIG.MAP_WIDTH;
     const mapHeight = GAME_CONFIG.MAP_HEIGHT;
     const playerRadius = ('currentProp' in player && player.currentProp?.hitboxRadius)
