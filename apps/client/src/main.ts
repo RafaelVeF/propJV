@@ -12,6 +12,7 @@ import { renderFriends, initFriends } from './components/friends';
 import { renderStats, initStats } from './components/stats';
 import { renderGame, initGame } from './components/game';
 import { renderAchievements, initAchievements } from './components/achievements';
+import { renderAuth, initAuth } from './components/auth';
 
 //Montage dynamique du HTML dans le conteneur UI
 const uiLayer = document.getElementById('ui-layer');
@@ -27,6 +28,7 @@ if (uiLayer) {
     renderStats(),
     renderGame(),
     renderAchievements(),
+    renderAuth(),
   ].join('\n');
 }
 
@@ -47,3 +49,4 @@ initFriends();
 initStats();
 initGame();
 initAchievements();
+initAuth();
