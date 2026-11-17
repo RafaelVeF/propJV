@@ -1,7 +1,32 @@
-POST http://localhost:3000/api/auth/login
+### 1. Test Inscription (Register)
+POST http://localhost:3000/auth/register
 Content-Type: application/json
 
 {
-    "username": "PropJVBot",
-    "password": "SAEprojv"
+    "username": "TestJoueur01",
+    "email": "testjoueur01@propjv.local",
+    "password": "Password123!"
 }
+
+### 2. Test Inscription doublon (Doit renvoyer 409 Conflict)
+POST http://localhost:3000/auth/register
+Content-Type: application/json
+
+{
+    "username": "TestJoueur01",
+    "email": "testjoueur01@propjv.local",
+    "password": "Password123!"
+}
+
+### 3. Test Connexion (Login)
+POST http://localhost:3000/auth/login
+Content-Type: application/json
+
+{
+    "username": "TestJoueur01",
+    "password": "Password123!"
+}
+
+### 4. Test Profil Actuel (Me - remplacer TOKEN par le jeton obtenu)
+GET http://localhost:3000/auth/me
+Authorization: Bearer VOTRE_TOKEN_ICI

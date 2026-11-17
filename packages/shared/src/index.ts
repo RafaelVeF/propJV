@@ -34,7 +34,7 @@ export enum MessageType {
   GAME_STATE_UPDATE = 'GAME_STATE_UPDATE'
 }
 
-export enum GamePhase {
+ export enum GamePhase {
   LOBBY = 'LOBBY',
   COUNTDOWN = 'COUNTDOWN',
   HIDING = 'HIDING',
@@ -358,4 +358,35 @@ export interface Circle {
   x: number;
   y: number;
   radius: number;
+}
+
+// Authentification & Profil Joueur
+
+export interface AuthUser {
+  userId: number;
+  username: string;
+  email: string;
+  currencyBalance?: number;
+  adminFlag?: boolean;
+  creationDate?: string | Date;
+}
+
+export interface RegisterRequestPayload {
+  username: string;
+  email: string;
+  password: string;
+}
+
+export interface LoginRequestPayload {
+  username: string;
+  password: string;
+}
+
+export interface AuthResponsePayload {
+  success: boolean;
+  message: string;
+  token?: string;
+  userId?: number;
+  user?: AuthUser;
+  errors?: unknown[];
 }
