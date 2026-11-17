@@ -20,7 +20,11 @@ export enum MessageType {
   PLAYER_MOVE = 'PLAYER_MOVE',
   TRANSFORM_PROP = 'TRANSFORM_PROP',
   HUNTER_SHOOT = 'HUNTER_SHOOT',
+  HUNTER_RELOAD = 'HUNTER_RELOAD',
+  WEAPON_STATE = 'WEAPON_STATE',
+  GRENADE_EXPLODED = 'GRENADE_EXPLODED',
   PLAYER_HIT = 'PLAYER_HIT',
+  PLAYER_DIED = 'PLAYER_DIED',
   PROP_LOCK = 'PROP_LOCK',
   PROP_WHISTLE = 'PROP_WHISTLE',
 
@@ -236,16 +240,191 @@ export interface TransformPropPayload {
   currentProp?: PropDefinition;
 }
 
+// =========================================================================
+// COMBAT : armes des chasseurs
+// Les valeurs sont partagées pour que le client affiche les mêmes portées / délais,
+// mais seul le serveur les applique (serveur autoritaire).
+// =========================================================================
+
+export enum WeaponType {
+  PISTOL = 'PISTOL',
+  CROWBAR = 'CROWBAR',
+  GRENADE = 'GRENADE'
+}
+
+export interface WeaponDefinition {
+  type: WeaponType;
+  displayName: string;
+  /** Touche de sélection rapide (1, 2, 3) */
+  slot: number;
+  /** Dégâts infligés (pour la grenade : dégâts au centre de l'explosion) */
+  damage: number;
+  /** Portée max en px (pistolet : distance du tir, pied de biche : allonge, grenade : distance de lancer) */
+  range: number;
+  /** Délai minimum entre deux utilisations (ms) */
+  cooldownMs: number;
+  /** Taille du chargeur (armes à munitions uniquement) */
+  magazineSize?: number;
+  /** Durée de rechargement (ms) */
+  reloadMs?: number;
+  /** Angle d'attaque total en degrés (corps à corps) */
+  arcDegrees?: number;
+  /** Rayon de l'explosion (grenade) */
+  blastRadius?: number;
+  /** Délai avant explosion après le lancer (grenade, ms) */
+  fuseMs?: number;
+  /** Part des dégâts conservée au bord de l'explosion (0.35 = 35 %) */
+  edgeDamageRatio?: number;
+  iconPath?: string;
+}
+
+export const WEAPONS: Record<WeaponType, WeaponDefinition> = {
+  [WeaponType.PISTOL]: {
+    type: WeaponType.PISTOL,
+    displayName: 'Pistolet',
+    slot: 1,
+    damage: 20,
+    range: 400,
+    cooldownMs: 350,
+    magazineSize: 6,
+    reloadMs: 1800,
+    iconPath: '/assets/weapons/pistol.png'
+  },
+  [WeaponType.CROWBAR]: {
+    type: WeaponType.CROWBAR,
+    displayName: 'Pied de biche',
+    slot: 2,
+    damage: 40,
+    range: 48,
+    cooldownMs: 700,
+    arcDegrees: 100,
+    iconPath: '/assets/weapons/crowbar.png'
+  },
+  [WeaponType.GRENADE]: {
+    type: WeaponType.GRENADE,
+    displayName: 'Grenade',
+    slot: 3,
+    damage: 70,
+    range: 260,
+    cooldownMs: 25000,
+    blastRadius: 80,
+    fuseMs: 1200,
+    edgeDamageRatio: 0.35
+  }
+};
+
+export const WEAPON_ORDER: WeaponType[] = [WeaponType.PISTOL, WeaponType.CROWBAR, WeaponType.GRENADE];
+
+/** Client -> Serveur : intention de tir. Le serveur calcule lui-même qui est touché. */
 export interface HunterShootPayload {
-  hunterId: string;
+  weapon: WeaponType;
+  /** Point visé (coordonnées monde) */
   targetX: number;
   targetY: number;
+  /** Ignoré par le serveur (l'ID vient de la connexion), conservé pour compatibilité */
+  hunterId?: string;
+}
+
+/** Serveur -> Clients : résultat d'une attaque, pour les effets visuels */
+export interface ShotFiredPayload {
+  hunterId: string;
+  weapon: WeaponType;
+  originX: number;
+  originY: number;
+  /** Point d'impact (pistolet), point frappé (pied de biche) ou point d'atterrissage (grenade) */
+  impactX: number;
+  impactY: number;
+  hitPlayerIds: string[];
+  /** Grenade : délai avant explosion (ms) */
+  fuseMs?: number;
+  grenadeId?: string;
+}
+
+export interface GrenadeExplodedPayload {
+  grenadeId: string;
+  hunterId: string;
+  x: number;
+  y: number;
+  radius: number;
+  hitPlayerIds: string[];
+}
+
+/** Client -> Serveur : demande de rechargement du pistolet */
+export interface HunterReloadPayload {
+  weapon?: WeaponType;
+}
+
+export interface WeaponSlotState {
+  weapon: WeaponType;
+  ammo?: number;
+  magazineSize?: number;
+  /** Temps restant avant de pouvoir réutiliser l'arme (ms, relatif pour éviter les écarts d'horloge) */
+  cooldownRemainingMs: number;
+  /** Temps restant de rechargement (ms), 0 si pas en rechargement */
+  reloadRemainingMs: number;
+}
+
+/** Serveur -> chasseur concerné : état officiel de son arsenal */
+export interface WeaponStatePayload {
+  weapons: WeaponSlotState[];
 }
 
 export interface PlayerHitPayload {
   targetPlayerId: string;
   damage: number;
   isKilled: boolean;
+  attackerId?: string;
+  weapon?: WeaponType;
+  health?: number;
+  maxHealth?: number;
+  lastHitTimestamp?: number;
+}
+
+/** Mort d'un joueur : il passe en rôle SPECTATOR jusqu'à la fin de la manche */
+export interface PlayerDiedPayload {
+  playerId: string;
+  playerName: string;
+  killerId?: string;
+  killerName?: string;
+  weapon?: WeaponType;
+  x: number;
+  y: number;
+  /** Prop sous lequel le joueur était caché au moment de sa mort */
+  propDisplayName?: string;
+}
+
+/**
+ * Zone touchable d'un joueur : le rectangle de son sprite (ce que le chasseur voit et vise),
+ * et non le petit cercle de collision au sol.
+ */
+export function getPlayerHurtbox(x: number, y: number, prop: PropDefinition | undefined, variantIndex: number = 0): Rectangle {
+  const def = prop ?? DEFAULT_PROPS[0];
+  const variant = def.variants?.[variantIndex] ?? def.variants?.[0];
+  const width = variant?.width || def.width || 32;
+  const height = variant?.height || def.height || 32;
+  const radius = def.hitboxRadius || 10;
+  return { x: x - width / 2, y: y + radius - height, width, height };
+}
+
+/** Un joueur est vivant s'il n'est pas spectateur et qu'il lui reste des PV. */
+export function isAlive(player: { health: number; role: PlayerRole }): boolean {
+  return player.role !== PlayerRole.SPECTATOR && player.health > 0;
+}
+
+/**
+ * Retourne l'ID du prochain joueur à suivre en mode spectateur.
+ * direction = 1 : suivant, -1 : précédent (boucle). Retourne null s'il n'y a personne à suivre.
+ */
+export function getNextSpectateTarget(
+  candidateIds: string[],
+  currentTargetId: string | null,
+  direction: 1 | -1 = 1
+): string | null {
+  if (candidateIds.length === 0) return null;
+  const ids = [...candidateIds].sort((a, b) => a.localeCompare(b));
+  const currentIndex = currentTargetId ? ids.indexOf(currentTargetId) : -1;
+  if (currentIndex === -1) return ids[0];
+  return ids[(currentIndex + direction + ids.length) % ids.length];
 }
 
 // Enveloppe globale du paquet réseau

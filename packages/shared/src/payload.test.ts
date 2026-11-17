@@ -15,7 +15,8 @@ import {
   RoundEndPayload,
   Player,
   PlayerRole,
-  GamePhase
+  GamePhase,
+  WeaponType
 } from './index.js';
 
 // 1. Test de l'union discriminée des Joueurs (Player)
@@ -55,7 +56,7 @@ const transformMessage: NetworkMessage<TransformPropPayload> = {
 
 const shootMessage: NetworkMessage<HunterShootPayload> = {
   type: MessageType.HUNTER_SHOOT,
-  payload: { hunterId: hunterPlayer.id, targetX: 105, targetY: 200 },
+  payload: { hunterId: hunterPlayer.id, weapon: WeaponType.PISTOL, targetX: 105, targetY: 200 },
   timestamp: Date.now()
 };
 
