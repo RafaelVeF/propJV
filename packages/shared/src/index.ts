@@ -6,6 +6,18 @@ export enum MessageType {
   PLAYER_JOINED = 'PLAYER_JOINED',
   PLAYER_LEFT = 'PLAYER_LEFT',
 
+  // Salon et préparation
+  CREATE_ROOM = 'CREATE_ROOM',
+  JOIN_ROOM = 'JOIN_ROOM',
+  LEAVE_ROOM = 'LEAVE_ROOM',
+  ROOM_ERROR = 'ROOM_ERROR',
+  KICK_PLAYER = 'KICK_PLAYER',
+  KICKED = 'KICKED',
+  LOBBY_STATE = 'LOBBY_STATE',
+  PLAYER_TOGGLE_READY = 'PLAYER_TOGGLE_READY',
+  START_COUNTDOWN = 'START_COUNTDOWN',
+  ROUND_TIMER_TICK = 'ROUND_TIMER_TICK',
+
   // Actions de jeu
   PLAYER_MOVE = 'PLAYER_MOVE',
   TRANSFORM_PROP = 'TRANSFORM_PROP',
@@ -14,19 +26,9 @@ export enum MessageType {
   PROP_LOCK = 'PROP_LOCK',
   PROP_WHISTLE = 'PROP_WHISTLE',
 
-  // Lobby et salons
-  CREATE_ROOM = 'CREATE_ROOM',
-  JOIN_ROOM = 'JOIN_ROOM',
-  LEAVE_ROOM = 'LEAVE_ROOM',
-  ROOM_ERROR = 'ROOM_ERROR',
-  LOBBY_STATE = 'LOBBY_STATE',
-  PLAYER_TOGGLE_READY = 'PLAYER_TOGGLE_READY',
-  START_COUNTDOWN = 'START_COUNTDOWN',
-
   // État général
   GAME_START = 'GAME_START',
   ROUND_START = 'ROUND_START',
-  ROUND_TIMER_TICK = 'ROUND_TIMER_TICK',
   ROUND_END = 'ROUND_END',
   GAME_END = 'GAME_END',
   GAME_STATE_UPDATE = 'GAME_STATE_UPDATE'
@@ -218,68 +220,6 @@ export interface SpectatorPlayer extends BasePlayer {
 
 export type Player = PropPlayer | HunterPlayer | SpectatorPlayer;
 
-export interface LobbyPlayerInfo {
-  id: string;
-  name: string;
-  isReady: boolean;
-  isHost: boolean;
-}
-
-export interface LobbyStatePayload {
-  players: LobbyPlayerInfo[];
-  canStart: boolean;
-  roomKey?: string;
-}
-
-export interface PlayerToggleReadyPayload {
-  playerId?: string;
-  isReady?: boolean;
-}
-
-export interface StartCountdownPayload {
-  countdownSeconds: number;
-}
-
-export interface RoundStartPayload {
-  roundNumber: number;
-  role: PlayerRole.HUNTER | PlayerRole.PROP;
-  hidingDuration: number;
-  roundDuration: number;
-  mapId: string;
-}
-
-export interface RoundTimerTickPayload {
-  phase: GamePhase;
-  timeRemaining: number;
-}
-
-export interface RoundScoreItem {
-  playerId: string;
-  name: string;
-  score: number;
-  kills: number;
-  survived: boolean;
-}
-
-export interface RoundEndPayload {
-  winner: PlayerRole.HUNTER | PlayerRole.PROP;
-  reason: 'ALL_PROPS_ELIMINATED' | 'TIME_EXPIRED';
-  scores: RoundScoreItem[];
-}
-
-export interface CreateRoomPayload {
-  playerName?: string;
-}
-
-export interface JoinRoomPayload {
-  roomKey: string;
-  playerName?: string;
-}
-
-export interface RoomErrorPayload {
-  message: string;
-}
-
 // Les Payloads pour chaque action (les principaux)
 
 export interface PlayerMovePayload {
@@ -331,6 +271,79 @@ export interface PropWhistlePayload {
 // Démarrage d'une partie
 export interface GameStartPayload {
   mapId: string;
+}
+
+// --- Payloads du Salon et du Cycle de Round ---
+
+export interface LobbyPlayerInfo {
+  id: string;
+  name: string;
+  isReady: boolean;
+  isHost: boolean;
+}
+
+export interface CreateRoomPayload {
+  playerName?: string;
+  isFreeplay?: boolean;
+}
+
+export interface JoinRoomPayload {
+  roomKey: string;
+  playerName?: string;
+}
+
+export interface RoomErrorPayload {
+  message: string;
+}
+
+export interface KickPlayerPayload {
+  targetPlayerId: string;
+}
+
+export interface KickedPayload {
+  reason: string;
+}
+
+export interface LobbyStatePayload {
+  roomKey?: string;
+  players: LobbyPlayerInfo[];
+  canStart?: boolean;
+}
+
+export interface PlayerToggleReadyPayload {
+  playerId: string;
+  isReady: boolean;
+}
+
+export interface StartCountdownPayload {
+  countdownSeconds: number;
+}
+
+export interface RoundStartPayload {
+  roundNumber: number;
+  role: PlayerRole;
+  hidingDuration: number;
+  roundDuration: number;
+  mapId: string;
+}
+
+export interface RoundTimerTickPayload {
+  phase: GamePhase;
+  timeRemaining: number;
+}
+
+export interface RoundScoreItem {
+  playerId: string;
+  name: string;
+  score: number;
+  kills?: number;
+  survived?: boolean;
+}
+
+export interface RoundEndPayload {
+  winner: PlayerRole.HUNTER | PlayerRole.PROP;
+  reason: 'ALL_PROPS_ELIMINATED' | 'TIME_EXPIRED';
+  scores: RoundScoreItem[];
 }
 
 // Gestion des collisions

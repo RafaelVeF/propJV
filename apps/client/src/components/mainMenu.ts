@@ -1,5 +1,7 @@
 import logoUrl from '../assets/propJV_logo.png';
 import { switchView } from './viewManager';
+import { networkManager } from '../network/networkManager';
+import { MessageType } from '@prop-hunt/shared';
 
 export function renderMainMenu(): string {
   return `
@@ -101,6 +103,7 @@ export function initMainMenu(): void {
   if (btnFreeplay) {
     const viewGame = document.getElementById('view-game');
     btnFreeplay.addEventListener('click', () => {
+      networkManager.send(MessageType.CREATE_ROOM, { isFreeplay: true });
       if (viewGame) switchView(viewMain, viewGame);
     });
   }

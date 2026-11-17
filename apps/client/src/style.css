@@ -2108,6 +2108,283 @@ body {
 }
 
 /* ----------------------------------------------------
+   LOBBY 2.5D STAGE LAYOUT (4 JOUEURS SUR SOCLES)
+---------------------------------------------------- */
+#view-lobby.lobby-stage-view {
+  width: 96vw;
+  max-width: 1280px;
+  height: 90vh;
+  max-height: 780px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 1.5rem 2rem;
+  background: radial-gradient(circle at 50% 65%, rgba(16, 26, 46, 0.95) 0%, rgba(7, 9, 15, 0.98) 75%);
+  overflow: hidden;
+}
+
+.lobby-top-grid {
+  display: grid;
+  grid-template-columns: 260px 1fr 280px;
+  align-items: start;
+  gap: 1.2rem;
+  width: 100%;
+  z-index: 5;
+}
+
+.lobby-top-left {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.lobby-count-title {
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  letter-spacing: 1px;
+  color: #e2e8f0;
+  margin-bottom: 0.25rem;
+}
+
+.lobby-top-left .btn {
+  padding: 0.65rem 1rem;
+  font-size: 0.95rem;
+  width: 100%;
+}
+
+.lobby-top-center {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.lobby-top-center .view-title {
+  margin-bottom: 0;
+}
+
+.lobby-chat-box {
+  background: rgba(15, 23, 42, 0.65);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+  height: 170px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  backdrop-filter: blur(8px);
+}
+
+.lobby-chat-title {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  letter-spacing: 1.2px;
+  color: var(--color-cyan);
+  border-bottom: 1px solid rgba(56, 189, 248, 0.2);
+  padding-bottom: 0.35rem;
+}
+
+.lobby-chat-placeholder {
+  color: #64748b;
+  font-size: 0.85rem;
+  font-style: italic;
+  text-align: center;
+  margin: auto 0;
+}
+
+.lobby-stage {
+  position: relative;
+  flex: 1;
+  width: 100%;
+  min-height: 330px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lobby-slot {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+
+/* Positions des 4 joueurs max façon Fortnite : moi au centre-droit, 1 à gauche, 2 aux extrémités */
+.lobby-slot.pos-center {
+  bottom: 22px;
+  left: 56%;
+  transform: translateX(-50%) scale(1.22);
+  z-index: 4;
+}
+
+.lobby-slot.pos-left {
+  bottom: 92px;
+  left: 33%;
+  transform: translateX(-50%) scale(0.95);
+  z-index: 2;
+}
+
+.lobby-slot.pos-far-left {
+  bottom: 118px;
+  left: 13%;
+  transform: translateX(-50%) scale(0.88);
+  z-index: 1;
+}
+
+.lobby-slot.pos-far-right {
+  bottom: 100px;
+  left: 83%;
+  transform: translateX(-50%) scale(0.95);
+  z-index: 2;
+}
+
+.lobby-slot-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.lobby-nameplate {
+  background: rgba(226, 232, 240, 0.92);
+  color: #0f172a;
+  font-weight: 800;
+  font-size: 0.88rem;
+  padding: 4px 12px;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.lobby-slot.is-me .lobby-nameplate {
+  background: #e0f2fe;
+  border: 2px solid #2dd4bf;
+}
+
+.lobby-status-icon {
+  font-size: 1.2rem;
+  font-weight: 900;
+  line-height: 1;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.7));
+}
+
+.lobby-status-icon.ready {
+  color: #2dd4bf;
+}
+
+.lobby-status-icon.not-ready {
+  color: #38bdf8;
+  opacity: 0.85;
+}
+
+.lobby-slot-kick-btn {
+  background: rgba(239, 68, 68, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  color: #f87171;
+  border-radius: 5px;
+  width: 24px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: bold;
+  transition: all 0.2s ease;
+}
+
+.lobby-slot-kick-btn:hover {
+  background: #ef4444;
+  color: #ffffff;
+  transform: scale(1.1);
+}
+
+.lobby-avatar-canvas {
+  image-rendering: pixelated;
+  z-index: 2;
+  filter: drop-shadow(0 6px 10px rgba(0, 0, 0, 0.6));
+}
+
+.lobby-pedestal {
+  width: 170px;
+  height: 52px;
+  border-radius: 50%;
+  margin-top: -22px;
+  background: radial-gradient(ellipse at center, #1e4e68 0%, #102a3d 75%, transparent 100%);
+  border: 2px solid rgba(56, 189, 248, 0.35);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.7), inset 0 0 12px rgba(56, 189, 248, 0.2);
+  z-index: 1;
+}
+
+.lobby-slot.is-me .lobby-pedestal {
+  width: 190px;
+  height: 58px;
+  background: radial-gradient(ellipse at center, #2dd4bf 0%, #0d9488 70%, transparent 100%);
+  border: 2px solid #5eead4;
+  box-shadow: 0 0 28px rgba(45, 212, 191, 0.55), inset 0 0 14px rgba(255, 255, 255, 0.35);
+}
+
+.lobby-extra-players-pill {
+  position: absolute;
+  bottom: 8px;
+  right: 12px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  color: #94a3b8;
+  font-size: 0.85rem;
+  padding: 5px 12px;
+  border-radius: 20px;
+  z-index: 5;
+}
+
+/* Modal Liste complète des joueurs (1 à 12) */
+.lobby-players-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(5, 8, 15, 0.82);
+  backdrop-filter: blur(6px);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lobby-players-modal-card {
+  background: #0f172a;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  border-radius: 14px;
+  width: 92%;
+  max-width: 520px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  padding: 1.4rem;
+  box-shadow: 0 0 35px rgba(56, 189, 248, 0.25);
+}
+
+.lobby-players-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  padding-bottom: 0.7rem;
+}
+
+.lobby-players-modal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  overflow-y: auto;
+  max-height: 55vh;
+  padding-right: 4px;
+}
+
+/* ----------------------------------------------------
    AUTHENTIFICATION (auth.ts)
 ---------------------------------------------------- */
 .view.auth-modal {
@@ -2305,4 +2582,4 @@ body {
     max-width: 42vw;
   }
 }
-
+

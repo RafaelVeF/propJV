@@ -13,6 +13,7 @@ import {
     type HunterShootPayload,
     type CreateRoomPayload,
     type JoinRoomPayload,
+    type KickPlayerPayload,
     Rectangle,
     DEFAULT_PROPS,
     GAMEPLAY_CONFIG
@@ -58,16 +59,16 @@ function broadcastToRoom(roomKey: string, message: NetworkMessage, excludeWs?: W
     });
 }
 
-function generateRoomKey(): string {
+function generateRoomKey(prefix: string = 'LOCAL'): string {
     let key = '';
     do {
-        key = `LOCAL-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+        key = `${prefix}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
     } while (rooms.has(key));
     return key;
 }
 
-function createRoom(): GameRoom {
-    const roomKey = generateRoomKey();
+function createRoom(isFreeplay: boolean = false): GameRoom {
+    const roomKey = generateRoomKey(isFreeplay ? 'FREEPLAY' : 'LOCAL');
     const roomPlayers = new Map<string, Player>();
     const roomInputs = new Map<string, { vx: number; vy: number }>();
     const roomRegenTimers = new Map<string, number>();
@@ -289,7 +290,7 @@ wss.on('connection', (ws) => {
             // --- GESTION DES SALONS (Hors partie) ---
             if (message.type === MessageType.CREATE_ROOM) {
                 const payload = (message.payload || {}) as CreateRoomPayload;
-                const room = createRoom();
+                const room = createRoom(Boolean(payload.isFreeplay));
                 joinRoom(ws, playerId, room, payload.playerName);
                 return;
             }
@@ -322,6 +323,33 @@ wss.on('connection', (ws) => {
             switch (message.type) {
                 case MessageType.PLAYER_TOGGLE_READY: {
                     room.roundManager.toggleReady(playerId);
+                    break;
+                }
+
+                case MessageType.KICK_PLAYER: {
+                    const payload = message.payload as KickPlayerPayload;
+                    const senderSession = room.roundManager.players.get(playerId);
+                    if (!senderSession?.isHost || !payload.targetPlayerId || payload.targetPlayerId === playerId) {
+                        break;
+                    }
+
+                    let targetWs: WebSocket | null = null;
+                    clients.forEach((cPlayerId, cWs) => {
+                        if (cPlayerId === payload.targetPlayerId && clientRooms.get(cWs) === room.key) {
+                            targetWs = cWs;
+                        }
+                    });
+
+                    if (targetWs) {
+                        console.log(`[GameServer][${room.key}] Hôte ${senderSession.name} expulse ${payload.targetPlayerId}`);
+                        leaveCurrentRoom(targetWs, payload.targetPlayerId);
+                        if ((targetWs as WebSocket).readyState === WebSocket.OPEN) {
+                            (targetWs as WebSocket).send(JSON.stringify({
+                                type: MessageType.KICKED,
+                                payload: { reason: "Vous avez été expulsé du salon par l'hôte." }
+                            } satisfies NetworkMessage));
+                        }
+                    }
                     break;
                 }
 

@@ -88,6 +88,7 @@ export function initGame(): void {
   // Gestion du retour au menu
   if (btnLeaveGame) {
     btnLeaveGame.addEventListener('click', () => {
+      networkManager.send(MessageType.LEAVE_ROOM, {});
       switchView(viewGame, viewMain);
     });
   }
@@ -461,7 +462,24 @@ export function initGame(): void {
     }
   });
 
-  networkManager.on<LobbyStatePayload>(MessageType.LOBBY_STATE, () => {
+  networkManager.on<LobbyStatePayload>(MessageType.LOBBY_STATE, (payload) => {
+    if (payload.roomKey?.startsWith('FREEPLAY-')) {
+      localPlayerRole = PlayerRole.PROP;
+      currentPhase = GamePhase.LOBBY;
+      if (hunterBlindfold) hunterBlindfold.style.display = 'none';
+      if (roundEndOverlay) roundEndOverlay.style.display = 'none';
+      if (gamePhaseBadge) {
+        gamePhaseBadge.textContent = 'MODE FREEPLAY';
+        gamePhaseBadge.style.color = '#38bdf8';
+      }
+      if (gameTimer) gameTimer.textContent = '∞';
+      if (gameRoleBadge) {
+        gameRoleBadge.textContent = 'RÔLE : PROP (LIBRE)';
+        gameRoleBadge.style.color = '#c084fc';
+      }
+      return;
+    }
+
     if (currentPhase === GamePhase.ROUND_END) {
       currentPhase = GamePhase.LOBBY;
       if (roundEndOverlay) roundEndOverlay.style.display = 'none';
