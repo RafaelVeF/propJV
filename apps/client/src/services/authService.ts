@@ -44,7 +44,12 @@ export class AuthServiceError extends Error {
 function resolveApiOrigin(): string {
   const configured = import.meta.env.VITE_API_URL;
   const origin = typeof configured === 'string' && configured.trim() ? configured.trim() : DEFAULT_API_ORIGIN;
-  return origin.replace(/\/+$/, '');
+  
+  let cleaned = origin;
+  while (cleaned.endsWith('/')) {
+    cleaned = cleaned.slice(0, -1);
+  }
+  return cleaned;
 }
 
 export const API_ORIGIN = resolveApiOrigin();

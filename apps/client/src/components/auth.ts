@@ -12,8 +12,7 @@ import { switchView } from './viewManager';
 
 type AuthMode = 'login' | 'register';
 type AlertKind = 'error' | 'success' | 'info';
-
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EMAIL_PATTERN = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 const USERNAME_PATTERN = /^[a-zA-Z0-9_-]{3,30}$/;
 
 function renderAuthStatus(user: AuthUser | null): string {
