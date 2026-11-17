@@ -1,4 +1,11 @@
 import { switchView } from './viewManager';
+import { networkManager } from '../network/networkManager';
+import {
+  MessageType,
+  type LobbyStatePayload,
+  type StartCountdownPayload,
+  type RoundStartPayload
+} from '@prop-hunt/shared';
 
 export function renderLobby(): string {
   return `
@@ -16,6 +23,10 @@ export function renderLobby(): string {
             <span id="copy-tooltip" class="copy-tooltip">Copié !</span>
           </button>
         </div>
+      </div>
+
+      <div id="lobby-countdown-banner" style="display: none; margin-bottom: 12px; padding: 10px 16px; background: rgba(56, 189, 248, 0.2); border: 1px solid #38bdf8; border-radius: 8px; color: #38bdf8; text-align: center; font-weight: bold;">
+         LA PARTIE COMMENCE DANS <span id="lobby-countdown-sec">5</span>s...
       </div>
 
       <div class="lobby-content">
@@ -56,6 +67,7 @@ export function renderLobby(): string {
 export function initLobby(): void {
   const viewMain = document.getElementById('view-main');
   const viewLobby = document.getElementById('view-lobby');
+  const viewGame = document.getElementById('view-game');
   const btnBackMainFromOnline = document.getElementById('btn-back-main-from-online');
   const btnCopyKey = document.getElementById('btn-copy-key');
   const lobbyRoomKey = document.getElementById('lobby-room-key');
@@ -63,9 +75,16 @@ export function initLobby(): void {
   const btnToggleReady = document.getElementById('btn-toggle-ready');
   const lobbyPlayersList = document.getElementById('lobby-players-list');
   const lobbyPlayersCount = document.getElementById('lobby-players-count');
+  const countdownBanner = document.getElementById('lobby-countdown-banner');
+  const countdownSec = document.getElementById('lobby-countdown-sec');
+
+  let countdownInterval: ReturnType<typeof setInterval> | null = null;
 
   if (btnBackMainFromOnline) {
-    btnBackMainFromOnline.addEventListener('click', () => switchView(viewLobby, viewMain));
+    btnBackMainFromOnline.addEventListener('click', () => {
+      networkManager.send(MessageType.LEAVE_ROOM, {});
+      switchView(viewLobby, viewMain);
+    });
   }
 
   // Copier la clé du lobby
@@ -94,35 +113,106 @@ export function initLobby(): void {
     });
   }
 
-  // Basculer l'état Prêt / Pas prêt (pour la démo / local)
-  let isReady = false;
+  // Basculer l'état Prêt / Pas prêt via WebSocket
   if (btnToggleReady) {
     btnToggleReady.addEventListener('click', () => {
-      isReady = !isReady;
-      const hostItem = lobbyPlayersList?.querySelector('.player-item');
-      const hostStatus = hostItem?.querySelector('.player-status');
+      networkManager.send(MessageType.PLAYER_TOGGLE_READY, {});
+    });
+  }
 
-      if (isReady) {
+  // Synchronisation de la liste des joueurs du salon via WebSocket
+  networkManager.on<LobbyStatePayload>(MessageType.LOBBY_STATE, (payload) => {
+    if (payload.roomKey && lobbyRoomKey) {
+      lobbyRoomKey.textContent = payload.roomKey;
+    }
+    if (!lobbyPlayersList || !lobbyPlayersCount) return;
+
+    lobbyPlayersCount.textContent = `JOUEURS (${payload.players.length}/12)`;
+
+    const me = payload.players.find(p => p.id === networkManager.localPlayerId);
+    const amIHost = me?.isHost ?? false;
+
+    lobbyPlayersList.innerHTML = payload.players.map(p => {
+      const isMe = p.id === networkManager.localPlayerId;
+      const statusClass = p.isReady ? 'ready' : 'not-ready';
+      const statusText = p.isReady ? 'PRÊT' : 'EN ATTENTE...';
+      const hostTag = p.isHost ? ' (Hôte)' : '';
+      const meTag = isMe ? ' (Toi)' : '';
+
+      const kickButtonHtml = (amIHost && !isMe)
+        ? `<button class="kick-player-btn" title="Expulser ce joueur">
+             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+               <line x1="18" y1="6" x2="6" y2="18"></line>
+               <line x1="6" y1="6" x2="18" y2="18"></line>
+             </svg>
+           </button>`
+        : '';
+
+      return `
+        <div class="player-item ${statusClass}" data-player-id="${p.id}">
+          <span class="player-name">${p.name}${hostTag}${meTag}</span>
+          <div class="player-controls">
+            <span class="player-status">${statusText}</span>
+            ${kickButtonHtml}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    if (btnToggleReady && me) {
+      if (me.isReady) {
         btnToggleReady.textContent = 'ANNULER PRÊT';
         btnToggleReady.classList.remove('secondary');
         btnToggleReady.classList.add('primary');
-        if (hostStatus && hostItem) {
-          hostStatus.textContent = 'PRÊT';
-          hostItem.classList.remove('not-ready');
-          hostItem.classList.add('ready');
-        }
       } else {
         btnToggleReady.textContent = 'SE DÉCLARER PRÊT';
         btnToggleReady.classList.remove('primary');
         btnToggleReady.classList.add('secondary');
-        if (hostStatus && hostItem) {
-          hostStatus.textContent = 'EN ATTENTE...';
-          hostItem.classList.remove('ready');
-          hostItem.classList.add('not-ready');
-        }
       }
-    });
-  }
+    }
+
+    if (!payload.canStart && countdownBanner && countdownBanner.style.display !== 'none') {
+      countdownBanner.style.display = 'none';
+      if (countdownInterval) {
+        clearInterval(countdownInterval);
+        countdownInterval = null;
+      }
+    }
+  });
+
+  // Compte à rebours avant lancement de la manche
+  networkManager.on<StartCountdownPayload>(MessageType.START_COUNTDOWN, (payload) => {
+    if (!countdownBanner || !countdownSec) return;
+
+    let remaining = payload.countdownSeconds;
+    countdownSec.textContent = remaining.toString();
+    countdownBanner.style.display = 'block';
+
+    if (countdownInterval) clearInterval(countdownInterval);
+    countdownInterval = setInterval(() => {
+      remaining -= 1;
+      if (remaining > 0) {
+        countdownSec.textContent = remaining.toString();
+      } else if (countdownInterval) {
+        clearInterval(countdownInterval);
+        countdownInterval = null;
+      }
+    }, 1000);
+  });
+
+  // Lancement de la manche : basculer vers l'écran de jeu
+  networkManager.on<RoundStartPayload>(MessageType.ROUND_START, () => {
+    if (countdownBanner) {
+      countdownBanner.style.display = 'none';
+      if (countdownInterval) {
+        clearInterval(countdownInterval);
+        countdownInterval = null;
+      }
+    }
+    if (viewLobby && viewGame) {
+      switchView(viewLobby, viewGame);
+    }
+  });
 
   // Expulser un joueur du lobby (action hôte)
   if (lobbyPlayersList) {

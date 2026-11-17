@@ -1,14 +1,21 @@
-import { 
-  MessageType, 
-  NetworkMessage, 
-  PlayerMovePayload, 
+import {
+  MessageType,
+  NetworkMessage,
+  PlayerMovePayload,
   TransformPropPayload,
   HunterShootPayload,
   PlayerHitPayload,
   PropLockPayload,
   PropWhistlePayload,
+  LobbyStatePayload,
+  PlayerToggleReadyPayload,
+  StartCountdownPayload,
+  RoundStartPayload,
+  RoundTimerTickPayload,
+  RoundEndPayload,
   Player,
-  PlayerRole
+  PlayerRole,
+  GamePhase
 } from './index.js';
 
 // 1. Test de l'union discriminée des Joueurs (Player)
@@ -70,6 +77,63 @@ const whistleMessage: NetworkMessage<PropWhistlePayload> = {
   timestamp: Date.now()
 };
 
+// 3. Test des paquets de salon et cycle de round
+const lobbyMessage: NetworkMessage<LobbyStatePayload> = {
+  type: MessageType.LOBBY_STATE,
+  payload: {
+    players: [
+      { id: propPlayer.id, name: propPlayer.name, isReady: true, isHost: true },
+      { id: hunterPlayer.id, name: hunterPlayer.name, isReady: true, isHost: false }
+    ],
+    canStart: true
+  },
+  timestamp: Date.now()
+};
+
+const readyMessage: NetworkMessage<PlayerToggleReadyPayload> = {
+  type: MessageType.PLAYER_TOGGLE_READY,
+  payload: { playerId: propPlayer.id, isReady: true },
+  timestamp: Date.now()
+};
+
+const countdownMessage: NetworkMessage<StartCountdownPayload> = {
+  type: MessageType.START_COUNTDOWN,
+  payload: { countdownSeconds: 5 },
+  timestamp: Date.now()
+};
+
+const roundStartMessage: NetworkMessage<RoundStartPayload> = {
+  type: MessageType.ROUND_START,
+  payload: {
+    roundNumber: 1,
+    role: PlayerRole.PROP,
+    hidingDuration: 20,
+    roundDuration: 180,
+    mapId: 'map_01_32p'
+  },
+  timestamp: Date.now()
+};
+
+const timerMessage: NetworkMessage<RoundTimerTickPayload> = {
+  type: MessageType.ROUND_TIMER_TICK,
+  payload: { phase: GamePhase.HUNTING, timeRemaining: 145 },
+  timestamp: Date.now()
+};
+
+const roundEndMessage: NetworkMessage<RoundEndPayload> = {
+  type: MessageType.ROUND_END,
+  payload: {
+    winner: PlayerRole.PROP,
+    reason: 'TIME_EXPIRED',
+    scores: [
+      { playerId: propPlayer.id, name: propPlayer.name, score: 500, survived: true },
+      { playerId: hunterPlayer.id, name: hunterPlayer.name, score: 100, kills: 0 }
+    ]
+  },
+  timestamp: Date.now()
+};
+
 console.log('Tous les types et payloads sont validés avec succès !');
 console.log('Exemple Joueur Prop :', JSON.stringify(propPlayer, null, 2));
 console.log('Exemple Tir Hunter :', JSON.stringify(shootMessage, null, 2));
+console.log('Exemple Début de Round :', JSON.stringify(roundStartMessage, null, 2));

@@ -22,6 +22,14 @@ export enum MessageType {
   GAME_STATE_UPDATE = 'GAME_STATE_UPDATE'
 }
 
+ export enum GamePhase {
+  LOBBY = 'LOBBY',
+  COUNTDOWN = 'COUNTDOWN',
+  HIDING = 'HIDING',
+  HUNTING = 'HUNTING',
+  ROUND_END = 'ROUND_END'
+}
+
 // Les roles existants dans le jeu
 export enum PlayerRole {
   HUNTER = 'HUNTER',
