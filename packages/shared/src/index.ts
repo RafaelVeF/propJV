@@ -7,6 +7,10 @@ export enum MessageType {
   PLAYER_LEFT = 'PLAYER_LEFT',
 
   // Salon et préparation
+  CREATE_ROOM = 'CREATE_ROOM',
+  JOIN_ROOM = 'JOIN_ROOM',
+  LEAVE_ROOM = 'LEAVE_ROOM',
+  ROOM_ERROR = 'ROOM_ERROR',
   LOBBY_STATE = 'LOBBY_STATE',
   PLAYER_TOGGLE_READY = 'PLAYER_TOGGLE_READY',
   START_COUNTDOWN = 'START_COUNTDOWN',
@@ -276,7 +280,21 @@ export interface LobbyPlayerInfo {
   isHost: boolean;
 }
 
+export interface CreateRoomPayload {
+  playerName?: string;
+}
+
+export interface JoinRoomPayload {
+  roomKey: string;
+  playerName?: string;
+}
+
+export interface RoomErrorPayload {
+  message: string;
+}
+
 export interface LobbyStatePayload {
+  roomKey?: string;
   players: LobbyPlayerInfo[];
   canStart?: boolean;
 }

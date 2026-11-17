@@ -11,9 +11,10 @@ import {
     type PropLockPayload,
     type PropWhistlePayload,
     type HunterShootPayload,
+    type CreateRoomPayload,
+    type JoinRoomPayload,
     Rectangle,
     DEFAULT_PROPS,
-    type PropDefinition,
     GAMEPLAY_CONFIG
 } from '@prop-hunt/shared';
 import { GameLoop } from './GameLoop.js';
@@ -25,122 +26,219 @@ import { RoundManager } from './RoundManager.js';
 const wss = new WebSocketServer({ port: 8080 }); // Serveur WebSocket sur le port 8080
 console.log('[GameServer] Serveur WebSocket démarré sur le port 8080');
 
-const players = new Map<string, Player>(); // Map pour stocker les états des joueurs
-const clients = new Map<WebSocket, string>();    // Set pour stocker les sockets actifs
+// Suivi des clients connectés (ID attribué dès la connexion, mais sans salon par défaut)
+const clients = new Map<WebSocket, string>();      // ws -> playerId
+const clientRooms = new Map<WebSocket, string>();  // ws -> roomKey (uniquement si dans un salon)
+const clientNames = new Map<string, string>();     // playerId -> name
+
+interface GameRoom {
+    key: string;
+    roundManager: RoundManager;
+    players: Map<string, Player>;
+    playerInputs: Map<string, { vx: number; vy: number }>;
+    playerRegenTimers: Map<string, number>;
+}
+
+const rooms = new Map<string, GameRoom>();
 
 // Coordonnées de spawn autoritaires
 const SPAWN_HUNTER = { x: 250, y: 250 };
 const SPAWN_PROP = { x: 600, y: 600 };
 
-// Stockage temporaire des dernières entrées (vélocité) reçues pour chaque joueur
-const playerInputs = new Map<string, { vx: number; vy: number }>();
-// Horodatage du dernier tick de régénération pour chaque joueur
-const playerRegenTimers = new Map<string, number>();
-
-// Fonction utilitaire pour diffuser un message à tous les clients connectés (avec option d'exclusion)
-function broadcast(message: NetworkMessage, excludeWs?: WebSocket) {
+function broadcastToRoom(roomKey: string, message: NetworkMessage, excludeWs?: WebSocket) {
     const dataString = JSON.stringify(message);
     clients.forEach((_, clientWs) => {
-        if (clientWs !== excludeWs && clientWs.readyState === WebSocket.OPEN) {
+        if (
+            clientWs !== excludeWs &&
+            clientRooms.get(clientWs) === roomKey &&
+            clientWs.readyState === WebSocket.OPEN
+        ) {
             clientWs.send(dataString);
         }
     });
 }
 
-// Initialisation du gestionnaire de round autoritaire
-const roundManager = new RoundManager({
-    onLobbyStateChanged: (lobbyState) => {
-        broadcast({
-            type: MessageType.LOBBY_STATE,
-            payload: lobbyState
-        });
-    },
-    onCountdownStarted: (seconds) => {
-        broadcast({
-            type: MessageType.START_COUNTDOWN,
-            payload: { countdownSeconds: seconds }
-        });
-    },
-    onCountdownCancelled: () => {
-        broadcast({
-            type: MessageType.LOBBY_STATE,
-            payload: roundManager.getLobbyState()
-        });
-    },
-    onRoundStarted: (assignments) => {
-        console.log(`[GameServer] Démarrage de la manche #${roundManager.getRoundNumber()}. Affectation des rôles :`);
-        assignments.forEach((role, assignedPlayerId) => {
-            const p = players.get(assignedPlayerId);
-            if (p) {
-                p.role = role;
-                p.health = 100;
-                p.maxHealth = 100;
-                if (role === PlayerRole.HUNTER) {
-                    p.x = SPAWN_HUNTER.x;
-                    p.y = SPAWN_HUNTER.y;
-                } else {
-                    p.x = SPAWN_PROP.x;
-                    p.y = SPAWN_PROP.y;
-                    if ('currentProp' in p && p.currentProp) {
-                        p.health = p.currentProp.health;
-                        p.maxHealth = p.currentProp.health;
-                    }
-                }
-                console.log(`  - ${p.name} : ${role} (Spawn: ${p.x}, ${p.y})`);
-            }
+function generateRoomKey(): string {
+    let key = '';
+    do {
+        key = `LOCAL-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+    } while (rooms.has(key));
+    return key;
+}
 
-            // Notification individuelle du rôle et des paramètres du round
-            clients.forEach((clientPlayerId, clientWs) => {
-                if (clientPlayerId === assignedPlayerId && clientWs.readyState === WebSocket.OPEN) {
-                    clientWs.send(JSON.stringify({
-                        type: MessageType.ROUND_START,
-                        payload: {
-                            roundNumber: roundManager.getRoundNumber(),
-                            role: role,
-                            hidingDuration: roundManager.config.hidingDuration,
-                            roundDuration: roundManager.config.huntingDuration + roundManager.config.hidingDuration,
-                            mapId: 'map_01_32p'
-                        }
-                    } satisfies NetworkMessage));
-                }
+function createRoom(): GameRoom {
+    const roomKey = generateRoomKey();
+    const roomPlayers = new Map<string, Player>();
+    const roomInputs = new Map<string, { vx: number; vy: number }>();
+    const roomRegenTimers = new Map<string, number>();
+
+    const roundManager = new RoundManager({
+        onLobbyStateChanged: (lobbyState) => {
+            broadcastToRoom(roomKey, {
+                type: MessageType.LOBBY_STATE,
+                payload: { ...lobbyState, roomKey }
             });
-        });
-    },
-    onTimerTick: (phase, timeRemaining) => {
-        broadcast({
-            type: MessageType.ROUND_TIMER_TICK,
-            payload: { phase, timeRemaining }
-        });
-    },
-    onPhaseChanged: (phase, timeRemaining) => {
-        broadcast({
-            type: MessageType.ROUND_TIMER_TICK,
-            payload: { phase, timeRemaining }
-        });
-    },
-    onRoundEnded: (results) => {
-        console.log(`[GameServer] Fin de manche ! Vainqueur : ${results.winner} (Raison: ${results.reason})`);
-        broadcast({
-            type: MessageType.ROUND_END,
-            payload: results
-        });
+        },
+        onCountdownStarted: (seconds) => {
+            broadcastToRoom(roomKey, {
+                type: MessageType.START_COUNTDOWN,
+                payload: { countdownSeconds: seconds }
+            });
+        },
+        onCountdownCancelled: () => {
+            broadcastToRoom(roomKey, {
+                type: MessageType.LOBBY_STATE,
+                payload: { ...roundManager.getLobbyState(), roomKey }
+            });
+        },
+        onRoundStarted: (assignments) => {
+            console.log(`[GameServer][${roomKey}] Démarrage de la manche #${roundManager.getRoundNumber()} !`);
+            assignments.forEach((role, assignedPlayerId) => {
+                const p = roomPlayers.get(assignedPlayerId);
+                if (p) {
+                    p.role = role;
+                    p.health = 100;
+                    p.maxHealth = 100;
+                    if (role === PlayerRole.HUNTER) {
+                        p.x = SPAWN_HUNTER.x;
+                        p.y = SPAWN_HUNTER.y;
+                    } else {
+                        p.x = SPAWN_PROP.x;
+                        p.y = SPAWN_PROP.y;
+                        if ('currentProp' in p && p.currentProp) {
+                            p.health = p.currentProp.health;
+                            p.maxHealth = p.currentProp.health;
+                        }
+                    }
+                    console.log(`  - ${p.name} : ${role} (Spawn: ${p.x}, ${p.y})`);
+                }
+
+                clients.forEach((clientPlayerId, clientWs) => {
+                    if (
+                        clientPlayerId === assignedPlayerId &&
+                        clientRooms.get(clientWs) === roomKey &&
+                        clientWs.readyState === WebSocket.OPEN
+                    ) {
+                        clientWs.send(JSON.stringify({
+                            type: MessageType.ROUND_START,
+                            payload: {
+                                roundNumber: roundManager.getRoundNumber(),
+                                role: role,
+                                hidingDuration: roundManager.config.hidingDuration,
+                                roundDuration: roundManager.config.huntingDuration + roundManager.config.hidingDuration,
+                                mapId: 'map_01_32p'
+                            }
+                        } satisfies NetworkMessage));
+                    }
+                });
+            });
+        },
+        onTimerTick: (phase, timeRemaining) => {
+            broadcastToRoom(roomKey, {
+                type: MessageType.ROUND_TIMER_TICK,
+                payload: { phase, timeRemaining }
+            });
+        },
+        onPhaseChanged: (phase, timeRemaining) => {
+            broadcastToRoom(roomKey, {
+                type: MessageType.ROUND_TIMER_TICK,
+                payload: { phase, timeRemaining }
+            });
+        },
+        onRoundEnded: (results) => {
+            console.log(`[GameServer][${roomKey}] Fin de manche ! Vainqueur : ${results.winner} (Raison: ${results.reason})`);
+            broadcastToRoom(roomKey, {
+                type: MessageType.ROUND_END,
+                payload: results
+            });
+        }
+    }, {
+        minPlayers: 2,
+        countdownDuration: 5,
+        hidingDuration: 30,
+        huntingDuration: 210,
+        roundEndDuration: 10
+    });
+
+    const room: GameRoom = {
+        key: roomKey,
+        roundManager,
+        players: roomPlayers,
+        playerInputs: roomInputs,
+        playerRegenTimers: roomRegenTimers
+    };
+    rooms.set(roomKey, room);
+    console.log(`[GameServer] Salon créé : ${roomKey}`);
+    return room;
+}
+
+function leaveCurrentRoom(ws: WebSocket, playerId: string): void {
+    const roomKey = clientRooms.get(ws);
+    if (!roomKey) return;
+
+    clientRooms.delete(ws);
+    const room = rooms.get(roomKey);
+    if (!room) return;
+
+    room.roundManager.removePlayer(playerId);
+    room.players.delete(playerId);
+    room.playerInputs.delete(playerId);
+    room.playerRegenTimers.delete(playerId);
+
+    broadcastToRoom(roomKey, {
+        type: MessageType.PLAYER_LEFT,
+        payload: { playerId }
+    });
+
+    if (room.players.size === 0) {
+        room.roundManager.destroy();
+        rooms.delete(roomKey);
+        console.log(`[GameServer] Salon vide supprimé : ${roomKey}`);
     }
-}, {
-    minPlayers: 2,
-    countdownDuration: 5,
-    hidingDuration: 30,
-    huntingDuration: 210, // 3min30 de traque (total 4min avec les 30s de cachette)
-    roundEndDuration: 10
-});
+}
+
+function joinRoom(ws: WebSocket, playerId: string, room: GameRoom, customName?: string): void {
+    leaveCurrentRoom(ws, playerId);
+
+    const playerName = customName?.trim() || clientNames.get(playerId) || `Player_${playerId.substring(0, 4)}`;
+    clientNames.set(playerId, playerName);
+
+    const defaultProp = DEFAULT_PROPS[0];
+    const roomPlayer: Player = {
+        id: playerId,
+        name: playerName,
+        x: 250,
+        y: 250,
+        health: defaultProp.health,
+        maxHealth: defaultProp.health,
+        role: PlayerRole.PROP,
+        isLocked: false,
+        currentProp: defaultProp,
+        variantIndex: 0,
+        currentSpriteKey: defaultProp.internalName
+    };
+
+    clientRooms.set(ws, room.key);
+    room.players.set(playerId, roomPlayer);
+    room.playerInputs.set(playerId, { vx: 0, vy: 0 });
+
+    // Notifie les autres joueurs du salon
+    broadcastToRoom(room.key, {
+        type: MessageType.PLAYER_JOINED,
+        payload: { player: roomPlayer }
+    }, ws);
+
+    // Ajoute au RoundManager (ce qui déclenche onLobbyStateChanged vers tout le salon)
+    room.roundManager.addPlayer(playerId, playerName);
+    console.log(`[GameServer][${room.key}] ${playerName} a rejoint le salon (${room.players.size} joueur(s))`);
+}
 
 let staticObstacles: Rectangle[] = [];
 try {
-    // Chargement de la carte depuis le dossier client
     const mapPath = path.resolve(process.cwd(), '../client/public/assets/maps/map_01_32p.tmj');
     if (fs.existsSync(mapPath)) {
         const mapData = JSON.parse(fs.readFileSync(mapPath, 'utf8'));
         staticObstacles = parseTiledCollisions(mapData);
-        // Mise à jour modulaire des dimensions de la carte selon le fichier Tiled
         if (mapData.width && mapData.tilewidth) {
             GAME_CONFIG.MAP_WIDTH = mapData.width * mapData.tilewidth;
         }
@@ -156,14 +254,17 @@ try {
 }
 
 wss.on('connection', (ws) => {
-    console.log('[GameServer] Nouveau client connecté');
-    const playerId = Math.random().toString(36).substring(2, 15); // ID aléatoire assigné au joueur
+    const playerId = Math.random().toString(36).substring(2, 15);
+    const defaultName = `Player_${playerId.substring(0, 4)}`;
+    console.log(`[GameServer] Nouveau client connecté (ID: ${playerId}, en attente de salon)`);
 
-    // Initialisation d'un nouveau joueur (par défaut en tant que Prop humain)
+    clients.set(ws, playerId);
+    clientNames.set(playerId, defaultName);
+
     const defaultProp = DEFAULT_PROPS[0];
-    const newPlayer: Player = {
+    const welcomePlayer: Player = {
         id: playerId,
-        name: `Player_${playerId.substring(0, 4)}`,
+        name: defaultName,
         x: 250,
         y: 250,
         health: defaultProp.health,
@@ -175,62 +276,71 @@ wss.on('connection', (ws) => {
         currentSpriteKey: defaultProp.internalName
     };
 
-    players.set(playerId, newPlayer);
-    clients.set(ws, playerId);
-    playerInputs.set(playerId, { vx: 0, vy: 0 });
-
-    // Enregistrement auprès du RoundManager
-    roundManager.addPlayer(playerId, newPlayer.name);
-
-    // Envoi du message de bienvenue au joueur
+    // Envoi immédiat de l'ID au client, SANS l'inscrire dans aucun salon
     ws.send(JSON.stringify({
         type: MessageType.WELCOME,
-        payload: { player: newPlayer }
+        payload: { player: welcomePlayer }
     } satisfies NetworkMessage));
-
-    // Envoi de l'état actuel du salon au joueur
-    ws.send(JSON.stringify({
-        type: MessageType.LOBBY_STATE,
-        payload: roundManager.getLobbyState()
-    } satisfies NetworkMessage));
-
-    // Notifie les autres joueurs qu'un nouveau joueur a rejoint
-    broadcast({
-        type: MessageType.PLAYER_JOINED,
-        payload: { player: newPlayer }
-    }, ws);
 
     ws.on('message', (data) => {
         try {
             const message: NetworkMessage = JSON.parse(data.toString());
 
+            // --- GESTION DES SALONS (Hors partie) ---
+            if (message.type === MessageType.CREATE_ROOM) {
+                const payload = (message.payload || {}) as CreateRoomPayload;
+                const room = createRoom();
+                joinRoom(ws, playerId, room, payload.playerName);
+                return;
+            }
+
+            if (message.type === MessageType.JOIN_ROOM) {
+                const payload = (message.payload || {}) as JoinRoomPayload;
+                const requestedKey = (payload.roomKey || '').trim().toUpperCase();
+                const targetRoom = rooms.get(requestedKey);
+                if (!targetRoom) {
+                    ws.send(JSON.stringify({
+                        type: MessageType.ROOM_ERROR,
+                        payload: { message: `Salon "${requestedKey || '?'}" introuvable. Vérifiez la clé.` }
+                    } satisfies NetworkMessage));
+                    return;
+                }
+                joinRoom(ws, playerId, targetRoom, payload.playerName);
+                return;
+            }
+
+            if (message.type === MessageType.LEAVE_ROOM) {
+                leaveCurrentRoom(ws, playerId);
+                return;
+            }
+
+            // --- ACTIONS DANS UN SALON / EN PARTIE ---
+            const roomKey = clientRooms.get(ws);
+            const room = roomKey ? rooms.get(roomKey) : undefined;
+            if (!room) return;
+
             switch (message.type) {
                 case MessageType.PLAYER_TOGGLE_READY: {
-                    // Basculer l'état prêt dans le RoundManager autoritaire
-                    roundManager.toggleReady(playerId);
+                    room.roundManager.toggleReady(playerId);
                     break;
                 }
 
                 case MessageType.PLAYER_MOVE: {
-                    // Vérification autoritaire : le joueur a-t-il le droit de bouger ?
-                    // (Ex: Les Hunters sont strictement bloqués pendant la phase HIDING de 30s)
-                    if (!roundManager.canPlayerMove(playerId)) {
-                        playerInputs.set(playerId, { vx: 0, vy: 0 });
+                    if (!room.roundManager.canPlayerMove(playerId)) {
+                        room.playerInputs.set(playerId, { vx: 0, vy: 0 });
                         break;
                     }
 
                     const payload = message.payload as PlayerMovePayload;
-                    playerInputs.set(playerId, { vx: payload.vx, vy: payload.vy });
+                    room.playerInputs.set(playerId, { vx: payload.vx, vy: payload.vy });
                     break;
                 }
 
                 case MessageType.TRANSFORM_PROP: {
                     const payload = message.payload as TransformPropPayload;
-
-                    // Met à jour le prop et sa hitbox physique dans le serveur
-                    const playerToTransform = players.get(playerId);
+                    const playerToTransform = room.players.get(playerId);
                     if (playerToTransform && playerToTransform.role === PlayerRole.PROP) {
-                        const targetProp = DEFAULT_PROPS.find(p => 
+                        const targetProp = DEFAULT_PROPS.find(p =>
                             (payload.propId !== undefined && p.id === payload.propId) ||
                             (payload.spriteKey && p.internalName === payload.spriteKey)
                         ) || playerToTransform.currentProp;
@@ -245,11 +355,11 @@ wss.on('connection', (ws) => {
                             if (playerToTransform.health > targetProp.health) {
                                 playerToTransform.health = targetProp.health;
                             }
-                            players.set(playerId, playerToTransform);
+                            room.players.set(playerId, playerToTransform);
 
-                            console.log(`[GameServer] ${playerToTransform.name} transformé en ${targetProp.displayName}`);
+                            console.log(`[GameServer][${room.key}] ${playerToTransform.name} transformé en ${targetProp.displayName}`);
 
-                            broadcast({
+                            broadcastToRoom(room.key, {
                                 type: MessageType.TRANSFORM_PROP,
                                 payload: {
                                     playerId,
@@ -266,12 +376,10 @@ wss.on('connection', (ws) => {
 
                 case MessageType.PROP_LOCK: {
                     const payload = message.payload as PropLockPayload;
-
-                    const playerToLock = players.get(playerId);
+                    const playerToLock = room.players.get(playerId);
                     if (playerToLock && playerToLock.role === PlayerRole.PROP) {
                         playerToLock.isLocked = payload.isLocked;
-
-                        broadcast({
+                        broadcastToRoom(room.key, {
                             type: MessageType.PROP_LOCK,
                             payload: { playerId, isLocked: payload.isLocked }
                         });
@@ -281,8 +389,7 @@ wss.on('connection', (ws) => {
 
                 case MessageType.PROP_WHISTLE: {
                     const payload = message.payload as PropWhistlePayload;
-
-                    broadcast({
+                    broadcastToRoom(room.key, {
                         type: MessageType.PROP_WHISTLE,
                         payload: { playerId, soundKey: payload.soundKey }
                     });
@@ -290,13 +397,11 @@ wss.on('connection', (ws) => {
                 }
 
                 case MessageType.HUNTER_SHOOT: {
-                    // Vérification autoritaire : tir permis uniquement aux Hunters en phase HUNTING
-                    if (!roundManager.canPlayerShoot(playerId)) {
+                    if (!room.roundManager.canPlayerShoot(playerId)) {
                         break;
                     }
-
                     const payload = message.payload as HunterShootPayload;
-                    broadcast({
+                    broadcastToRoom(room.key, {
                         type: MessageType.HUNTER_SHOOT,
                         payload
                     });
@@ -306,23 +411,22 @@ wss.on('connection', (ws) => {
                 case MessageType.PLAYER_HIT: {
                     const payload = message.payload as { targetPlayerId?: string; playerId?: string; damage: number };
                     const targetId = payload.targetPlayerId || payload.playerId;
-                    if (targetId && players.has(targetId)) {
-                        const targetPlayer = players.get(targetId)!;
+                    if (targetId && room.players.has(targetId)) {
+                        const targetPlayer = room.players.get(targetId)!;
                         const damage = payload.damage ?? 10;
                         targetPlayer.health = Math.max(0, targetPlayer.health - damage);
                         targetPlayer.lastHitTimestamp = Date.now();
-                        playerRegenTimers.delete(targetId); // Réinitialise le délai de régénération
-                        players.set(targetId, targetPlayer);
+                        room.playerRegenTimers.delete(targetId);
+                        room.players.set(targetId, targetPlayer);
 
                         const isKilled = targetPlayer.health <= 0;
                         if (isKilled) {
-                            // Vérifie si cette élimination termine la manche (victoire des chasseurs)
-                            roundManager.handlePlayerDeath(targetId, playerId);
+                            room.roundManager.handlePlayerDeath(targetId, playerId);
                         }
 
-                        console.log(`[GameServer] ${targetPlayer.name} a subi ${damage} dégâts (HP: ${targetPlayer.health}/${targetPlayer.maxHealth || 100})`);
+                        console.log(`[GameServer][${room.key}] ${targetPlayer.name} a subi ${damage} dégâts (HP: ${targetPlayer.health}/${targetPlayer.maxHealth || 100})`);
 
-                        broadcast({
+                        broadcastToRoom(room.key, {
                             type: MessageType.PLAYER_HIT,
                             payload: {
                                 targetPlayerId: targetId,
@@ -345,63 +449,53 @@ wss.on('connection', (ws) => {
 
     ws.on('close', () => {
         console.log('[GameServer] Client déconnecté', playerId);
-        roundManager.removePlayer(playerId);
-        players.delete(playerId);
+        leaveCurrentRoom(ws, playerId);
         clients.delete(ws);
-        playerInputs.delete(playerId);
-        playerRegenTimers.delete(playerId);
-
-        broadcast({
-            type: MessageType.PLAYER_LEFT,
-            payload: { playerId }
-        });
+        clientNames.delete(playerId);
     });
 });
 
-// Boucle de jeu principale
+// Boucle de jeu principale (indépendante pour chaque salon actif)
 const gameLoop = new GameLoop((deltaTime: number) => {
     const now = Date.now();
 
-    // Mise à jour de la physique et des mécaniques de survie de tous les joueurs
-    players.forEach((player, id) => {
-        // Bloquer la mise à jour physique si le RoundManager l'interdit
-        if (!roundManager.canPlayerMove(id)) {
-            return;
-        }
-
-        const input = playerInputs.get(id);
-        if (input) {
-            if (player.role === PlayerRole.PROP && player.isLocked) {
-                // Si le joueur Prop est verrouillé, on ne met pas à jour sa position
-            } else {
-                // Le serveur calcule et impose la position validée via movement.ts
-                updatePlayerPosition(player, input.vx, input.vy, deltaTime, staticObstacles);
+    rooms.forEach((room) => {
+        room.players.forEach((player, id) => {
+            if (!room.roundManager.canPlayerMove(id)) {
+                return;
             }
-        }
 
-        // Régénération passive autoritaire : 1 PV par demi-seconde (500ms) après 10s sans dégât
-        const maxHealth = player.maxHealth || 100;
-        if (player.health < maxHealth && player.health > 0) {
-            const lastHit = player.lastHitTimestamp || 0;
-            if (now - lastHit >= GAMEPLAY_CONFIG.regeneration_cooldown) {
-                const lastRegen = playerRegenTimers.get(id) || 0;
-                if (now - lastRegen >= GAMEPLAY_CONFIG.regeneration_interval) {
-                    player.health = Math.min(maxHealth, player.health + GAMEPLAY_CONFIG.regeneration_amount);
-                    playerRegenTimers.set(id, now);
+            const input = room.playerInputs.get(id);
+            if (input) {
+                if (player.role === PlayerRole.PROP && player.isLocked) {
+                    // Prop verrouillé : immobile
+                } else {
+                    updatePlayerPosition(player, input.vx, input.vy, deltaTime, staticObstacles);
                 }
             }
+
+            // Régénération passive autoritaire
+            const maxHealth = player.maxHealth || 100;
+            if (player.health < maxHealth && player.health > 0) {
+                const lastHit = player.lastHitTimestamp || 0;
+                if (now - lastHit >= GAMEPLAY_CONFIG.regeneration_cooldown) {
+                    const lastRegen = room.playerRegenTimers.get(id) || 0;
+                    if (now - lastRegen >= GAMEPLAY_CONFIG.regeneration_interval) {
+                        player.health = Math.min(maxHealth, player.health + GAMEPLAY_CONFIG.regeneration_amount);
+                        room.playerRegenTimers.set(id, now);
+                    }
+                }
+            }
+        });
+
+        const playersList = Array.from(room.players.values());
+        if (playersList.length > 0) {
+            broadcastToRoom(room.key, {
+                type: MessageType.GAME_STATE_UPDATE,
+                payload: { players: playersList }
+            });
         }
     });
-
-    // Diffusion de l'état officiel mis à jour du monde à tous les clients à chaque tick
-    const playersList = Array.from(players.values());
-    if (playersList.length > 0) {
-        broadcast({
-            type: MessageType.GAME_STATE_UPDATE,
-            payload: { players: playersList }
-        });
-    }
 });
 
-// Démarrage de la boucle de jeu
 gameLoop.start();

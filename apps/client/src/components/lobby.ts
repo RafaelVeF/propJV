@@ -81,7 +81,10 @@ export function initLobby(): void {
   let countdownInterval: ReturnType<typeof setInterval> | null = null;
 
   if (btnBackMainFromOnline) {
-    btnBackMainFromOnline.addEventListener('click', () => switchView(viewLobby, viewMain));
+    btnBackMainFromOnline.addEventListener('click', () => {
+      networkManager.send(MessageType.LEAVE_ROOM, {});
+      switchView(viewLobby, viewMain);
+    });
   }
 
   // Copier la clé du lobby
@@ -119,6 +122,9 @@ export function initLobby(): void {
 
   // Synchronisation de la liste des joueurs du salon via WebSocket
   networkManager.on<LobbyStatePayload>(MessageType.LOBBY_STATE, (payload) => {
+    if (payload.roomKey && lobbyRoomKey) {
+      lobbyRoomKey.textContent = payload.roomKey;
+    }
     if (!lobbyPlayersList || !lobbyPlayersCount) return;
 
     lobbyPlayersCount.textContent = `JOUEURS (${payload.players.length}/12)`;
