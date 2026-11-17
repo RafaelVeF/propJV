@@ -6,6 +6,16 @@ export enum MessageType {
   PLAYER_JOINED = 'PLAYER_JOINED',
   PLAYER_LEFT = 'PLAYER_LEFT',
 
+  // Salon et préparation
+  CREATE_ROOM = 'CREATE_ROOM',
+  JOIN_ROOM = 'JOIN_ROOM',
+  LEAVE_ROOM = 'LEAVE_ROOM',
+  ROOM_ERROR = 'ROOM_ERROR',
+  LOBBY_STATE = 'LOBBY_STATE',
+  PLAYER_TOGGLE_READY = 'PLAYER_TOGGLE_READY',
+  START_COUNTDOWN = 'START_COUNTDOWN',
+  ROUND_TIMER_TICK = 'ROUND_TIMER_TICK',
+
   // Actions de jeu
   PLAYER_MOVE = 'PLAYER_MOVE',
   TRANSFORM_PROP = 'TRANSFORM_PROP',
@@ -20,6 +30,14 @@ export enum MessageType {
   ROUND_END = 'ROUND_END',
   GAME_END = 'GAME_END',
   GAME_STATE_UPDATE = 'GAME_STATE_UPDATE'
+}
+
+export enum GamePhase {
+  LOBBY = 'LOBBY',
+  COUNTDOWN = 'COUNTDOWN',
+  HIDING = 'HIDING',
+  HUNTING = 'HUNTING',
+  ROUND_END = 'ROUND_END'
 }
 
 // Les roles existants dans le jeu
@@ -251,6 +269,70 @@ export interface PropWhistlePayload {
 // Démarrage d'une partie
 export interface GameStartPayload {
   mapId: string;
+}
+
+// --- Payloads du Salon et du Cycle de Round ---
+
+export interface LobbyPlayerInfo {
+  id: string;
+  name: string;
+  isReady: boolean;
+  isHost: boolean;
+}
+
+export interface CreateRoomPayload {
+  playerName?: string;
+}
+
+export interface JoinRoomPayload {
+  roomKey: string;
+  playerName?: string;
+}
+
+export interface RoomErrorPayload {
+  message: string;
+}
+
+export interface LobbyStatePayload {
+  roomKey?: string;
+  players: LobbyPlayerInfo[];
+  canStart?: boolean;
+}
+
+export interface PlayerToggleReadyPayload {
+  playerId: string;
+  isReady: boolean;
+}
+
+export interface StartCountdownPayload {
+  countdownSeconds: number;
+}
+
+export interface RoundStartPayload {
+  roundNumber: number;
+  role: PlayerRole;
+  hidingDuration: number;
+  roundDuration: number;
+  mapId: string;
+}
+
+export interface RoundTimerTickPayload {
+  phase: GamePhase;
+  timeRemaining: number;
+}
+
+export interface RoundScoreItem {
+  playerId: string;
+  name: string;
+  score: number;
+  kills?: number;
+  survived?: boolean;
+}
+
+export interface RoundEndPayload {
+  winner: PlayerRole.HUNTER | PlayerRole.PROP;
+  reason: 'ALL_PROPS_ELIMINATED' | 'TIME_EXPIRED';
+  scores: RoundScoreItem[];
 }
 
 // Gestion des collisions
