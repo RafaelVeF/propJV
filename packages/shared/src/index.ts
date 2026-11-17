@@ -284,6 +284,7 @@ export interface LobbyPlayerInfo {
 
 export interface CreateRoomPayload {
   playerName?: string;
+  isFreeplay?: boolean;
 }
 
 export interface JoinRoomPayload {
