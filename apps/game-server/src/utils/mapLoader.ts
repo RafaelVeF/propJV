@@ -6,14 +6,14 @@ export function parseTiledCollisions(tiledJson: any): Rectangle[] {
     const tileHeight = tiledJson.tileheight; // 16 pixels
 	const mapWidthInTiles = tiledJson.width; // Largeur de la carte en nombre de tuiles
 
-    // Fonction récursive pour chercher le calque nommé "Colision" dans les groupes de calques
+    // Fonction récursive pour chercher le calque nommé "Collision" dans les groupes de calques
     function findCollisionLayer(layers: any[]): any {
         for (const layer of layers) {
             if (layer.type === 'group' && layer.layers) {
                 const found = findCollisionLayer(layer.layers);
                 if (found) return found;
             }
-            if (layer.name === 'Colision' && layer.type === 'tilelayer') {
+            if ((layer.name === 'Collision' || layer.name === 'Colision') && layer.type === 'tilelayer') {
                 return layer;
             }
         }
@@ -22,7 +22,7 @@ export function parseTiledCollisions(tiledJson: any): Rectangle[] {
 
     const collisionLayer = findCollisionLayer(tiledJson.layers);
     if (!collisionLayer) {
-        console.warn('[MapLoader] Aucun calque "Colision" trouvé dans le JSON Tiled !');
+        console.warn('[MapLoader] Aucun calque "Collision" trouvé dans le JSON Tiled !');
         return obstacles;
     }
 

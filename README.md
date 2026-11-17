@@ -13,9 +13,9 @@ Si vous n'avez pas pnpm, installez-le globalement via npm :
 npm install -g pnpm
 ```
 
-# Verification 
+## Vérification 
 
-Verifier que votre environnement est parfaitement OP via 
+Vérifiez que votre environnement est opérationnel via : 
 ```bash
 pnpm -r ls
 pnpm run dev
@@ -90,7 +90,7 @@ Pour lancer l'environnement de travail complet (Client Web + API) d'un seul coup
 pnpm run dev
 ```
 
-Commandes individuelles
+### Commandes individuelles
 Si vous souhaitez ne lancer qu'une seule brique :
 
 ```bash
