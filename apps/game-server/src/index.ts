@@ -13,6 +13,7 @@ import {
     type HunterShootPayload,
     type CreateRoomPayload,
     type JoinRoomPayload,
+    type KickPlayerPayload,
     Rectangle,
     DEFAULT_PROPS,
     GAMEPLAY_CONFIG
@@ -322,6 +323,33 @@ wss.on('connection', (ws) => {
             switch (message.type) {
                 case MessageType.PLAYER_TOGGLE_READY: {
                     room.roundManager.toggleReady(playerId);
+                    break;
+                }
+
+                case MessageType.KICK_PLAYER: {
+                    const payload = message.payload as KickPlayerPayload;
+                    const senderSession = room.roundManager.players.get(playerId);
+                    if (!senderSession?.isHost || !payload.targetPlayerId || payload.targetPlayerId === playerId) {
+                        break;
+                    }
+
+                    let targetWs: WebSocket | null = null;
+                    clients.forEach((cPlayerId, cWs) => {
+                        if (cPlayerId === payload.targetPlayerId && clientRooms.get(cWs) === room.key) {
+                            targetWs = cWs;
+                        }
+                    });
+
+                    if (targetWs) {
+                        console.log(`[GameServer][${room.key}] Hôte ${senderSession.name} expulse ${payload.targetPlayerId}`);
+                        leaveCurrentRoom(targetWs, payload.targetPlayerId);
+                        if ((targetWs as WebSocket).readyState === WebSocket.OPEN) {
+                            (targetWs as WebSocket).send(JSON.stringify({
+                                type: MessageType.KICKED,
+                                payload: { reason: "Vous avez été expulsé du salon par l'hôte." }
+                            } satisfies NetworkMessage));
+                        }
+                    }
                     break;
                 }
 

@@ -11,6 +11,8 @@ export enum MessageType {
   JOIN_ROOM = 'JOIN_ROOM',
   LEAVE_ROOM = 'LEAVE_ROOM',
   ROOM_ERROR = 'ROOM_ERROR',
+  KICK_PLAYER = 'KICK_PLAYER',
+  KICKED = 'KICKED',
   LOBBY_STATE = 'LOBBY_STATE',
   PLAYER_TOGGLE_READY = 'PLAYER_TOGGLE_READY',
   START_COUNTDOWN = 'START_COUNTDOWN',
@@ -291,6 +293,14 @@ export interface JoinRoomPayload {
 
 export interface RoomErrorPayload {
   message: string;
+}
+
+export interface KickPlayerPayload {
+  targetPlayerId: string;
+}
+
+export interface KickedPayload {
+  reason: string;
 }
 
 export interface LobbyStatePayload {
