@@ -9,6 +9,7 @@ export const VIEWS = {
   STATS: 'view-stats',
   GAME: 'view-game',
   ACHIEVEMENTS: 'view-achievements',
+  AUTH: 'view-auth',
 } as const;
 
 export type ViewKey = keyof typeof VIEWS;
@@ -27,6 +28,7 @@ export const registeredViews: Record<string, string> = {
   stats: 'view-stats',
   game: 'view-game',
   achievements: 'view-achievements',
+  auth: 'view-auth',
 };
 
 export function switchView(hideView: HTMLElement | null, showView: HTMLElement | null) {
