@@ -127,8 +127,8 @@ const roundEndMessage: NetworkMessage<RoundEndPayload> = {
     winner: PlayerRole.PROP,
     reason: 'TIME_EXPIRED',
     scores: [
-      { playerId: propPlayer.id, name: propPlayer.name, score: 500, survived: true },
-      { playerId: hunterPlayer.id, name: hunterPlayer.name, score: 100, kills: 0 }
+      { playerId: propPlayer.id, name: propPlayer.name, score: 500, kills: 0, survived: true },
+      { playerId: hunterPlayer.id, name: hunterPlayer.name, score: 100, kills: 0, survived: false }
     ]
   },
   timestamp: Date.now()

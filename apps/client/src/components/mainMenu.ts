@@ -1,5 +1,7 @@
 import logoUrl from '../assets/propJV_logo.png';
 import { switchView } from './viewManager';
+import { networkManager } from '../network/networkManager';
+import { MessageType } from '@prop-hunt/shared';
 
 export function renderMainMenu(): string {
   return `
@@ -17,8 +19,17 @@ export function renderMainMenu(): string {
         </button>
       </div>
 
-      <!-- Haut Droite (Icônes) -->
+      <!-- Haut Droite (Compte + Icônes) -->
       <div class="top-right-nav">
+        <div class="auth-top-widget">
+          <button class="auth-status-btn" id="btn-auth-status" title="Se connecter ou créer un compte">
+            <span class="auth-status-dot" aria-hidden="true"></span>
+            <span class="auth-status-label" id="auth-status-label">CONNEXION</span>
+          </button>
+          <button class="auth-logout-btn" id="btn-auth-logout" title="Se déconnecter" hidden>
+            SE DÉCONNECTER
+          </button>
+        </div>
         <button class="icon-btn purple-icon" id="btn-settings" title="Paramètres">
           <svg width="34" height="34" viewBox="0 0 24 24" fill="currentColor">
             <path
@@ -92,6 +103,7 @@ export function initMainMenu(): void {
   if (btnFreeplay) {
     const viewGame = document.getElementById('view-game');
     btnFreeplay.addEventListener('click', () => {
+      networkManager.send(MessageType.CREATE_ROOM, { isFreeplay: true });
       if (viewGame) switchView(viewMain, viewGame);
     });
   }
