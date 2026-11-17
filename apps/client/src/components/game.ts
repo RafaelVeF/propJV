@@ -1,5 +1,6 @@
 import { switchView } from './viewManager';
 import { networkManager } from '../network/networkManager';
+import { TransformationWheel } from '../game/ui/TransformationWheel';
 import {
   MessageType,
   GamePhase,
@@ -133,7 +134,6 @@ export function initGame(): void {
 
   // État du joueur local
   let showHitbox = true; // Activer l'affichage visuel de la hitbox (touche 'H' pour activer/désactiver)
-  let currentPropIndex = 0;
   let localPlayerRole: PlayerRole = PlayerRole.PROP;
   let currentPhase: GamePhase = GamePhase.LOBBY;
   const player = {
@@ -161,6 +161,38 @@ export function initGame(): void {
     currentProp?: PropDefinition;
     variantIndex?: number;
   }>();
+
+  // Roue radiale de transformation des Props (8 slots, paginée)
+  const baseHumanProp = DEFAULT_PROPS[0];
+  const transformableProps = DEFAULT_PROPS.filter(p => p.internalName !== 'prop_human');
+  const transformationWheel = new TransformationWheel({
+    propsList: transformableProps,
+    baseProp: baseHumanProp,
+    propImages: propImages,
+    onTransform: (targetProp: PropDefinition, isRevertToBase: boolean) => {
+      player.currentProp = targetProp;
+      player.variantIndex = 0;
+      player.maxHealth = targetProp.health;
+      if (player.health > targetProp.health) {
+        player.health = targetProp.health;
+      }
+      transformationWheel.setCurrentEquippedPropId(targetProp.id);
+
+      console.log(isRevertToBase
+        ? `[PROP] Retour humain : ${targetProp.displayName} (${player.health}/${player.maxHealth} HP)`
+        : `[PROP] Transformation : ${targetProp.displayName} (${player.health}/${player.maxHealth} HP)`);
+
+      if (networkManager.localPlayerId) {
+        networkManager.send(MessageType.TRANSFORM_PROP, {
+          playerId: networkManager.localPlayerId,
+          propId: targetProp.id,
+          variantIndex: 0,
+          spriteKey: targetProp.internalName,
+          currentProp: targetProp
+        });
+      }
+    }
+  });
 
   // Connexion via le NetworkManager partagé
   const updateWsStatus = () => {
@@ -443,30 +475,24 @@ export function initGame(): void {
   const keys: { [key: string]: boolean } = {};
 
   window.addEventListener('keydown', (e) => {
+    // 1. Si la roue de transformation est ouverte, elle capture les touches en priorité
+    if (transformationWheel.getIsOpen()) {
+      const handled = transformationWheel.handleKeyDown(e);
+      if (handled) {
+        e.preventDefault();
+        return;
+      }
+    }
+
     keys[e.key.toLowerCase()] = true;
     if (e.key.toLowerCase() === 'h') {
       showHitbox = !showHitbox;
       console.log(`[DEBUG] Affichage des hitboxes : ${showHitbox ? 'ACTIVÉ' : 'DÉSACTIVÉ'}`);
     }
-    // Touche 'E' : Se transformer en prop suivant du catalogue
-    if (e.key.toLowerCase() === 'e') {
-      currentPropIndex = (currentPropIndex + 1) % DEFAULT_PROPS.length;
-      const nextProp = DEFAULT_PROPS[currentPropIndex];
-      player.currentProp = nextProp;
-      player.variantIndex = 0; // Réinitialise l'orientation par défaut (Face)
-      player.maxHealth = nextProp.health;
-      if (player.health > nextProp.health) {
-        player.health = nextProp.health;
-      }
-      console.log(`[PROP] Demande de transformation en : ${nextProp.displayName}`);
-      if (networkManager.localPlayerId) {
-        networkManager.send(MessageType.TRANSFORM_PROP, {
-          playerId: networkManager.localPlayerId,
-          propId: nextProp.id,
-          variantIndex: 0,
-          spriteKey: nextProp.internalName
-        });
-      }
+    // Touche 'E' : Ouvrir / Fermer la roue de transformation des Props
+    if (e.key.toLowerCase() === 'e' && localPlayerRole === PlayerRole.PROP) {
+      transformationWheel.toggle(player.currentProp.id);
+      return;
     }
     // Touche 'R' : Tourner le prop actuel (boucler sur ses variantes d'orientation)
     if (e.key.toLowerCase() === 'r') {
@@ -507,6 +533,27 @@ export function initGame(): void {
     keys[e.key.toLowerCase()] = false;
   });
 
+  // Événements souris / molette pour la roue de transformation
+  canvas.addEventListener('mousemove', (e) => {
+    if (transformationWheel.getIsOpen()) {
+      transformationWheel.handleMouseMove(e.clientX, e.clientY, canvas);
+    }
+  });
+
+  canvas.addEventListener('mousedown', (e) => {
+    if (transformationWheel.getIsOpen()) {
+      const handled = transformationWheel.handleClick(e.clientX, e.clientY, canvas);
+      if (handled) e.stopPropagation();
+    }
+  });
+
+  canvas.addEventListener('wheel', (e) => {
+    if (transformationWheel.getIsOpen()) {
+      const handled = transformationWheel.handleWheel(e);
+      if (handled) e.preventDefault();
+    }
+  }, { passive: false });
+
   let lastVx = 0;
   let lastVy = 0;
   const VISION_RADIUS = 200; // Rayon de vision visible autour du joueur
@@ -516,11 +563,13 @@ export function initGame(): void {
     if (viewGame?.classList.contains('active')) {
       let vx = 0;
       let vy = 0;
-      // Input Handler (Intention)
-      if (keys['z'] || keys['arrowup']) { vy -= 1; }
-      if (keys['s'] || keys['arrowdown']) { vy += 1; }
-      if (keys['q'] || keys['arrowleft']) { vx -= 1; }
-      if (keys['d'] || keys['arrowright']) { vx += 1; }
+      // Input Handler (Intention) - gelé pendant que la roue est ouverte
+      if (!transformationWheel.getIsOpen()) {
+        if (keys['z'] || keys['arrowup']) { vy -= 1; }
+        if (keys['s'] || keys['arrowdown']) { vy += 1; }
+        if (keys['q'] || keys['arrowleft']) { vx -= 1; }
+        if (keys['d'] || keys['arrowright']) { vx += 1; }
+      }
 
       // Envoi de la vélocité brute (non normalisée) via WebSocket
       // La normalisation diagonale se fera sur le serveur !
@@ -852,6 +901,12 @@ export function initGame(): void {
       }
 
       ctx!.restore();
+
+      // Rendu de la roue de transformation (en espace écran, au-dessus du monde)
+      if (transformationWheel.getIsOpen()) {
+        transformationWheel.setCurrentEquippedPropId(player.currentProp.id);
+        transformationWheel.render(ctx!, canvas.width, canvas.height);
+      }
     }
 
     requestAnimationFrame(gameLoop);
