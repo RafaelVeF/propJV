@@ -1,4 +1,5 @@
 import { switchView } from './viewManager';
+import { fetchCurrentUser, getSession, onAuthChange } from '../services/authService';
 
 export interface SeekerClassData {
   id: string;
@@ -87,11 +88,11 @@ interface ProfileState {
 }
 
 const state: ProfileState = {
-  username: 'Seekertest',
-  coins: 250,
-  score: 4200,
-  seekerWins: 26,
-  hiderWins: 4,
+  username: 'Invité',
+  coins: 0,
+  score: 0,
+  seekerWins: 0,
+  hiderWins: 0,
   activeTab: 'taunts',
   tauntSlots: ['chicken', null, null, null, null], // Slot 1 = Cot-cot, 2 à 5 = Vide
   selectedSlotIndex: null,
@@ -341,9 +342,9 @@ export function renderProfile(): string {
             <div class="profile-user-info">
               <div class="profile-username-tag">
                 <span class="profile-username" id="profile-display-username">${state.username}</span>
-                <span class="profile-badge-online">En ligne</span>
+                <span class="profile-badge-online" id="profile-session-status">Invité</span>
               </div>
-              <span class="profile-rank-tag">Joueur Vétéran • Rang Or</span>
+              <span class="profile-rank-tag" id="profile-rank-tag">Joueur</span>
             </div>
           </div>
 
@@ -351,15 +352,15 @@ export function renderProfile(): string {
           <div class="profile-stats-row">
             <div class="profile-stat-box">
               <span class="stat-box-label">SCORE GLOBAL</span>
-              <span class="stat-box-value text-cyan">${state.score}</span>
+              <span class="stat-box-value text-cyan" id="profile-score">${state.score}</span>
             </div>
             <div class="profile-stat-box">
               <span class="stat-box-label">VICTOIRES SEEKER</span>
-              <span class="stat-box-value text-purple">${state.seekerWins} victoires</span>
+              <span class="stat-box-value text-purple" id="profile-seeker-wins">${state.seekerWins} victoires</span>
             </div>
             <div class="profile-stat-box">
               <span class="stat-box-label">VICTOIRES HIDER</span>
-              <span class="stat-box-value text-purple">${state.hiderWins} victoires</span>
+              <span class="stat-box-value text-purple" id="profile-hider-wins">${state.hiderWins} victoires</span>
             </div>
           </div>
 
@@ -457,6 +458,32 @@ export function initProfile(): void {
   const viewMain = document.getElementById('view-main');
   const viewProfile = document.getElementById('view-profile');
   const btnBackTop = document.getElementById('btn-back-main-from-profile-top');
+
+  const syncPlayerProfile = () => {
+    const user = getSession()?.user;
+    state.username = user?.username ?? 'Invité';
+    state.coins = user?.currencyBalance ?? 0;
+    state.score = user?.stats?.totalScore ?? 0;
+    state.seekerWins = user?.stats?.seekerWins ?? 0;
+    state.hiderWins = user?.stats?.hiderWins ?? 0;
+    const setText = (id: string, value: string) => {
+      const element = document.getElementById(id);
+      if (element) element.textContent = value;
+    };
+    setText('profile-display-username', state.username);
+    setText('profile-session-status', user ? 'Connecté' : 'Invité');
+    setText('profile-score', String(state.score));
+    setText('profile-seeker-wins', `${state.seekerWins} victoires`);
+    setText('profile-hider-wins', `${state.hiderWins} victoires`);
+    setText('profile-rank-tag', user ? `Joueur • ${user.adminFlag ? 'Administrateur' : 'Membre'}` : 'Invité');
+    const balance = document.querySelector('#profile-coins-display .balance-amount');
+    if (balance) balance.textContent = String(state.coins);
+  };
+  syncPlayerProfile();
+  onAuthChange((_session, reason) => {
+    syncPlayerProfile();
+    if (reason === 'login') void fetchCurrentUser().catch((error) => console.warn('Actualisation du profil impossible :', error));
+  });
 
   if (btnBackTop) {
     btnBackTop.addEventListener('click', () => switchView(viewProfile, viewMain));

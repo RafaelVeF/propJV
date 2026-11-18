@@ -548,6 +548,12 @@ export interface AuthUser {
   currencyBalance?: number;
   adminFlag?: boolean;
   creationDate?: string | Date;
+  stats?: {
+    totalScore: number;
+    hiderWins: number;
+    seekerWins: number;
+    matchesPlayed: number;
+  };
 }
 
 export interface RegisterRequestPayload {
