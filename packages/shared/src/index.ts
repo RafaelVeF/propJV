@@ -30,6 +30,7 @@ export enum MessageType {
   PROP_LOCK = 'PROP_LOCK',
   PROP_WHISTLE = 'PROP_WHISTLE',
   CHAT_MESSAGE = 'CHAT_MESSAGE',
+  HITBOX_TOGGLE = 'HITBOX_TOGGLE',
 
   // État général
   GAME_START = 'GAME_START',

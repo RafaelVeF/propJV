@@ -8,7 +8,12 @@ import {
 export interface ChatManagerOptions {
   onSendMessage: (text: string) => void;
   getLocalPlayerId: () => string | null;
+  getPlayerNames?: () => string[];
 }
+
+type SuggestionEntry =
+  | { kind: 'command'; cmd: ChatCommandDefinition }
+  | { kind: 'player'; name: string };
 
 export class ChatManager {
   private isOpen: boolean = false;
@@ -16,7 +21,7 @@ export class ChatManager {
   private options: ChatManagerOptions;
   private unreadCount: number = 0;
 
-  private currentSuggestions: ChatCommandDefinition[] = [];
+  private currentSuggestions: SuggestionEntry[] = [];
   private selectedSuggestionIndex: number = 0;
 
   private chatRoot: HTMLElement | null = null;
@@ -63,7 +68,7 @@ export class ChatManager {
         <div class="chat-header">
           <div class="chat-title">
             <span class="chat-tag">CHAT</span>
-            <span class="chat-hint">[Échap] ou [T] fermer • [Entrée] envoyer</span>
+            <span class="chat-hint">[Échap] fermer • [Entrée] envoyer</span>
           </div>
           <button class="chat-close-btn" id="chat-close-btn" title="Fermer">✕</button>
         </div>
@@ -127,11 +132,19 @@ export class ChatManager {
         if (e.key === 'Enter') {
           e.preventDefault();
           const val = this.inputEl!.value.trim();
-          if (this.isSuggestionsBoxVisible() && this.currentSuggestions.length > 0 && val.startsWith('/') && !val.includes(' ')) {
+          if (this.isSuggestionsBoxVisible() && this.currentSuggestions.length > 0) {
             const picked = this.currentSuggestions[this.selectedSuggestionIndex];
-            if (val.slice(1).toLowerCase() !== picked.name) {
-              this.applySuggestion(picked);
-              return;
+            if (picked.kind === 'command' && val.startsWith('/') && !val.includes(' ')) {
+              if (val.slice(1).toLowerCase() !== picked.cmd.name) {
+                this.applySuggestion(picked);
+                return;
+              }
+            } else if (picked.kind === 'player') {
+              const lastToken = this.inputEl!.value.split(/\s+/).pop() || '';
+              if (lastToken.startsWith('@') && lastToken.slice(1).toLowerCase() !== picked.name.toLowerCase()) {
+                this.applySuggestion(picked);
+                return;
+              }
             }
           }
           this.submitMessage();
@@ -146,11 +159,6 @@ export class ChatManager {
             this.close();
           }
           return;
-        }
-
-        if (e.key.toLowerCase() === 't' && this.inputEl!.value.length === 0) {
-          e.preventDefault();
-          this.close();
         }
       });
     }
@@ -264,6 +272,21 @@ export class ChatManager {
   }
 
   private handleInputChange(value: string): void {
+    // Autocomplétion @joueur en fin de ligne
+    const mentionMatch = /(?:^|\s)@([^\s]*)$/.exec(value);
+    if (mentionMatch && this.options.getPlayerNames) {
+      const q = mentionMatch[1].toLowerCase();
+      const names = this.options.getPlayerNames().filter(n => n.toLowerCase().includes(q));
+      if (names.length > 0) {
+        this.currentSuggestions = names.map(name => ({ kind: 'player', name }));
+        this.selectedSuggestionIndex = 0;
+        this.renderSuggestions();
+        return;
+      }
+      this.hideSuggestions();
+      return;
+    }
+
     if (!value.startsWith('/') || value.includes(' ')) {
       this.hideSuggestions();
       return;
@@ -279,7 +302,7 @@ export class ChatManager {
       return;
     }
 
-    this.currentSuggestions = matches;
+    this.currentSuggestions = matches.map(cmd => ({ kind: 'command', cmd }));
     this.selectedSuggestionIndex = 0;
     this.renderSuggestions();
   }
@@ -299,15 +322,29 @@ export class ChatManager {
   private renderSuggestions(): void {
     if (!this.suggestionsBox) return;
     this.suggestionsBox.innerHTML = this.currentSuggestions
-      .map((cmd, idx) => `
-        <div class="chat-suggestion-item ${idx === this.selectedSuggestionIndex ? 'selected' : ''}" data-index="${idx}">
-          <div class="chat-suggestion-main">
-            <span class="chat-suggestion-name">/${cmd.name}</span>
-            <span class="chat-suggestion-syntax">${this.escapeHtml(cmd.syntax)}</span>
+      .map((entry, idx) => {
+        const selected = idx === this.selectedSuggestionIndex ? 'selected' : '';
+        if (entry.kind === 'player') {
+          return `
+            <div class="chat-suggestion-item ${selected}" data-index="${idx}">
+              <div class="chat-suggestion-main">
+                <span class="chat-suggestion-name">@${this.escapeHtml(entry.name)}</span>
+                <span class="chat-suggestion-syntax">Joueur</span>
+              </div>
+            </div>
+          `;
+        }
+        const cmd = entry.cmd;
+        return `
+          <div class="chat-suggestion-item ${selected}" data-index="${idx}">
+            <div class="chat-suggestion-main">
+              <span class="chat-suggestion-name">/${cmd.name}</span>
+              <span class="chat-suggestion-syntax">${this.escapeHtml(cmd.syntax)}</span>
+            </div>
+            <div class="chat-suggestion-desc">${this.escapeHtml(cmd.description)}</div>
           </div>
-          <div class="chat-suggestion-desc">${this.escapeHtml(cmd.description)}</div>
-        </div>
-      `)
+        `;
+      })
       .join('');
 
     this.suggestionsBox.querySelectorAll('.chat-suggestion-item').forEach((el) => {
@@ -330,10 +367,15 @@ export class ChatManager {
     });
   }
 
-  private applySuggestion(cmd: ChatCommandDefinition): void {
+  private applySuggestion(entry: SuggestionEntry): void {
     if (!this.inputEl) return;
-    const needsArg = cmd.syntax.includes('<') || cmd.syntax.includes('[');
-    this.inputEl.value = needsArg ? `/${cmd.name} ` : `/${cmd.name}`;
+    if (entry.kind === 'player') {
+      this.inputEl.value = this.inputEl.value.replace(/@([^\s]*)$/, `@${entry.name} `);
+    } else {
+      const cmd = entry.cmd;
+      const needsArg = cmd.syntax.includes('<') || cmd.syntax.includes('[');
+      this.inputEl.value = needsArg ? `/${cmd.name} ` : `/${cmd.name}`;
+    }
     this.inputEl.focus();
     this.hideSuggestions();
   }

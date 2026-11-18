@@ -28,7 +28,9 @@ import {
   type WeaponStatePayload,
   type PlayerDiedPayload,
   type PlayerHitPayload,
-  type ChatMessagePayload
+  type ChatMessagePayload,
+  type HitboxTogglePayload,
+  type KickedPayload
 } from '@prop-hunt/shared';
 
 export function renderGame(): string {
@@ -83,7 +85,6 @@ export function renderGame(): string {
           <h2 class="hud-pause-title">PAUSE</h2>
           <button id="btn-resume-game" class="btn primary">REPRENDRE LA PARTIE</button>
           <button id="btn-toggle-music" class="btn secondary">MUSIQUE : ON</button>
-          <button id="btn-toggle-hitbox" class="btn secondary">HITBOXES : ON</button>
           <button id="btn-leave-game" class="btn back">QUITTER LA PARTIE</button>
           <div id="ws-status" class="hud-pause-meta">WS: Connexion en cours...</div>
         </div>
@@ -204,7 +205,6 @@ export function initGame(): void {
   const pauseOverlay = document.getElementById('pause-menu-overlay');
   const btnPauseMenu = document.getElementById('btn-pause-menu');
   const btnResumeGame = document.getElementById('btn-resume-game');
-  const btnToggleHitbox = document.getElementById('btn-toggle-hitbox');
   const hunterBlindfold = document.getElementById('hunter-blindfold');
   const hunterCountdown = document.getElementById('hunter-countdown');
   const roundEndOverlay = document.getElementById('round-end-overlay');
@@ -222,11 +222,19 @@ export function initGame(): void {
   let lastVfxTime = performance.now();
   let isPauseMenuOpen = false;
 
+  let localPlayerName = '';
   const chatManager = new ChatManager({
     onSendMessage: (text: string) => {
       networkManager.send(MessageType.CHAT_MESSAGE, { text });
     },
-    getLocalPlayerId: () => networkManager.localPlayerId
+    getLocalPlayerId: () => networkManager.localPlayerId,
+    getPlayerNames: () => {
+      const names = Array.from(otherPlayers.values())
+        .map(op => op.name)
+        .filter((n): n is string => Boolean(n));
+      if (localPlayerName) names.unshift(localPlayerName);
+      return Array.from(new Set(names));
+    }
   });
   chatManager.mount(viewGame);
 
@@ -253,6 +261,7 @@ export function initGame(): void {
   if (btnLeaveGame) {
     btnLeaveGame.addEventListener('click', () => {
       setPauseMenuOpen(false);
+      showHitbox = false;
       chatManager.close();
       chatManager.clearMessages();
       musicManager.stop();
@@ -384,7 +393,7 @@ export function initGame(): void {
   });
 
   // État du joueur local
-  let showHitbox = true; // Activer l'affichage visuel de la hitbox (touche 'H' pour activer/désactiver)
+  let showHitbox = false; // Activé uniquement via la commande /hitbox
   let localPlayerRole: PlayerRole = PlayerRole.PROP;
   let currentPhase: GamePhase = GamePhase.LOBBY;
   const player = {
@@ -737,11 +746,11 @@ export function initGame(): void {
     if (!wsStatus) return;
     if (networkManager.isConnected) {
       if (isSpectator) {
-        wsStatus.innerText = 'WS: Connecté | Mode spectateur | H: Hitbox';
+        wsStatus.innerText = 'WS: Connecté | Mode spectateur';
       } else if (localPlayerRole === PlayerRole.HUNTER) {
-        wsStatus.innerText = 'WS: Connecté | Clic: Attaquer | 1/2/3 ou Molette: Arme | R: Recharger | H: Hitbox';
+        wsStatus.innerText = 'WS: Connecté | Clic: Attaquer | 1/2/3 ou Molette: Arme | R: Recharger';
       } else {
-        wsStatus.innerText = 'WS: Connecté | E: Changer Prop | R: Tourner Prop | K: Dégâts (-15) | H: Hitbox';
+        wsStatus.innerText = 'WS: Connecté | E: Changer Prop | R: Tourner Prop | K: Dégâts (-15)';
       }
       wsStatus.style.color = '#4ade80';
     } else {
@@ -757,7 +766,29 @@ export function initGame(): void {
     chatManager.addMessage(payload as ChatMessagePayload);
   });
 
+  networkManager.on<HitboxTogglePayload>(MessageType.HITBOX_TOGGLE, (payload) => {
+    showHitbox = payload?.enabled !== undefined ? payload.enabled : !showHitbox;
+  });
+
+  networkManager.on<KickedPayload>(MessageType.KICKED, (payload) => {
+    if (!viewGame?.classList.contains('active')) return;
+    setPauseMenuOpen(false);
+    setFullMapOpen(false);
+    showHitbox = false;
+    chatManager.close();
+    chatManager.clearMessages();
+    musicManager.stop();
+    exitSpectatorMode();
+    if (roundEndOverlay) roundEndOverlay.style.display = 'none';
+    if (hunterBlindfold) hunterBlindfold.style.display = 'none';
+    switchView(viewGame, viewMain);
+    alert(payload.reason || "Vous avez été expulsé de la partie par l'hôte.");
+  });
+
   networkManager.on(MessageType.WELCOME, (payload) => {
+    if (payload.player?.name) {
+      localPlayerName = payload.player.name;
+    }
     if (payload.player.currentProp) {
       player.currentProp = payload.player.currentProp;
     }
@@ -873,9 +904,22 @@ export function initGame(): void {
         if ('variantIndex' in p && p.variantIndex !== undefined) {
           player.variantIndex = p.variantIndex;
         }
-        // Filet de sécurité si le message PLAYER_DIED a été manqué
+        if (p.name) localPlayerName = p.name;
         if (p.role === PlayerRole.SPECTATOR && !isSpectator && currentPhase !== GamePhase.LOBBY) {
           enterSpectatorMode();
+        } else if (p.role !== PlayerRole.SPECTATOR) {
+          if (isSpectator) {
+            exitSpectatorMode();
+          }
+          if (p.role !== localPlayerRole) {
+            localPlayerRole = p.role;
+            updateWeaponHud();
+            updateWsStatus();
+            if (hunterBlindfold) {
+              hunterBlindfold.style.display =
+                (currentPhase === GamePhase.HIDING && localPlayerRole === PlayerRole.HUNTER) ? 'flex' : 'none';
+            }
+          }
         }
       } else {
         const propDef = ('currentProp' in p && p.currentProp) ? p.currentProp : DEFAULT_PROPS[0];
@@ -1138,19 +1182,6 @@ export function initGame(): void {
   // Gestion des inputs (Z, Q, S, D, et flèches)
   const keys: { [key: string]: boolean } = {};
 
-  const updateHitboxButton = () => {
-    if (btnToggleHitbox) {
-      btnToggleHitbox.textContent = showHitbox ? 'HITBOXES : ON' : 'HITBOXES : OFF';
-    }
-  };
-  if (btnToggleHitbox) {
-    btnToggleHitbox.addEventListener('click', () => {
-      showHitbox = !showHitbox;
-      updateHitboxButton();
-    });
-  }
-  updateHitboxButton();
-
   window.addEventListener('keydown', (e) => {
     if (chatManager.getIsOpen()) {
       return;
@@ -1183,11 +1214,6 @@ export function initGame(): void {
     }
 
     keys[e.key.toLowerCase()] = true;
-    if (e.key.toLowerCase() === 'h') {
-      showHitbox = !showHitbox;
-      updateHitboxButton();
-      console.log(`[DEBUG] Affichage des hitboxes : ${showHitbox ? 'ACTIVÉ' : 'DÉSACTIVÉ'}`);
-    }
     if (e.key.toLowerCase() === 'm' && viewGame?.classList.contains('active')) {
       musicManager.toggleMute();
     }

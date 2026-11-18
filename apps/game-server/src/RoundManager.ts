@@ -363,6 +363,33 @@ export class RoundManager {
     return null;
   }
 
+  /**
+   * Prolonge ou raccourcit le chronomètre de la manche en cours (en secondes).
+   */
+  public adjustTime(deltaSeconds: number): { phase: GamePhase; timeRemaining: number } | null {
+    if (this.phase !== GamePhase.HIDING && this.phase !== GamePhase.HUNTING && this.phase !== GamePhase.COUNTDOWN) {
+      return null;
+    }
+
+    this.timeRemaining = Math.max(0, this.timeRemaining + Math.round(deltaSeconds));
+
+    if (this.timeRemaining <= 0) {
+      if (this.phase === GamePhase.COUNTDOWN) {
+        this.startRound();
+      } else if (this.phase === GamePhase.HIDING) {
+        this.phase = GamePhase.HUNTING;
+        this.timeRemaining = this.config.huntingDuration;
+        this.events.onPhaseChanged?.(GamePhase.HUNTING, this.timeRemaining);
+      } else if (this.phase === GamePhase.HUNTING) {
+        this.endRound(PlayerRole.PROP, 'TIME_EXPIRED');
+      }
+    } else {
+      this.events.onTimerTick?.(this.phase, this.timeRemaining);
+    }
+
+    return { phase: this.phase, timeRemaining: this.timeRemaining };
+  }
+
   // --- HORLOGE SECONDE PAR SECONDE (TICK) ---
 
   public tick(): void {

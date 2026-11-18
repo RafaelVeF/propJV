@@ -55,6 +55,10 @@ interface GameRoom {
     players: Map<string, Player>;
     playerInputs: Map<string, { vx: number; vy: number }>;
     playerRegenTimers: Map<string, number>;
+    /** Joueurs en mode God (0 dégât, traverse les obstacles) */
+    godPlayers: Set<string>;
+    /** Multiplicateurs de vitesse personnalisés (/speed) */
+    playerSpeeds: Map<string, number>;
     /** Armes de chaque chasseur (munitions, délais), recréées à chaque manche */
     arsenals: Map<string, HunterArsenal>;
     /** Grenades lancées qui n'ont pas encore explosé */
@@ -151,6 +155,7 @@ function sendWeaponState(room: GameRoom, hunterId: string, now: number = Date.no
  * et gère la mort (passage en spectateur + vérification de fin de manche).
  */
 function applyDamage(room: GameRoom, targetId: string, damage: number, attackerId?: string, weapon?: WeaponType) {
+    if (room.godPlayers.has(targetId)) return;
     const target = room.players.get(targetId);
     if (!target || !isAlive(target) || damage <= 0) return;
 
@@ -402,6 +407,8 @@ function createRoom(isFreeplay: boolean = false): GameRoom {
                 // Retour au salon : tout le monde ressuscite sous forme humaine
                 roomArsenals.clear();
                 room.pendingGrenades = [];
+                room.godPlayers.clear();
+                room.playerSpeeds.clear();
                 roomPlayers.forEach((p, id) => {
                     roomPlayers.set(id, buildRoundPlayer(p, PlayerRole.PROP, { x: p.x, y: p.y }));
                     roomInputs.set(id, { vx: 0, vy: 0 });
@@ -433,6 +440,8 @@ function createRoom(isFreeplay: boolean = false): GameRoom {
         players: roomPlayers,
         playerInputs: roomInputs,
         playerRegenTimers: roomRegenTimers,
+        godPlayers: new Set<string>(),
+        playerSpeeds: new Map<string, number>(),
         arsenals: roomArsenals,
         pendingGrenades: []
     };
@@ -453,6 +462,8 @@ function leaveCurrentRoom(ws: WebSocket, playerId: string): void {
     room.players.delete(playerId);
     room.playerInputs.delete(playerId);
     room.playerRegenTimers.delete(playerId);
+    room.godPlayers.delete(playerId);
+    room.playerSpeeds.delete(playerId);
 
     broadcastToRoom(roomKey, {
         type: MessageType.PLAYER_LEFT,
@@ -464,6 +475,62 @@ function leaveCurrentRoom(ws: WebSocket, playerId: string): void {
         rooms.delete(roomKey);
         console.log(`[GameServer] Salon vide supprimé : ${roomKey}`);
     }
+}
+
+function kickPlayerFromRoom(room: GameRoom, targetId: string, reason: string): boolean {
+    let targetWs: WebSocket | null = null;
+    clients.forEach((cPlayerId, cWs) => {
+        if (cPlayerId === targetId && clientRooms.get(cWs) === room.key) {
+            targetWs = cWs;
+        }
+    });
+    if (!targetWs) return false;
+
+    leaveCurrentRoom(targetWs, targetId);
+    if ((targetWs as WebSocket).readyState === WebSocket.OPEN) {
+        (targetWs as WebSocket).send(JSON.stringify({
+            type: MessageType.KICKED,
+            payload: { reason }
+        } satisfies NetworkMessage));
+    }
+    return true;
+}
+
+function swapPlayerRole(room: GameRoom, targetId: string): PlayerRole.HUNTER | PlayerRole.PROP | null {
+    const current = room.players.get(targetId);
+    if (!current) return null;
+
+    const newRole = current.role === PlayerRole.HUNTER ? PlayerRole.PROP : PlayerRole.HUNTER;
+    const updated = buildRoundPlayer(current, newRole, { x: current.x, y: current.y });
+    room.players.set(targetId, updated);
+
+    const session = room.roundManager.players.get(targetId);
+    if (session) {
+        session.role = newRole;
+        session.health = updated.health;
+        session.maxHealth = updated.maxHealth ?? 100;
+    }
+
+    if (newRole === PlayerRole.HUNTER) {
+        room.arsenals.set(targetId, new HunterArsenal());
+        sendWeaponState(room, targetId);
+    } else {
+        room.arsenals.delete(targetId);
+    }
+    return newRole;
+}
+
+function endRoomMatch(room: GameRoom): boolean {
+    const phase = room.roundManager.getPhase();
+    if (phase === GamePhase.HIDING || phase === GamePhase.HUNTING) {
+        room.roundManager.endRound(PlayerRole.PROP, 'TIME_EXPIRED');
+        return true;
+    }
+    if (phase === GamePhase.COUNTDOWN) {
+        room.roundManager.resetToLobby();
+        return true;
+    }
+    return false;
 }
 
 function joinRoom(ws: WebSocket, playerId: string, room: GameRoom, customName?: string): void {
@@ -600,23 +667,8 @@ wss.on('connection', (ws) => {
                     if (!senderSession?.isHost || !payload.targetPlayerId || payload.targetPlayerId === playerId) {
                         break;
                     }
-
-                    let targetWs: WebSocket | null = null;
-                    clients.forEach((cPlayerId, cWs) => {
-                        if (cPlayerId === payload.targetPlayerId && clientRooms.get(cWs) === room.key) {
-                            targetWs = cWs;
-                        }
-                    });
-
-                    if (targetWs) {
+                    if (kickPlayerFromRoom(room, payload.targetPlayerId, "Vous avez été expulsé du salon par l'hôte.")) {
                         console.log(`[GameServer][${room.key}] Hôte ${senderSession.name} expulse ${payload.targetPlayerId}`);
-                        leaveCurrentRoom(targetWs, payload.targetPlayerId);
-                        if ((targetWs as WebSocket).readyState === WebSocket.OPEN) {
-                            (targetWs as WebSocket).send(JSON.stringify({
-                                type: MessageType.KICKED,
-                                payload: { reason: "Vous avez été expulsé du salon par l'hôte." }
-                            } satisfies NetworkMessage));
-                        }
                     }
                     break;
                 }
@@ -722,12 +774,33 @@ wss.on('connection', (ws) => {
                 }
 
                 case MessageType.CHAT_MESSAGE: {
+                    const senderSession = room.roundManager.players.get(playerId);
                     handleChatMessage(message.payload, {
                         ws,
                         playerId,
                         roomKey: room.key,
+                        isHost: senderSession?.isHost ?? false,
                         players: room.players,
-                        broadcastToRoom
+                        broadcastToRoom,
+                        killTarget: (targetId) => killPlayer(room, targetId),
+                        damageTarget: (targetId, dmg) => applyDamage(room, targetId, dmg),
+                        isGod: (targetId) => room.godPlayers.has(targetId),
+                        toggleGod: (targetId) => {
+                            if (room.godPlayers.has(targetId)) {
+                                room.godPlayers.delete(targetId);
+                                return false;
+                            }
+                            room.godPlayers.add(targetId);
+                            return true;
+                        },
+                        setSpeed: (targetId, multiplier) => {
+                            room.playerSpeeds.set(targetId, multiplier);
+                        },
+                        swapRole: (targetId) => swapPlayerRole(room, targetId),
+                        kickTarget: (targetId, kickerName) =>
+                            kickPlayerFromRoom(room, targetId, `Vous avez été expulsé par ${kickerName}.`),
+                        adjustTime: (deltaSeconds) => room.roundManager.adjustTime(deltaSeconds),
+                        endMatch: () => endRoomMatch(room)
                     });
                     break;
                 }
@@ -767,7 +840,9 @@ const gameLoop = new GameLoop((deltaTime: number) => {
                 if (player.role === PlayerRole.PROP && player.isLocked) {
                     // Prop verrouillé : immobile
                 } else {
-                    updatePlayerPosition(player, input.vx, input.vy, deltaTime, staticObstacles);
+                    const speedMult = room.playerSpeeds.get(id) ?? 1;
+                    const ignoreObstacles = room.godPlayers.has(id);
+                    updatePlayerPosition(player, input.vx, input.vy, deltaTime, staticObstacles, speedMult, ignoreObstacles);
                 }
             }
 
