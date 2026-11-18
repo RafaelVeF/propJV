@@ -150,42 +150,51 @@ export function renderFriends(): string {
       <div class="menu-container friends-container">
         <div id="friends-alert" class="auth-alert" role="alert" aria-live="polite"></div>
 
-        <!-- Invité (non connecté) -->
-        <div id="friends-guest-notice" class="friends-guest-box hidden">
-          <p class="friends-guest-text">Connectez-vous pour retrouver vos amis et gérer vos demandes.</p>
-          <button type="button" class="btn primary" id="btn-friends-open-auth">SE CONNECTER</button>
-        </div>
-
-        <!-- Contenu connecté -->
-        <div id="friends-authenticated-content">
-          <!-- Liste des Amis -->
-          <div class="players-list">
-            <div class="list-header">
-              <h3>LISTE D'AMIS <span id="friends-count" class="friends-count-badge">0</span></h3>
-              <div class="friends-header-actions">
-                <button type="button" class="icon-btn-inline purple-text" id="btn-refresh-friends" title="Actualiser">↻</button>
-                <button type="button" class="icon-btn-inline purple-text" id="btn-open-add-friend" title="Ajouter un ami">+</button>
+        <div class="friends-panels-wrapper">
+          <!-- Contenu principal (flouté et bloqué si déconnecté) -->
+          <div id="friends-authenticated-content" class="friends-content-area">
+            <!-- Liste des Amis -->
+            <div class="players-list">
+              <div class="list-header">
+                <h3>LISTE D'AMIS <span id="friends-count" class="friends-count-badge">0</span></h3>
+                <div class="friends-header-actions">
+                  <button type="button" class="icon-btn-inline purple-text" id="btn-refresh-friends" title="Actualiser">↻</button>
+                  <button type="button" class="icon-btn-inline purple-text" id="btn-open-add-friend" title="Ajouter un ami">+</button>
+                </div>
               </div>
+              <div id="friends-items-list" class="scrollable-friends-items"></div>
             </div>
-            <div id="friends-items-list" class="scrollable-friends-items"></div>
+
+            <!-- Section Demandes Reçues -->
+            <div class="players-list requests-list">
+              <h3>DEMANDES REÇUES <span id="incoming-requests-count" class="friends-count-badge">0</span></h3>
+              <div id="requests-items-list" class="scrollable-friends-items"></div>
+            </div>
+
+            <!-- Section Demandes Envoyées -->
+            <div id="outgoing-requests-section" class="players-list requests-list" hidden>
+              <h3>DEMANDES ENVOYÉES <span id="outgoing-requests-count" class="friends-count-badge">0</span></h3>
+              <div id="outgoing-requests-list" class="scrollable-friends-items"></div>
+            </div>
+
+            <!-- Section Utilisateurs Bloqués -->
+            <div id="blocked-users-section" class="players-list requests-list" hidden>
+              <h3>UTILISATEURS BLOQUÉS <span id="blocked-users-count" class="friends-count-badge">0</span></h3>
+              <div id="blocked-users-list" class="scrollable-friends-items"></div>
+            </div>
           </div>
 
-          <!-- Section Demandes Reçues -->
-          <div class="players-list requests-list">
-            <h3>DEMANDES REÇUES <span id="incoming-requests-count" class="friends-count-badge">0</span></h3>
-            <div id="requests-items-list" class="scrollable-friends-items"></div>
-          </div>
-
-          <!-- Section Demandes Envoyées -->
-          <div id="outgoing-requests-section" class="players-list requests-list hidden">
-            <h3>DEMANDES ENVOYÉES <span id="outgoing-requests-count" class="friends-count-badge">0</span></h3>
-            <div id="outgoing-requests-list" class="scrollable-friends-items"></div>
-          </div>
-
-          <!-- Section Utilisateurs Bloqués -->
-          <div id="blocked-users-section" class="players-list requests-list hidden">
-            <h3>UTILISATEURS BLOQUÉS <span id="blocked-users-count" class="friends-count-badge">0</span></h3>
-            <div id="blocked-users-list" class="scrollable-friends-items"></div>
+          <!-- Voile flouté bloquant si l'utilisateur n'est pas connecté -->
+          <div id="friends-guest-notice" class="friends-guest-overlay" hidden>
+            <div class="friends-guest-card">
+              <svg class="friends-lock-icon" width="38" height="38" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1s3.1 1.39 3.1 3.1v2z" />
+              </svg>
+              <p class="friends-guest-text">Connectez-vous pour accéder à vos amis et gérer vos demandes.</p>
+              <button type="button" class="btn primary friends-guest-login-btn" id="btn-friends-open-auth">
+                SE CONNECTER
+              </button>
+            </div>
           </div>
         </div>
 
@@ -280,20 +289,40 @@ export function initFriends(): void {
     }
 
     if (outgoingSection && outgoingList) {
-      outgoingSection.classList.toggle('hidden', outgoing.length === 0);
+      outgoingSection.hidden = outgoing.length === 0;
       outgoingList.replaceChildren(...outgoing.map(createOutgoingRequestRow));
     }
 
     if (blockedSection && blockedList) {
-      blockedSection.classList.toggle('hidden', blocked.length === 0);
+      blockedSection.hidden = blocked.length === 0;
       blockedList.replaceChildren(...blocked.map(createBlockedRow));
     }
   };
 
+  const resetLockedPreview = (): void => {
+    if (friendsCount) friendsCount.textContent = '0';
+    if (incomingCount) incomingCount.textContent = '0';
+    if (outgoingCount) outgoingCount.textContent = '0';
+    if (blockedCount) blockedCount.textContent = '0';
+    friendsItemsList?.replaceChildren(createEmptyNotice('Connexion requise.'));
+    requestsItemsList?.replaceChildren(createEmptyNotice('Connexion requise.'));
+    if (outgoingSection) outgoingSection.hidden = true;
+    if (blockedSection) blockedSection.hidden = true;
+  };
+
   const syncAuthVisibility = (): boolean => {
     const loggedIn = isAuthenticated();
-    guestNotice?.classList.toggle('hidden', loggedIn);
-    authenticatedContent?.classList.toggle('hidden', !loggedIn);
+    if (guestNotice) {
+      guestNotice.hidden = loggedIn;
+    }
+    if (authenticatedContent) {
+      authenticatedContent.classList.toggle('is-locked', !loggedIn);
+      authenticatedContent.inert = !loggedIn;
+      authenticatedContent.setAttribute('aria-hidden', String(!loggedIn));
+    }
+    if (!loggedIn) {
+      resetLockedPreview();
+    }
     return loggedIn;
   };
 
@@ -318,6 +347,8 @@ export function initFriends(): void {
   };
 
   const executeRowAction = async (btn: HTMLButtonElement): Promise<void> => {
+    if (!isAuthenticated()) return;
+
     const action = btn.dataset.friendAction;
     const relationshipId = Number.parseInt(btn.dataset.relationshipId ?? '', 10);
     const username = btn.dataset.username;
@@ -366,10 +397,12 @@ export function initFriends(): void {
   });
 
   btnRefreshFriends?.addEventListener('click', () => {
+    if (!isAuthenticated()) return;
     void loadFriends();
   });
 
   btnOpenAddFriend?.addEventListener('click', () => {
+    if (!isAuthenticated()) return;
     setAlert(addFriendAlert, null);
     if (inputAddFriend) inputAddFriend.value = '';
     switchView(viewFriends, viewAddFriend);
@@ -393,7 +426,7 @@ export function initFriends(): void {
   // Envoi d'une demande d'ami
   formAddFriend?.addEventListener('submit', async (event) => {
     event.preventDefault();
-    if (!inputAddFriend || !btnAddFriend) return;
+    if (!inputAddFriend || !btnAddFriend || !isAuthenticated()) return;
 
     const pseudo = inputAddFriend.value.trim();
     if (!USERNAME_PATTERN.test(pseudo)) {
@@ -430,6 +463,9 @@ export function initFriends(): void {
   onAuthChange(() => {
     if (viewFriends?.classList.contains('active')) {
       void loadFriends();
+    } else if (viewAddFriend?.classList.contains('active') && !isAuthenticated()) {
+      switchView(viewAddFriend, viewFriends);
+      syncAuthVisibility();
     } else {
       syncAuthVisibility();
     }
