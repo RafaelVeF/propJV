@@ -2685,14 +2685,22 @@ body {
   gap: 0.5rem;
 }
 
+#view-friends .players-list h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  line-height: 1;
+}
+
 .friends-count-badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   min-width: 1.5rem;
-  padding: 0.05rem 0.45rem;
-  margin-left: 0.35rem;
+  height: 1.45rem;
+  padding: 0 0.45rem;
   font-size: 0.85rem;
+  line-height: 1;
   border-radius: 999px;
   background: rgba(168, 85, 247, 0.2);
   border: 1px solid rgba(168, 85, 247, 0.45);
