@@ -37,11 +37,21 @@ export interface TelemetrySummary {
   favoriteProp: string | null;
 }
 
+export interface SeekerClassSummary {
+  internalName: string;
+  name: string;
+  weaponName: string | null;
+  matchesCount: number;
+  selectionPercent?: number;
+}
+
 export interface MyStatsPayload {
   success: boolean;
+  isAdmin: boolean;
   stats: UserGlobalStats;
   recentMatches: RecentMatchItem[];
   telemetry: TelemetrySummary | null;
+  favoriteSeekerClass: SeekerClassSummary | null;
 }
 
 export interface MatchDetailsHeader {
@@ -117,6 +127,84 @@ export interface MatchDetailsPayload {
   telemetry: MatchTelemetryDocument | null;
 }
 
+export interface GlobalCommunityStats {
+  total_matches: number;
+  total_playtime_seconds: number;
+  total_eliminations: number;
+  hider_wins: number;
+  seeker_wins: number;
+  draw_matches: number;
+}
+
+export interface LeaderboardEntry {
+  rank: number;
+  user_id: number;
+  username: string;
+  wins: number;
+  matches_played: number;
+  winrate: number;
+}
+
+export interface GlobalPropUsageItem {
+  prop: string;
+  count: number;
+  usagePercent: number;
+}
+
+export interface GlobalTelemetrySummary {
+  avgSurvivalTimeSec: number | null;
+  avgAccuracyPercent: number | null;
+  starProp: GlobalPropUsageItem | null;
+  topProps: GlobalPropUsageItem[];
+}
+
+export interface GlobalStatsPayload {
+  success: boolean;
+  leaderboards: {
+    hiders: LeaderboardEntry[];
+    seekers: LeaderboardEntry[];
+  };
+  starProp: GlobalPropUsageItem | null;
+  favoriteSeekerClass: SeekerClassSummary | null;
+}
+
+export interface AdminHealthStats {
+  total_matches: number;
+  total_users: number;
+  total_playtime_seconds: number;
+  total_eliminations: number;
+  hider_wins: number;
+  seeker_wins: number;
+  draw_matches: number;
+}
+
+export interface AdminMapBalanceItem {
+  internalName: string;
+  name: string;
+  totalMatches: number;
+  hiderWins: number;
+  seekerWins: number;
+  hiderWinrate: number;
+  seekerWinrate: number;
+}
+
+export interface AdminStatsPayload {
+  success: boolean;
+  health: AdminHealthStats;
+  telemetry: {
+    avgSurvivalTimeSec: number | null;
+    avgAccuracyPercent: number | null;
+  } | null;
+  maps: AdminMapBalanceItem[];
+}
+
+const GLOBAL_STATS_CACHE_TTL_MS = 30_000;
+let cachedGlobalStats: { payload: GlobalStatsPayload; timestamp: number } | null = null;
+
+export function invalidateGlobalStatsCache(): void {
+  cachedGlobalStats = null;
+}
+
 export class StatsServiceError extends Error {
   readonly status: number;
 
@@ -176,6 +264,28 @@ async function statsRequest<T>(path: string): Promise<T> {
 
 export async function fetchMyStats(): Promise<MyStatsPayload> {
   return statsRequest<MyStatsPayload>('/me');
+}
+
+export async function fetchGlobalStats(forceRefresh = false): Promise<GlobalStatsPayload> {
+  const now = Date.now();
+  if (
+    !forceRefresh &&
+    cachedGlobalStats &&
+    now - cachedGlobalStats.timestamp < GLOBAL_STATS_CACHE_TTL_MS
+  ) {
+    return cachedGlobalStats.payload;
+  }
+
+  const payload = await statsRequest<GlobalStatsPayload>('/global');
+  cachedGlobalStats = {
+    payload,
+    timestamp: Date.now(),
+  };
+  return payload;
+}
+
+export async function fetchAdminStats(): Promise<AdminStatsPayload> {
+  return statsRequest<AdminStatsPayload>('/admin');
 }
 
 export async function fetchMatchDetails(matchId: number): Promise<MatchDetailsPayload> {

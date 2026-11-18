@@ -2609,7 +2609,6 @@ body {
 /* Barre supérieure fixe */
 .stats-sticky-header {
   width: 100%;
-  height: 72px;
   background: #131316;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   flex-shrink: 0;
@@ -2618,40 +2617,101 @@ body {
 
 .stats-header-inner {
   max-width: 1360px;
-  height: 100%;
+  height: 62px;
   margin: 0 auto;
   padding: 0 2.5rem;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  gap: 2rem;
+  gap: 1.5rem;
 }
 
 .stats-header-left {
   display: flex;
-  align-items: baseline;
-  gap: 0.85rem;
+  align-items: center;
   min-width: 0;
 }
 
 .stats-brand-title {
   font-family: var(--font-display);
-  font-size: clamp(1.9rem, 3.2vh, 2.45rem);
+  font-size: clamp(1.85rem, 3vh, 2.35rem);
   letter-spacing: 2px;
   line-height: 1;
   margin: 0;
+}
+
+/* Sélecteur principal à 2 états : MES STATISTIQUES | STATISTIQUES GLOBALES */
+.stats-scope-switch {
+  position: relative;
+  display: inline-grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  padding-bottom: 2px;
+}
+
+.stats-scope-glider {
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  width: 50%;
+  height: 2px;
+  background: var(--color-cyan);
+  transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
+  pointer-events: none;
+}
+
+.stats-scope-btn {
+  position: relative;
+  z-index: 1;
+  background: transparent;
+  border: none;
+  padding: 0.35rem 1.1rem;
+  font-family: var(--font-display);
+  font-size: 1.12rem;
+  letter-spacing: 1.4px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+  text-align: center;
+  transition: color 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.stats-scope-btn:hover {
+  color: var(--color-cyan);
+}
+
+.stats-scope-btn.is-active {
+  color: var(--color-text);
 }
 
 .stats-header-sep {
   color: rgba(255, 255, 255, 0.25);
 }
 
-/* Onglets 100% Souris avec barre active fluide */
+/* Sous-barre d'onglets 100% Souris avec barre active fluide */
 .stats-tactical-tabs {
+  max-width: 1360px;
+  margin: 0 auto;
+  padding: 0 2.5rem;
   display: flex;
   align-items: stretch;
-  height: 72px;
-  gap: 0.5rem;
+  justify-content: center;
+  height: 46px;
+  gap: 1rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+  transition:
+    height 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 200ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 200ms ease-out;
+}
+
+.stats-tactical-tabs.is-hidden-tabs {
+  height: 0;
+  opacity: 0;
+  border-top-color: transparent;
+  pointer-events: none;
 }
 
 .stats-tab-btn {
@@ -2727,11 +2787,11 @@ body {
 .stats-viewport-stage {
   position: relative;
   flex: 1;
+  min-height: 0;
   width: 100%;
   max-width: 1360px;
   margin: 0 auto;
-  padding: 2.2rem 2.5rem;
-  height: calc(100vh - 72px);
+  padding: 1.75rem 2.5rem;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -2824,12 +2884,10 @@ body {
   z-index: 5;
 }
 
-.stats-tab-panel:not(.is-active) {
-  pointer-events: none !important;
-}
-
+.stats-tab-panel:not(.is-active),
 .stats-tab-panel:not(.is-active) * {
   pointer-events: none !important;
+  visibility: hidden !important;
 }
 
 /* ==========================================
@@ -3189,6 +3247,13 @@ body {
   transform: translateX(0);
   pointer-events: auto;
   visibility: visible;
+  z-index: 2;
+}
+
+.stats-role-view:not(.is-active),
+.stats-role-view:not(.is-active) * {
+  pointer-events: none !important;
+  visibility: hidden !important;
 }
 
 .stats-role-metrics-col {
@@ -3921,6 +3986,443 @@ body {
   color: var(--color-text-muted);
 }
 
+/* ==========================================
+   MODE COMMUNAUTÉ : STATISTIQUES GLOBALES
+=========================================== */
+#stats-panel-global {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 1.8rem;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* 1. Bandeau supérieur communautaire : 2 colonnes égales */
+.stats-global-community-strip {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.stats-global-summary-strip {
+  display: grid;
+  grid-template-columns: 1.25fr 1fr 1fr;
+  gap: 2.2rem;
+  padding-bottom: 1.6rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.stats-global-summary-cell {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding-right: 1.8rem;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  min-width: 0;
+}
+
+.stats-global-summary-cell:last-child {
+  padding-right: 0;
+  border-right: none;
+}
+
+.stats-global-hero-row {
+  display: flex;
+  align-items: baseline;
+  gap: 1.1rem;
+}
+
+.stats-global-hero-val {
+  font-family: var(--font-display);
+  font-size: clamp(2.6rem, 4.5vh, 3.6rem);
+  font-weight: 400;
+  letter-spacing: 1.5px;
+  line-height: 1;
+  color: var(--color-text);
+}
+
+.stats-global-hero-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.stats-global-hero-unit {
+  font-family: var(--font-display);
+  font-size: 1.12rem;
+  letter-spacing: 1.2px;
+  color: var(--color-text);
+  line-height: 1;
+}
+
+.stats-global-balance-mini {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.stats-global-balance-labels {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  letter-spacing: 1.1px;
+}
+
+/* Bloc 2 : L'Objet Star (Prop le plus utilisé) */
+.stats-global-star-prop-box {
+  display: flex;
+  align-items: center;
+  gap: 1.35rem;
+  min-height: 68px;
+}
+
+.stats-global-star-sprite-wrap {
+  width: 64px;
+  height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  padding-right: 1.1rem;
+  flex-shrink: 0;
+}
+
+.stats-global-star-sprite {
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
+}
+
+.stats-global-star-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.stats-global-star-name {
+  font-family: var(--font-display);
+  font-size: 2rem;
+  font-weight: 400;
+  letter-spacing: 1.4px;
+  line-height: 1;
+}
+
+/* Bloc 3 : Tendances de la méta */
+.stats-global-meta-rows {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.65rem;
+}
+
+.stats-global-meta-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding-bottom: 0.45rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.stats-global-meta-line:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+
+.stats-global-meta-val {
+  font-family: var(--font-display);
+  font-size: 1.75rem;
+  font-weight: 400;
+  letter-spacing: 1.2px;
+  line-height: 1;
+}
+
+/* 2. Double Leaderboard Top 10 (2 colonnes côte à côte séparées par un filet vertical) */
+.stats-global-leaderboards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2.5rem;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.stats-lb-column {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.stats-lb-column:first-child {
+  padding-right: 2.5rem;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.stats-lb-col-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.stats-lb-table-head {
+  display: grid;
+  grid-template-columns: 56px 1fr 76px 86px 96px;
+  gap: 0.85rem;
+  padding: 0.65rem 0.4rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-family: var(--font-main);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 1.3px;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.stats-lb-table-head span:nth-child(3),
+.stats-lb-table-head span:nth-child(4),
+.stats-lb-table-head span:nth-child(5) {
+  text-align: right;
+}
+
+.stats-lb-scroll-list {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.stats-lb-scroll-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.stats-lb-scroll-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 999px;
+}
+
+.stats-lb-row {
+  display: grid;
+  grid-template-columns: 56px 1fr 76px 86px 96px;
+  gap: 0.85rem;
+  align-items: center;
+  padding: 0.65rem 0.4rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.stats-lb-row.is-current-user {
+  background: rgba(170, 91, 240, 0.07);
+}
+
+.stats-lb-rank {
+  font-family: var(--font-display);
+  font-size: 1.28rem;
+  letter-spacing: 1px;
+  color: var(--color-text-muted);
+}
+
+.stats-lb-rank.is-rank-1 {
+  color: #fbbf24;
+  font-size: 1.45rem;
+}
+
+.stats-lb-rank.is-rank-2 {
+  color: #e4e4e7;
+  font-size: 1.38rem;
+}
+
+.stats-lb-rank.is-rank-3 {
+  color: #d97706;
+  font-size: 1.34rem;
+}
+
+.stats-lb-player {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.stats-lb-username {
+  font-family: var(--font-main);
+  font-size: 0.96rem;
+  font-weight: 600;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stats-lb-stat {
+  font-family: var(--font-main);
+  font-size: 0.92rem;
+  color: var(--color-text-muted);
+  text-align: right;
+}
+
+.stats-lb-winrate {
+  font-family: var(--font-display);
+  font-size: 1.55rem;
+  font-weight: 400;
+  letter-spacing: 1px;
+  line-height: 1;
+  text-align: right;
+}
+
+/* ==========================================
+   MODE ADMIN : SANTÉ & ÉQUILIBRAGE
+=========================================== */
+.stats-scope-btn.is-admin-scope {
+  color: #fbbf24;
+}
+
+.stats-scope-btn.is-admin-scope:hover,
+.stats-scope-btn.is-admin-scope.is-active {
+  color: #fde68a;
+}
+
+#stats-panel-admin {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-start;
+  gap: 1.8rem;
+  height: 100%;
+  overflow: hidden;
+}
+
+.stats-admin-health-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 1.4rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.stats-admin-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 2rem;
+}
+
+.stats-admin-kpi-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding-right: 1.5rem;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.stats-admin-kpi-cell:last-child {
+  padding-right: 0;
+  border-right: none;
+}
+
+.stats-admin-kpi-val {
+  font-family: var(--font-display);
+  font-size: clamp(2.4rem, 4.2vh, 3.4rem);
+  font-weight: 400;
+  letter-spacing: 1.4px;
+  line-height: 1;
+  color: var(--color-text);
+}
+
+.stats-admin-balance-block {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.stats-admin-lower-grid {
+  display: grid;
+  grid-template-columns: 0.85fr 1.15fr;
+  gap: 2.5rem;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.stats-admin-telemetry-col {
+  display: flex;
+  flex-direction: column;
+  padding-right: 2.5rem;
+  border-right: 1px solid rgba(255, 255, 255, 0.08);
+  min-height: 0;
+}
+
+.stats-admin-meta-list {
+  display: flex;
+  flex-direction: column;
+  margin-top: 0.5rem;
+}
+
+.stats-admin-maps-col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.stats-admin-maps-head {
+  display: grid;
+  grid-template-columns: 1fr 80px 1.25fr;
+  gap: 1rem;
+  padding: 0.65rem 0.4rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  font-family: var(--font-main);
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 1.3px;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.stats-admin-maps-head span:nth-child(2) {
+  text-align: right;
+}
+
+.stats-admin-map-row {
+  display: grid;
+  grid-template-columns: 1fr 80px 1.25fr;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.75rem 0.4rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.stats-admin-map-name-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.stats-admin-map-ratio-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.stats-admin-map-ratio-labels {
+  display: flex;
+  justify-content: space-between;
+  font-family: var(--font-display);
+  font-size: 0.96rem;
+  letter-spacing: 0.8px;
+}
+
 @media (max-width: 1024px) {
   .stats-header-inner {
     grid-template-columns: auto 1fr auto;
@@ -3931,12 +4433,21 @@ body {
     display: none;
   }
 
+  .stats-global-community-strip,
+  .stats-global-summary-strip,
+  .stats-global-leaderboards,
+  .stats-admin-kpis,
+  .stats-admin-lower-grid,
   .stats-role-view,
   .stats-teams-split {
     grid-template-columns: 1fr;
     gap: 1.5rem;
   }
 
+  .stats-global-summary-cell,
+  .stats-lb-column:first-child,
+  .stats-admin-kpi-cell,
+  .stats-admin-telemetry-col,
   .stats-role-metrics-col,
   .stats-team-column:first-child {
     padding-right: 0;

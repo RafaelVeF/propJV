@@ -83,6 +83,80 @@ export interface TelemetryStats {
     favoriteProp: string | null;
 }
 
+interface GlobalMatchesSummaryRow extends RowDataPacket {
+    total_matches: number;
+    hider_wins: number;
+    seeker_wins: number;
+    draw_matches: number;
+}
+
+interface GlobalUsersStatsSummaryRow extends RowDataPacket {
+    total_playtime_seconds: number;
+    total_eliminations: number;
+    sum_hider_wins: number;
+    sum_seeker_wins: number;
+}
+
+interface LeaderboardRow extends RowDataPacket {
+    user_id: number;
+    username: string;
+    wins: number;
+    matches_played: number;
+    winrate: number;
+}
+
+interface GlobalTelemetryFacetResult {
+    globalAverages: Array<{
+        playerEntries: number;
+        avgSurvivalTimeSec: number | null;
+        seekerShotsFired: number;
+        seekerShotsHit: number;
+    }>;
+    propRanking: Array<{
+        _id: string;
+        count: number;
+    }>;
+    totalPropUses: Array<{
+        total: number;
+    }>;
+}
+
+export interface GlobalPropUsageItem {
+    prop: string;
+    count: number;
+    usagePercent: number;
+}
+
+export interface GlobalTelemetryStats {
+    avgSurvivalTimeSec: number | null;
+    avgAccuracyPercent: number | null;
+    starProp: GlobalPropUsageItem | null;
+    topProps: GlobalPropUsageItem[];
+}
+
+interface UserAdminRow extends RowDataPacket {
+    admin_flag: number | boolean;
+}
+
+interface SeekerClassFreqRow extends RowDataPacket {
+    class_internal_name: string;
+    class_name: string;
+    weapon_name: string | null;
+    matches_count: number;
+}
+
+interface TotalCountRow extends RowDataPacket {
+    total: number;
+}
+
+interface MapBalanceRow extends RowDataPacket {
+    map_internal_name: string;
+    map_name: string;
+    total_matches: number;
+    hider_wins: number;
+    seeker_wins: number;
+}
+
 const DEFAULT_USER_STATS = {
     total_score: 0,
     hider_wins: 0,
@@ -110,27 +184,77 @@ router.get('/me', requireAuth, async (req: AuthRequest, res: Response): Promise<
             return;
         }
 
-        // 1. Statistiques globales depuis MySQL (users_stats)
-        const [statsRows] = await pool.query<UserStatsRow[]>(
-            `SELECT
-                total_score,
-                hider_wins,
-                seeker_wins,
-                matches_played,
-                total_playtime_seconds,
-                total_eliminations,
-                taunts_used_total,
-                props_transformed_total,
-                props_destroyed_total,
-                damage_dealt_total,
-                damage_taken_total,
-                win_streak_current,
-                win_streak_best
-             FROM users_stats
-             WHERE user_id = ?
-             LIMIT 1`,
-            [userId]
-        );
+        // 1. Statistiques globales depuis MySQL (users_stats) + statut admin + classe Seeker favorite
+        const [
+            [statsRows],
+            [matchRows],
+            [adminRows],
+            [favClassRows],
+        ] = await Promise.all([
+            pool.query<UserStatsRow[]>(
+                `SELECT
+                    total_score,
+                    hider_wins,
+                    seeker_wins,
+                    matches_played,
+                    total_playtime_seconds,
+                    total_eliminations,
+                    taunts_used_total,
+                    props_transformed_total,
+                    props_destroyed_total,
+                    damage_dealt_total,
+                    damage_taken_total,
+                    win_streak_current,
+                    win_streak_best
+                 FROM users_stats
+                 WHERE user_id = ?
+                 LIMIT 1`,
+                [userId]
+            ),
+            pool.query<RecentMatchRow[]>(
+                `SELECT
+                    mu.match_id,
+                    mu.role,
+                    mu.score_earned,
+                    mu.is_survivor,
+                    mu.eliminations,
+                    m.duration_seconds,
+                    m.winning_team,
+                    m.start_time,
+                    mp.internal_name AS map_name
+                 FROM matches_users mu
+                 INNER JOIN matches m ON mu.match_id = m.match_id
+                 INNER JOIN maps mp ON m.map_id = mp.map_id
+                 WHERE mu.user_id = ?
+                 ORDER BY m.start_time DESC, mu.match_id DESC
+                 LIMIT 8`,
+                [userId]
+            ),
+            pool.query<UserAdminRow[]>(
+                `SELECT admin_flag FROM users WHERE user_id = ? LIMIT 1`,
+                [userId]
+            ),
+            pool.query<SeekerClassFreqRow[]>(
+                `SELECT
+                    sc.internal_name AS class_internal_name,
+                    COALESCE(sct.display_name, sc.internal_name) AS class_name,
+                    COALESCE(wt_ranged.display_name, wt_melee.display_name) AS weapon_name,
+                    COUNT(*) AS matches_count
+                 FROM matches_users mu
+                 INNER JOIN seeker_classes sc ON mu.seeker_class_id = sc.seeker_class_id
+                 LEFT JOIN seeker_classes_translations sct
+                    ON sc.seeker_class_id = sct.seeker_class_id AND sct.language_id = 2
+                 LEFT JOIN weapons_translations wt_ranged
+                    ON sc.ranged_weapon_id = wt_ranged.weapon_id AND wt_ranged.language_id = 2
+                 LEFT JOIN weapons_translations wt_melee
+                    ON sc.melee_weapon_id = wt_melee.weapon_id AND wt_melee.language_id = 2
+                 WHERE mu.user_id = ? AND mu.role = 'SEEKER' AND mu.seeker_class_id IS NOT NULL
+                 GROUP BY sc.seeker_class_id, sc.internal_name, sct.display_name, wt_ranged.display_name, wt_melee.display_name
+                 ORDER BY matches_count DESC, sc.seeker_class_id ASC
+                 LIMIT 1`,
+                [userId]
+            ),
+        ]);
 
         const rawStats = statsRows[0];
         const stats = rawStats
@@ -151,26 +275,20 @@ router.get('/me', requireAuth, async (req: AuthRequest, res: Response): Promise<
               }
             : { ...DEFAULT_USER_STATS };
 
-        // 2. Les 8 derniers matchs via matches_users + matches + maps
-        const [matchRows] = await pool.query<RecentMatchRow[]>(
-            `SELECT
-                mu.match_id,
-                mu.role,
-                mu.score_earned,
-                mu.is_survivor,
-                mu.eliminations,
-                m.duration_seconds,
-                m.winning_team,
-                m.start_time,
-                mp.internal_name AS map_name
-             FROM matches_users mu
-             INNER JOIN matches m ON mu.match_id = m.match_id
-             INNER JOIN maps mp ON m.map_id = mp.map_id
-             WHERE mu.user_id = ?
-             ORDER BY m.start_time DESC, mu.match_id DESC
-             LIMIT 8`,
-            [userId]
+        const isAdmin = Boolean(
+            adminRows[0] &&
+                (Number(adminRows[0].admin_flag) === 1 || adminRows[0].admin_flag === true)
         );
+
+        const favClassRow = favClassRows[0];
+        const favoriteSeekerClass = favClassRow
+            ? {
+                  internalName: favClassRow.class_internal_name,
+                  name: favClassRow.class_name,
+                  weaponName: favClassRow.weapon_name ?? null,
+                  matchesCount: Number(favClassRow.matches_count ?? 0),
+              }
+            : null;
 
         const recentMatches = matchRows.map((row) => ({
             match_id: Number(row.match_id),
@@ -275,15 +393,366 @@ router.get('/me', requireAuth, async (req: AuthRequest, res: Response): Promise<
 
         res.json({
             success: true,
+            isAdmin,
             stats,
             recentMatches,
             telemetry,
+            favoriteSeekerClass,
         });
     } catch (error) {
         console.error('Erreur récupération /api/stats/me :', error);
         res.status(500).json({
             success: false,
             message: 'Erreur interne du serveur lors de la récupération des statistiques.',
+        });
+    }
+});
+
+async function fetchMongoGlobalTelemetry(logContext: string): Promise<GlobalTelemetryStats | null> {
+    try {
+        const db = await getMongoDb();
+        const aggResult = await db
+            .collection('match_telemetry')
+            .aggregate<GlobalTelemetryFacetResult>([
+                { $unwind: '$players' },
+                {
+                    $facet: {
+                        globalAverages: [
+                            {
+                                $group: {
+                                    _id: null,
+                                    playerEntries: { $sum: 1 },
+                                    avgSurvivalTimeSec: {
+                                        $avg: {
+                                            $cond: [
+                                                { $eq: ['$players.role', 'HIDER'] },
+                                                '$players.survivalTimeSec',
+                                                null,
+                                            ],
+                                        },
+                                    },
+                                    seekerShotsFired: {
+                                        $sum: {
+                                            $cond: [
+                                                { $eq: ['$players.role', 'SEEKER'] },
+                                                { $ifNull: ['$players.shotsFired', 0] },
+                                                0,
+                                            ],
+                                        },
+                                    },
+                                    seekerShotsHit: {
+                                        $sum: {
+                                            $cond: [
+                                                { $eq: ['$players.role', 'SEEKER'] },
+                                                { $ifNull: ['$players.shotsHit', 0] },
+                                                0,
+                                            ],
+                                        },
+                                    },
+                                },
+                            },
+                        ],
+                        propRanking: [
+                            {
+                                $unwind: {
+                                    path: '$players.propsUsed',
+                                    preserveNullAndEmptyArrays: false,
+                                },
+                            },
+                            { $match: { 'players.propsUsed': { $nin: [null, ''] } } },
+                            { $group: { _id: '$players.propsUsed', count: { $sum: 1 } } },
+                            { $sort: { count: -1, _id: 1 } },
+                            { $limit: 5 },
+                        ],
+                        totalPropUses: [
+                            {
+                                $unwind: {
+                                    path: '$players.propsUsed',
+                                    preserveNullAndEmptyArrays: false,
+                                },
+                            },
+                            { $match: { 'players.propsUsed': { $nin: [null, ''] } } },
+                            { $count: 'total' },
+                        ],
+                    },
+                },
+            ])
+            .toArray();
+
+        const facet = aggResult[0];
+        const avgData = facet?.globalAverages?.[0];
+        const totalPropCount = Number(facet?.totalPropUses?.[0]?.total ?? 0);
+
+        const topProps: GlobalPropUsageItem[] = (facet?.propRanking ?? []).map((item) => {
+            const count = Number(item.count ?? 0);
+            const usagePercent =
+                totalPropCount > 0 ? Math.round((count / totalPropCount) * 1000) / 10 : 0;
+            return {
+                prop: String(item._id),
+                count,
+                usagePercent,
+            };
+        });
+
+        if (!avgData && topProps.length === 0) {
+            return null;
+        }
+
+        const shotsFired = Number(avgData?.seekerShotsFired ?? 0);
+        const shotsHit = Number(avgData?.seekerShotsHit ?? 0);
+
+        return {
+            avgSurvivalTimeSec:
+                avgData?.avgSurvivalTimeSec !== null &&
+                avgData?.avgSurvivalTimeSec !== undefined
+                    ? Math.round(Number(avgData.avgSurvivalTimeSec))
+                    : null,
+            avgAccuracyPercent:
+                shotsFired > 0 ? Math.round((shotsHit / shotsFired) * 1000) / 10 : null,
+            starProp: topProps[0] ?? null,
+            topProps,
+        };
+    } catch (mongoError) {
+        console.warn(
+            `Télémétrie MongoDB indisponible pour ${logContext} :`,
+            (mongoError as Error).message
+        );
+        return null;
+    }
+}
+
+// GET /api/stats/global : Statistiques communautaires (Top 10 Hiders/Seekers, Objet Star, Classe Seeker Star)
+router.get('/global', requireAuth, async (_req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const [
+            [topHidersRows],
+            [topSeekersRows],
+            [starClassRows],
+            [totalSeekerClassRows],
+            mongoTelemetry,
+        ] = await Promise.all([
+            pool.query<LeaderboardRow[]>(
+                `SELECT
+                    u.user_id,
+                    u.username,
+                    us.hider_wins AS wins,
+                    us.matches_played,
+                    ROUND((us.hider_wins * 100.0) / us.matches_played, 1) AS winrate
+                 FROM users_stats us
+                 INNER JOIN users u ON us.user_id = u.user_id
+                 WHERE us.matches_played >= 1
+                 ORDER BY winrate DESC, us.hider_wins DESC, us.total_score DESC
+                 LIMIT 10`
+            ),
+            pool.query<LeaderboardRow[]>(
+                `SELECT
+                    u.user_id,
+                    u.username,
+                    us.seeker_wins AS wins,
+                    us.matches_played,
+                    ROUND((us.seeker_wins * 100.0) / us.matches_played, 1) AS winrate
+                 FROM users_stats us
+                 INNER JOIN users u ON us.user_id = u.user_id
+                 WHERE us.matches_played >= 1
+                 ORDER BY winrate DESC, us.seeker_wins DESC, us.total_score DESC
+                 LIMIT 10`
+            ),
+            pool.query<SeekerClassFreqRow[]>(
+                `SELECT
+                    sc.internal_name AS class_internal_name,
+                    COALESCE(sct.display_name, sc.internal_name) AS class_name,
+                    COALESCE(wt_ranged.display_name, wt_melee.display_name) AS weapon_name,
+                    COUNT(*) AS matches_count
+                 FROM matches_users mu
+                 INNER JOIN seeker_classes sc ON mu.seeker_class_id = sc.seeker_class_id
+                 LEFT JOIN seeker_classes_translations sct
+                    ON sc.seeker_class_id = sct.seeker_class_id AND sct.language_id = 2
+                 LEFT JOIN weapons_translations wt_ranged
+                    ON sc.ranged_weapon_id = wt_ranged.weapon_id AND wt_ranged.language_id = 2
+                 LEFT JOIN weapons_translations wt_melee
+                    ON sc.melee_weapon_id = wt_melee.weapon_id AND wt_melee.language_id = 2
+                 WHERE mu.role = 'SEEKER' AND mu.seeker_class_id IS NOT NULL
+                 GROUP BY sc.seeker_class_id, sc.internal_name, sct.display_name, wt_ranged.display_name, wt_melee.display_name
+                 ORDER BY matches_count DESC, sc.seeker_class_id ASC
+                 LIMIT 1`
+            ),
+            pool.query<TotalCountRow[]>(
+                `SELECT COUNT(*) AS total
+                 FROM matches_users
+                 WHERE role = 'SEEKER' AND seeker_class_id IS NOT NULL`
+            ),
+            fetchMongoGlobalTelemetry('/api/stats/global'),
+        ]);
+
+        const mapLeaderboard = (rows: LeaderboardRow[]) =>
+            rows.map((row, index) => ({
+                rank: index + 1,
+                user_id: Number(row.user_id),
+                username: row.username,
+                wins: Number(row.wins ?? 0),
+                matches_played: Number(row.matches_played ?? 0),
+                winrate: Number(row.winrate ?? 0),
+            }));
+
+        const starClassRow = starClassRows[0];
+        const totalSeekerPicks = Number(totalSeekerClassRows[0]?.total ?? 0);
+        const starClassCount = Number(starClassRow?.matches_count ?? 0);
+
+        const favoriteSeekerClass = starClassRow
+            ? {
+                  internalName: starClassRow.class_internal_name,
+                  name: starClassRow.class_name,
+                  weaponName: starClassRow.weapon_name ?? null,
+                  matchesCount: starClassCount,
+                  selectionPercent:
+                      totalSeekerPicks > 0
+                          ? Math.round((starClassCount / totalSeekerPicks) * 1000) / 10
+                          : 0,
+              }
+            : null;
+
+        res.json({
+            success: true,
+            leaderboards: {
+                hiders: mapLeaderboard(topHidersRows),
+                seekers: mapLeaderboard(topSeekersRows),
+            },
+            starProp: mongoTelemetry?.starProp ?? null,
+            favoriteSeekerClass,
+        });
+    } catch (error) {
+        console.error('Erreur récupération /api/stats/global :', error);
+        res.status(500).json({
+            success: false,
+            message:
+                'Erreur interne du serveur lors de la récupération des statistiques globales.',
+        });
+    }
+});
+
+// GET /api/stats/admin : Santé du jeu & équilibrage (réservé aux administrateurs admin_flag = 1)
+router.get('/admin', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
+    try {
+        const payload = req.user as { userId?: number } | undefined;
+        const userId = Number(payload?.userId);
+
+        if (!userId || Number.isNaN(userId)) {
+            res.status(401).json({ success: false, message: 'Session invalide.' });
+            return;
+        }
+
+        const [adminRows] = await pool.query<UserAdminRow[]>(
+            `SELECT admin_flag FROM users WHERE user_id = ? LIMIT 1`,
+            [userId]
+        );
+        const isAdmin = Boolean(
+            adminRows[0] &&
+                (Number(adminRows[0].admin_flag) === 1 || adminRows[0].admin_flag === true)
+        );
+
+        if (!isAdmin) {
+            res.status(403).json({
+                success: false,
+                message: 'Accès refusé. Droits administrateur requis.',
+            });
+            return;
+        }
+
+        const [
+            [matchesSummaryRows],
+            [usersStatsSummaryRows],
+            [usersCountRows],
+            [mapBalanceRows],
+            mongoTelemetry,
+        ] = await Promise.all([
+            pool.query<GlobalMatchesSummaryRow[]>(
+                `SELECT
+                    COUNT(*) AS total_matches,
+                    COALESCE(SUM(CASE WHEN winning_team = 'HIDER' THEN 1 ELSE 0 END), 0) AS hider_wins,
+                    COALESCE(SUM(CASE WHEN winning_team = 'SEEKER' THEN 1 ELSE 0 END), 0) AS seeker_wins,
+                    COALESCE(SUM(CASE WHEN winning_team = 'DRAW' THEN 1 ELSE 0 END), 0) AS draw_matches
+                 FROM matches`
+            ),
+            pool.query<GlobalUsersStatsSummaryRow[]>(
+                `SELECT
+                    COALESCE(SUM(total_playtime_seconds), 0) AS total_playtime_seconds,
+                    COALESCE(SUM(total_eliminations), 0) AS total_eliminations,
+                    COALESCE(SUM(hider_wins), 0) AS sum_hider_wins,
+                    COALESCE(SUM(seeker_wins), 0) AS sum_seeker_wins
+                 FROM users_stats`
+            ),
+            pool.query<TotalCountRow[]>(`SELECT COUNT(*) AS total FROM users`),
+            pool.query<MapBalanceRow[]>(
+                `SELECT
+                    mp.internal_name AS map_internal_name,
+                    COALESCE(mt.display_name, mp.internal_name) AS map_name,
+                    COUNT(*) AS total_matches,
+                    COALESCE(SUM(CASE WHEN m.winning_team = 'HIDER' THEN 1 ELSE 0 END), 0) AS hider_wins,
+                    COALESCE(SUM(CASE WHEN m.winning_team = 'SEEKER' THEN 1 ELSE 0 END), 0) AS seeker_wins
+                 FROM matches m
+                 INNER JOIN maps mp ON m.map_id = mp.map_id
+                 LEFT JOIN maps_translations mt ON mp.map_id = mt.map_id AND mt.language_id = 2
+                 GROUP BY mp.map_id, mp.internal_name, mt.display_name
+                 ORDER BY total_matches DESC, mp.map_id ASC`
+            ),
+            fetchMongoGlobalTelemetry('/api/stats/admin'),
+        ]);
+
+        const mRow = matchesSummaryRows[0];
+        const uRow = usersStatsSummaryRows[0];
+        const matchesHiderWins = Number(mRow?.hider_wins ?? 0);
+        const matchesSeekerWins = Number(mRow?.seeker_wins ?? 0);
+        const sumHiderWins = Number(uRow?.sum_hider_wins ?? 0);
+        const sumSeekerWins = Number(uRow?.sum_seeker_wins ?? 0);
+
+        const hiderWins =
+            matchesHiderWins + matchesSeekerWins > 0 ? matchesHiderWins : sumHiderWins;
+        const seekerWins =
+            matchesHiderWins + matchesSeekerWins > 0 ? matchesSeekerWins : sumSeekerWins;
+
+        const health = {
+            total_matches: Number(mRow?.total_matches ?? 0),
+            total_users: Number(usersCountRows[0]?.total ?? 0),
+            total_playtime_seconds: Number(uRow?.total_playtime_seconds ?? 0),
+            total_eliminations: Number(uRow?.total_eliminations ?? 0),
+            hider_wins: hiderWins,
+            seeker_wins: seekerWins,
+            draw_matches: Number(mRow?.draw_matches ?? 0),
+        };
+
+        const maps = mapBalanceRows.map((row) => {
+            const total = Number(row.total_matches ?? 0);
+            const hWins = Number(row.hider_wins ?? 0);
+            const sWins = Number(row.seeker_wins ?? 0);
+            const decided = hWins + sWins;
+            return {
+                internalName: row.map_internal_name,
+                name: row.map_name,
+                totalMatches: total,
+                hiderWins: hWins,
+                seekerWins: sWins,
+                hiderWinrate: decided > 0 ? Math.round((hWins / decided) * 1000) / 10 : 0,
+                seekerWinrate: decided > 0 ? Math.round((sWins / decided) * 1000) / 10 : 0,
+            };
+        });
+
+        res.json({
+            success: true,
+            health,
+            telemetry: mongoTelemetry
+                ? {
+                      avgSurvivalTimeSec: mongoTelemetry.avgSurvivalTimeSec,
+                      avgAccuracyPercent: mongoTelemetry.avgAccuracyPercent,
+                  }
+                : null,
+            maps,
+        });
+    } catch (error) {
+        console.error('Erreur récupération /api/stats/admin :', error);
+        res.status(500).json({
+            success: false,
+            message:
+                'Erreur interne du serveur lors de la récupération des métriques administrateur.',
         });
     }
 });

@@ -2,9 +2,16 @@ import { switchView, navigateTo } from './viewManager';
 import { isAuthenticated, onAuthChange, getCurrentUser } from '../services/authService';
 import {
   fetchMyStats,
+  fetchGlobalStats,
+  fetchAdminStats,
   fetchMatchDetails,
+  invalidateGlobalStatsCache,
   StatsServiceError,
   type MyStatsPayload,
+  type GlobalStatsPayload,
+  type AdminStatsPayload,
+  type AdminMapBalanceItem,
+  type LeaderboardEntry,
   type RecentMatchItem,
   type MatchDetailsPayload,
   type MatchParticipant,
@@ -12,6 +19,7 @@ import {
   type MatchTelemetryPlayer,
 } from '../services/statsService';
 
+type StatsScope = 'personal' | 'global' | 'admin';
 type StatsTabId = 'overview' | 'roles' | 'archives';
 type RoleCamp = 'HIDER' | 'SEEKER';
 type ArchiveFilter = 'ALL' | 'WINS' | 'LOSSES';
@@ -212,24 +220,22 @@ export function renderStats(): string {
   return `
     <!-- Vue 8 : Statistiques (Plein Écran 100vw x 100vh - 100% Souris - Zéro Scroll Global) -->
     <div id="view-stats" class="view stats-fullscreen-view hidden">
-      <!-- BARRE SUPÉRIEURE FIXE : Titre + Onglets + Action Retour Unique -->
+      <!-- BARRE SUPÉRIEURE FIXE : Titre + Sélecteur Mode + Action Retour Unique + Sous-onglets -->
       <header class="stats-sticky-header">
         <div class="stats-header-inner">
           <div class="stats-header-left">
             <h2 class="stats-brand-title purple-text">STATISTIQUES</h2>
           </div>
 
-          <nav class="stats-tactical-tabs" id="stats-tactical-tabs" aria-label="Sous-menus des statistiques">
-            <button type="button" class="stats-tab-btn is-active" data-tab="overview">
-              <span class="stats-tab-label">VUE D'ENSEMBLE</span>
+          <div class="stats-scope-switch" id="stats-scope-switch" role="tablist" aria-label="Mode des statistiques">
+            <div class="stats-scope-glider" id="stats-scope-glider"></div>
+            <button type="button" class="stats-scope-btn is-active" data-stats-scope="personal" id="btn-scope-personal">
+              MES STATISTIQUES
             </button>
-            <button type="button" class="stats-tab-btn" data-tab="roles">
-              <span class="stats-tab-label">RÔLES &amp; MAÎTRISE</span>
+            <button type="button" class="stats-scope-btn" data-stats-scope="global" id="btn-scope-global">
+              STATISTIQUES GLOBALES
             </button>
-            <button type="button" class="stats-tab-btn" data-tab="archives">
-              <span class="stats-tab-label">ARCHIVES DES MATCHS</span>
-            </button>
-          </nav>
+          </div>
 
           <div class="stats-header-right">
             <button type="button" class="stats-nav-back-btn" id="btn-back-main-from-stats" data-action="back">
@@ -237,6 +243,18 @@ export function renderStats(): string {
             </button>
           </div>
         </div>
+
+        <nav class="stats-tactical-tabs" id="stats-tactical-tabs" aria-label="Sous-menus des statistiques">
+          <button type="button" class="stats-tab-btn is-active" data-tab="overview">
+            <span class="stats-tab-label">VUE D'ENSEMBLE</span>
+          </button>
+          <button type="button" class="stats-tab-btn" data-tab="roles">
+            <span class="stats-tab-label">RÔLES &amp; MAÎTRISE</span>
+          </button>
+          <button type="button" class="stats-tab-btn" data-tab="archives">
+            <span class="stats-tab-label">ARCHIVES DES MATCHS</span>
+          </button>
+        </nav>
       </header>
 
       <!-- ZONE DE CONTENU FIXE 100VH -->
@@ -358,7 +376,7 @@ export function renderStats(): string {
                 <!-- Vitrine visuelle du Prop fétiche (illustrant la donnée MongoDB) -->
                 <div class="stats-role-showcase-col">
                   <div class="stats-showcase-header">
-                    <span class="stats-section-caption">PROP FÉTICHE (LE PLUS UTILISÉ)</span>
+                    <span class="stats-section-caption">PROP FÉTICHE</span>
                     <strong class="stats-showcase-title purple-text" id="stat-hider-fav-prop-name">—</strong>
                   </div>
 
@@ -392,6 +410,10 @@ export function renderStats(): string {
                   <div class="stats-flat-row">
                     <span class="stats-row-label">Dégâts totaux infligés</span>
                     <strong class="stats-row-val" id="stat-seeker-damage">0</strong>
+                  </div>
+                  <div class="stats-flat-row">
+                    <span class="stats-row-label">Classe de chercheur favorite</span>
+                    <strong class="stats-row-val blue-text" id="stat-seeker-fav-class">—</strong>
                   </div>
                 </div>
 
@@ -466,6 +488,155 @@ export function renderStats(): string {
               </div>
             </div>
           </section>
+
+          <!-- ==========================================
+               MODE COMMUNAUTÉ : STATISTIQUES GLOBALES
+          =========================================== -->
+          <section class="stats-tab-panel" id="stats-panel-global" data-panel="global" aria-label="Statistiques globales de la communauté">
+            <!-- 1. Bandeau communautaire épuré en 2 colonnes égales -->
+            <div class="stats-global-community-strip">
+              <!-- Colonne 1 : L'Objet Star (Prop le plus utilisé - MongoDB) -->
+              <div class="stats-global-summary-cell">
+                <span class="stats-kpi-label">L'OBJET STAR</span>
+                <div class="stats-global-star-prop-box">
+                  <div class="stats-global-star-sprite-wrap">
+                    <span class="stats-no-prop-dash" id="stat-global-star-prop-empty">—</span>
+                    <img
+                      src="/assets/props/can/Can_F.png"
+                      alt="Prop le plus utilisé"
+                      class="pixel-sprite stats-global-star-sprite hidden"
+                      id="stat-global-star-prop-img"
+                    />
+                  </div>
+                  <div class="stats-global-star-info">
+                    <strong class="stats-global-star-name purple-text" id="stat-global-star-prop-name">—</strong>
+                    <span class="stats-kpi-sub" id="stat-global-star-prop-meta">AUCUNE DONNÉE TÉLÉMÉTRIQUE</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Colonne 2 : La Classe Seeker Star (Classe la plus jouée - SQL) -->
+              <div class="stats-global-summary-cell">
+                <span class="stats-kpi-label">LA CLASSE SEEKER STAR</span>
+                <div class="stats-global-star-prop-box">
+                  <div class="stats-global-star-info">
+                    <strong class="stats-global-star-name blue-text" id="stat-global-star-class-name">—</strong>
+                    <span class="stats-kpi-sub" id="stat-global-star-class-meta">AUCUNE PARTIE SEEKER ENREGISTRÉE</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 2. Double Leaderboard Top 10 (2 colonnes côte à côte séparées par un filet vertical) -->
+            <div class="stats-global-leaderboards">
+              <!-- Colonne gauche : TOP 10 HIDERS (Winrate %) -->
+              <div class="stats-lb-column">
+                <div class="stats-lb-col-header">
+                  <h3 class="stats-section-title purple-text">TOP 10 HIDERS (WINRATE %)</h3>
+                  <span class="stats-recent-meta">CLASSEMENT MAÎTRISE HIDER</span>
+                </div>
+                <div class="stats-lb-table-head">
+                  <span>RANG</span>
+                  <span>JOUEUR</span>
+                  <span>PARTIES</span>
+                  <span>VICTOIRES</span>
+                  <span>WINRATE</span>
+                </div>
+                <div class="stats-lb-scroll-list" id="stats-lb-hiders-list"></div>
+              </div>
+
+              <!-- Colonne droite : TOP 10 SEEKERS (Winrate %) -->
+              <div class="stats-lb-column">
+                <div class="stats-lb-col-header">
+                  <h3 class="stats-section-title blue-text">TOP 10 SEEKERS (WINRATE %)</h3>
+                  <span class="stats-recent-meta">CLASSEMENT MAÎTRISE SEEKER</span>
+                </div>
+                <div class="stats-lb-table-head">
+                  <span>RANG</span>
+                  <span>JOUEUR</span>
+                  <span>PARTIES</span>
+                  <span>VICTOIRES</span>
+                  <span>WINRATE</span>
+                </div>
+                <div class="stats-lb-scroll-list" id="stats-lb-seekers-list"></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ==========================================
+               MODE ADMIN : SANTÉ & ÉQUILIBRAGE (admin_flag = 1)
+          =========================================== -->
+          <section class="stats-tab-panel" id="stats-panel-admin" data-panel="admin" aria-label="Administration, santé du jeu et équilibrage">
+            <!-- 1. Bandeau Santé & Équilibre -->
+            <div class="stats-admin-health-strip">
+              <div class="stats-admin-kpis">
+                <div class="stats-admin-kpi-cell">
+                  <span class="stats-kpi-label">PARTIES DISPUTÉES</span>
+                  <strong class="stats-admin-kpi-val" id="stat-admin-matches">0</strong>
+                </div>
+                <div class="stats-admin-kpi-cell">
+                  <span class="stats-kpi-label">JOUEURS INSCRITS</span>
+                  <strong class="stats-admin-kpi-val cyan-text" id="stat-admin-users">0</strong>
+                </div>
+                <div class="stats-admin-kpi-cell">
+                  <span class="stats-kpi-label">TEMPS DE JEU CUMULÉ</span>
+                  <strong class="stats-admin-kpi-val" id="stat-admin-playtime">0h 00m</strong>
+                </div>
+                <div class="stats-admin-kpi-cell">
+                  <span class="stats-kpi-label">ÉLIMINATIONS TOTALES</span>
+                  <strong class="stats-admin-kpi-val purple-text" id="stat-admin-elims">0</strong>
+                </div>
+              </div>
+
+              <!-- Jauge bicolore globale Hiders vs Seekers -->
+              <div class="stats-admin-balance-block">
+                <div class="stats-global-balance-labels">
+                  <span class="purple-text">VICTOIRES HIDERS : <strong id="stat-admin-hider-wins">0</strong> (<span id="stat-admin-hider-pct">50%</span>)</span>
+                  <span class="stats-section-caption">ÉQUILIBRE GLOBAL DES VICTOIRES</span>
+                  <span class="blue-text">(<span id="stat-admin-seeker-pct">50%</span>) <strong id="stat-admin-seeker-wins">0</strong> : VICTOIRES SEEKERS</span>
+                </div>
+                <div class="stats-ratio-bar-track">
+                  <div class="stats-ratio-bar-hider" id="stat-admin-bar-hider" style="width: 50%"></div>
+                  <div class="stats-ratio-bar-seeker" id="stat-admin-bar-seeker" style="width: 50%"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 2. Indicateurs de télémétrie & Équilibrage par carte -->
+            <div class="stats-admin-lower-grid">
+              <!-- Colonne gauche : Télémétrie globale -->
+              <div class="stats-admin-telemetry-col">
+                <div class="stats-lb-col-header">
+                  <h3 class="stats-section-title cyan-text">MÉTRIQUES D'ÉQUILIBRAGE (TÉLÉMÉTRIE)</h3>
+                  <span class="stats-recent-meta">MONGODB</span>
+                </div>
+                <div class="stats-admin-meta-list">
+                  <div class="stats-flat-row">
+                    <span class="stats-row-label">Survie moyenne globale Hider</span>
+                    <strong class="stats-row-val purple-text" id="stat-admin-avg-survival">—</strong>
+                  </div>
+                  <div class="stats-flat-row">
+                    <span class="stats-row-label">Précision moyenne globale Seeker</span>
+                    <strong class="stats-row-val cyan-text" id="stat-admin-avg-accuracy">—</strong>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Colonne droite : Équilibrage par carte -->
+              <div class="stats-admin-maps-col">
+                <div class="stats-lb-col-header">
+                  <h3 class="stats-section-title">ÉQUILIBRAGE PAR CARTE</h3>
+                  <span class="stats-recent-meta" id="stats-admin-maps-count">0 CARTE</span>
+                </div>
+                <div class="stats-admin-maps-head">
+                  <span>CARTE</span>
+                  <span>PARTIES</span>
+                  <span>RATIO HIDER / SEEKER</span>
+                </div>
+                <div class="stats-lb-scroll-list" id="stats-admin-maps-list"></div>
+              </div>
+            </div>
+          </section>
         </div>
       </main>
     </div>
@@ -477,6 +648,64 @@ function setText(id: string, value: string): void {
   if (el) {
     el.textContent = value;
   }
+}
+
+function renderAdminMapRow(map: AdminMapBalanceItem): string {
+  const decided = map.hiderWins + map.seekerWins;
+  const hiderWidth = decided > 0 ? map.hiderWinrate : 50;
+  const seekerWidth = decided > 0 ? map.seekerWinrate : 50;
+  const opacityStyle = decided > 0 ? '1' : '0.35';
+
+  return `
+    <div class="stats-admin-map-row">
+      <div class="stats-admin-map-name-wrap">
+        <strong class="stats-lb-username">${escapeHtml(map.name)}</strong>
+        <span class="stats-tp-loadout">${escapeHtml(map.internalName)}</span>
+      </div>
+      <span class="stats-lb-stat">${map.totalMatches}</span>
+      <div class="stats-admin-map-ratio-wrap">
+        <div class="stats-admin-map-ratio-labels">
+          <span class="purple-text">${map.hiderWinrate}% (${map.hiderWins})</span>
+          <span class="blue-text">(${map.seekerWins}) ${map.seekerWinrate}%</span>
+        </div>
+        <div class="stats-ratio-bar-track">
+          <div class="stats-ratio-bar-hider" style="width: ${hiderWidth}%; opacity: ${opacityStyle};"></div>
+          <div class="stats-ratio-bar-seeker" style="width: ${seekerWidth}%; opacity: ${opacityStyle};"></div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function renderLeaderboardRow(
+  entry: LeaderboardEntry,
+  camp: 'HIDER' | 'SEEKER',
+  currentUserId: number | null
+): string {
+  const isMe = currentUserId !== null && entry.user_id === currentUserId;
+  const rankClass =
+    entry.rank === 1
+      ? 'is-rank-1'
+      : entry.rank === 2
+      ? 'is-rank-2'
+      : entry.rank === 3
+      ? 'is-rank-3'
+      : '';
+  const winrateClass = camp === 'HIDER' ? 'purple-text' : 'cyan-text';
+  const formattedWinrate = `${Number(entry.winrate ?? 0).toFixed(1)}%`;
+
+  return `
+    <div class="stats-lb-row ${isMe ? 'is-current-user' : ''}">
+      <span class="stats-lb-rank ${rankClass}">#${entry.rank}</span>
+      <div class="stats-lb-player">
+        <strong class="stats-lb-username">${escapeHtml(entry.username)}</strong>
+        ${isMe ? '<span class="stats-me-tag">VOUS</span>' : ''}
+      </div>
+      <span class="stats-lb-stat">${entry.matches_played}</span>
+      <span class="stats-lb-stat">${entry.wins}</span>
+      <strong class="stats-lb-winrate ${winrateClass}">${formattedWinrate}</strong>
+    </div>
+  `;
 }
 
 function renderRecentMatchRow(match: RecentMatchItem): string {
@@ -837,29 +1066,90 @@ export function initStats(): void {
   const rootEl: HTMLElement = viewStats;
 
   let isStatsLoading = false;
+  let isGlobalLoading = false;
+  let isAdminLoading = false;
   let isMatchDetailLoading = false;
+  let isCurrentUserAdmin = false;
+  let activeScope: StatsScope = 'personal';
   let activeTab: StatsTabId = 'overview';
   let activeRoleCamp: RoleCamp = 'HIDER';
   let activeArchiveFilter: ArchiveFilter = 'ALL';
   let activeMatchId: number | null = null;
   let cachedPayload: MyStatsPayload | null = null;
+  let cachedGlobalPayload: GlobalStatsPayload | null = null;
+  let cachedAdminPayload: AdminStatsPayload | null = null;
 
   function updateHeaderBackLabel(): void {
     const backBtnLabel = document.getElementById('stats-back-btn-label');
     if (backBtnLabel) {
-      backBtnLabel.textContent = activeMatchId !== null ? '← RETOUR AUX ARCHIVES' : '← RETOUR';
+      backBtnLabel.textContent =
+        activeScope === 'personal' && activeMatchId !== null
+          ? '← RETOUR AUX ARCHIVES'
+          : '← RETOUR';
+    }
+  }
+
+  function syncAdminScopeButton(): void {
+    const scopeSwitch = document.getElementById('stats-scope-switch');
+    if (!scopeSwitch) return;
+
+    const existingAdminBtn = document.getElementById('btn-scope-admin');
+    if (isCurrentUserAdmin && !existingAdminBtn) {
+      const adminBtn = document.createElement('button');
+      adminBtn.type = 'button';
+      adminBtn.className = 'stats-scope-btn is-admin-scope';
+      adminBtn.dataset.statsScope = 'admin';
+      adminBtn.id = 'btn-scope-admin';
+      adminBtn.textContent = 'ADMIN · ÉQUILIBRAGE';
+      scopeSwitch.appendChild(adminBtn);
+    } else if (!isCurrentUserAdmin && existingAdminBtn) {
+      existingAdminBtn.remove();
+    }
+
+    scopeSwitch.style.gridTemplateColumns = isCurrentUserAdmin
+      ? 'repeat(3, 1fr)'
+      : 'repeat(2, 1fr)';
+
+    if (!isCurrentUserAdmin && activeScope === 'admin') {
+      activeScope = 'personal';
     }
   }
 
   function syncTabsDOM(): void {
-    const tabBtns = rootEl.querySelectorAll<HTMLButtonElement>('[data-tab]');
-    tabBtns.forEach((btn) => {
-      btn.classList.toggle('is-active', btn.dataset.tab === activeTab);
+    const scopeGlider = document.getElementById('stats-scope-glider');
+    if (scopeGlider) {
+      scopeGlider.style.width = isCurrentUserAdmin ? '33.3333%' : '50%';
+      const translatePct =
+        activeScope === 'admin' && isCurrentUserAdmin
+          ? '200%'
+          : activeScope === 'global'
+          ? '100%'
+          : '0%';
+      scopeGlider.style.transform = `translateX(${translatePct})`;
+    }
+
+    const scopeBtns = rootEl.querySelectorAll<HTMLButtonElement>('[data-stats-scope]');
+    scopeBtns.forEach((btn) => {
+      btn.classList.toggle('is-active', btn.dataset.statsScope === activeScope);
     });
 
+    const tacticalTabs = document.getElementById('stats-tactical-tabs');
+    if (tacticalTabs) {
+      tacticalTabs.classList.toggle('is-hidden-tabs', activeScope !== 'personal');
+    }
+
+    const tabBtns = rootEl.querySelectorAll<HTMLButtonElement>('[data-tab]');
+    tabBtns.forEach((btn) => {
+      btn.classList.toggle(
+        'is-active',
+        activeScope === 'personal' && btn.dataset.tab === activeTab
+      );
+    });
+
+    const targetPanel = activeScope === 'personal' ? activeTab : activeScope;
     const panels = rootEl.querySelectorAll<HTMLElement>('[data-panel]');
     panels.forEach((panel) => {
-      panel.classList.toggle('is-active', panel.dataset.panel === activeTab);
+      panel.classList.toggle('is-active', panel.dataset.panel === targetPanel);
     });
   }
 
@@ -896,8 +1186,9 @@ export function initStats(): void {
   }
 
   function switchTab(targetTab: StatsTabId): void {
-    if (activeTab === targetTab && activeMatchId === null) return;
+    if (activeScope === 'personal' && activeTab === targetTab && activeMatchId === null) return;
 
+    activeScope = 'personal';
     activeTab = targetTab;
     if (activeMatchId !== null) {
       closeMatchReport();
@@ -912,6 +1203,35 @@ export function initStats(): void {
       } else if (targetTab === 'roles') {
         animateRoleCounters(cachedPayload, activeRoleCamp);
       } else if (targetTab === 'archives') {
+        applyArchiveFilter(activeArchiveFilter);
+      }
+    }
+  }
+
+  function switchScope(targetScope: StatsScope): void {
+    if (targetScope === 'admin' && !isCurrentUserAdmin) {
+      activeScope = 'personal';
+      syncTabsDOM();
+      updateHeaderBackLabel();
+      return;
+    }
+
+    if (activeScope === targetScope) return;
+    activeScope = targetScope;
+
+    syncTabsDOM();
+    updateHeaderBackLabel();
+
+    if (targetScope === 'global') {
+      void loadGlobalStats(false);
+    } else if (targetScope === 'admin') {
+      void loadAdminStats();
+    } else if (cachedPayload) {
+      if (activeTab === 'overview') {
+        animateOverviewCounters(cachedPayload);
+      } else if (activeTab === 'roles') {
+        animateRoleCounters(cachedPayload, activeRoleCamp);
+      } else if (activeTab === 'archives') {
         applyArchiveFilter(activeArchiveFilter);
       }
     }
@@ -1058,6 +1378,14 @@ export function initStats(): void {
       );
       animateNumber(document.getElementById('stat-seeker-damage'), stats.damage_dealt_total ?? 0);
 
+      const favClass = payload.favoriteSeekerClass;
+      if (favClass) {
+        const countSuffix = `${favClass.matchesCount} partie${favClass.matchesCount > 1 ? 's' : ''}`;
+        setText('stat-seeker-fav-class', `${favClass.name} (${countSuffix})`);
+      } else {
+        setText('stat-seeker-fav-class', '—');
+      }
+
       const acc = telemetry?.accuracyPercent;
       const ringEl = document.getElementById(
         'stat-seeker-accuracy-ring'
@@ -1088,6 +1416,10 @@ export function initStats(): void {
 
   function populateAllStats(payload: MyStatsPayload): void {
     cachedPayload = payload;
+    isCurrentUserAdmin = Boolean(payload.isAdmin);
+    syncAdminScopeButton();
+    syncTabsDOM();
+
     animateOverviewCounters(payload);
     animateRoleCounters(payload, activeRoleCamp);
 
@@ -1098,13 +1430,222 @@ export function initStats(): void {
     applyArchiveFilter(activeArchiveFilter);
   }
 
+  function populateGlobalStats(payload: GlobalStatsPayload): void {
+    cachedGlobalPayload = payload;
+    const { leaderboards, starProp, favoriteSeekerClass } = payload;
+
+    // 1. L'Objet Star (Prop #1 de la communauté)
+    const propMeta = getPropMeta(starProp?.prop);
+    const starImg = document.getElementById('stat-global-star-prop-img') as HTMLImageElement | null;
+    const starEmpty = document.getElementById('stat-global-star-prop-empty');
+
+    if (starProp && propMeta) {
+      setText('stat-global-star-prop-name', propMeta.label.toUpperCase());
+      setText(
+        'stat-global-star-prop-meta',
+        `${starProp.count} UTILISATION${starProp.count > 1 ? 'S' : ''} · ${starProp.usagePercent}% DE SÉLECTION`
+      );
+      if (starImg) {
+        starImg.src = propMeta.sprite;
+        starImg.alt = propMeta.label;
+        starImg.classList.remove('hidden');
+      }
+      if (starEmpty) {
+        starEmpty.classList.add('hidden');
+      }
+    } else {
+      setText('stat-global-star-prop-name', '—');
+      setText('stat-global-star-prop-meta', 'AUCUN PROP ENREGISTRÉ');
+      if (starImg) {
+        starImg.classList.add('hidden');
+      }
+      if (starEmpty) {
+        starEmpty.classList.remove('hidden');
+      }
+    }
+
+    // 2. La Classe Seeker Star (la plus jouée)
+    if (favoriteSeekerClass) {
+      setText('stat-global-star-class-name', favoriteSeekerClass.name.toUpperCase());
+      const weaponPart = favoriteSeekerClass.weaponName
+        ? `ARME : ${favoriteSeekerClass.weaponName.toUpperCase()} · `
+        : '';
+      const pctPart =
+        typeof favoriteSeekerClass.selectionPercent === 'number'
+          ? `${favoriteSeekerClass.selectionPercent}% DE SÉLECTION (${favoriteSeekerClass.matchesCount})`
+          : `${favoriteSeekerClass.matchesCount} PARTIE${favoriteSeekerClass.matchesCount > 1 ? 'S' : ''}`;
+      setText('stat-global-star-class-meta', `${weaponPart}${pctPart}`);
+    } else {
+      setText('stat-global-star-class-name', '—');
+      setText('stat-global-star-class-meta', 'AUCUNE PARTIE SEEKER ENREGISTRÉE');
+    }
+
+    // 3. Double Leaderboard Top 10 (Hiders vs Seekers)
+    const currentUserId = getCurrentUser()?.userId ?? null;
+    const hidersListEl = document.getElementById('stats-lb-hiders-list');
+    const seekersListEl = document.getElementById('stats-lb-seekers-list');
+
+    if (hidersListEl) {
+      const hiders = leaderboards?.hiders ?? [];
+      hidersListEl.innerHTML =
+        hiders.length > 0
+          ? hiders.map((entry) => renderLeaderboardRow(entry, 'HIDER', currentUserId)).join('')
+          : `<div class="stats-empty-line">Aucun joueur classé en Hider pour le moment.</div>`;
+    }
+
+    if (seekersListEl) {
+      const seekers = leaderboards?.seekers ?? [];
+      seekersListEl.innerHTML =
+        seekers.length > 0
+          ? seekers.map((entry) => renderLeaderboardRow(entry, 'SEEKER', currentUserId)).join('')
+          : `<div class="stats-empty-line">Aucun joueur classé en Seeker pour le moment.</div>`;
+    }
+  }
+
+  async function loadGlobalStats(forceRefresh = false): Promise<void> {
+    if (!isAuthenticated()) return;
+    if (!forceRefresh && cachedGlobalPayload) {
+      populateGlobalStats(cachedGlobalPayload);
+    }
+    if (isGlobalLoading) return;
+
+    isGlobalLoading = true;
+    try {
+      const payload = await fetchGlobalStats(forceRefresh);
+      cachedGlobalPayload = payload;
+      if (activeScope === 'global') {
+        populateGlobalStats(payload);
+      }
+    } catch (error) {
+      if (!cachedGlobalPayload) {
+        const message =
+          error instanceof StatsServiceError
+            ? error.message
+            : 'Impossible de charger les statistiques globales.';
+        const hidersListEl = document.getElementById('stats-lb-hiders-list');
+        if (hidersListEl) {
+          hidersListEl.innerHTML = `<div class="stats-empty-line stats-error-indicator">${escapeHtml(message)}</div>`;
+        }
+      }
+    } finally {
+      isGlobalLoading = false;
+    }
+  }
+
+  function populateAdminStats(payload: AdminStatsPayload): void {
+    cachedAdminPayload = payload;
+    const { health, telemetry, maps } = payload;
+
+    animateNumber(document.getElementById('stat-admin-matches'), health.total_matches ?? 0);
+    animateNumber(document.getElementById('stat-admin-users'), health.total_users ?? 0);
+    animateNumber(
+      document.getElementById('stat-admin-playtime'),
+      health.total_playtime_seconds ?? 0,
+      (v) => formatPlaytime(v)
+    );
+    animateNumber(document.getElementById('stat-admin-elims'), health.total_eliminations ?? 0);
+
+    const hiderWins = health.hider_wins ?? 0;
+    const seekerWins = health.seeker_wins ?? 0;
+    const totalWins = hiderWins + seekerWins;
+    const hiderPct = totalWins > 0 ? Math.round((hiderWins / totalWins) * 100) : 50;
+    const seekerPct = totalWins > 0 ? 100 - hiderPct : 50;
+
+    animateNumber(document.getElementById('stat-admin-hider-wins'), hiderWins);
+    animateNumber(document.getElementById('stat-admin-seeker-wins'), seekerWins);
+    setText('stat-admin-hider-pct', `${totalWins > 0 ? hiderPct : 0}%`);
+    setText('stat-admin-seeker-pct', `${totalWins > 0 ? seekerPct : 0}%`);
+
+    const adminHiderBar = document.getElementById('stat-admin-bar-hider');
+    const adminSeekerBar = document.getElementById('stat-admin-bar-seeker');
+    if (adminHiderBar && adminSeekerBar) {
+      adminHiderBar.style.width = `${hiderPct}%`;
+      adminSeekerBar.style.width = `${seekerPct}%`;
+      adminHiderBar.style.opacity = totalWins > 0 ? '1' : '0.35';
+      adminSeekerBar.style.opacity = totalWins > 0 ? '1' : '0.35';
+    }
+
+    if (telemetry?.avgSurvivalTimeSec !== null && telemetry?.avgSurvivalTimeSec !== undefined) {
+      animateNumber(
+        document.getElementById('stat-admin-avg-survival'),
+        telemetry.avgSurvivalTimeSec,
+        (v) => formatDurationShort(v)
+      );
+    } else {
+      setText('stat-admin-avg-survival', '—');
+    }
+
+    if (telemetry?.avgAccuracyPercent !== null && telemetry?.avgAccuracyPercent !== undefined) {
+      animateNumber(
+        document.getElementById('stat-admin-avg-accuracy'),
+        telemetry.avgAccuracyPercent,
+        (v) => `${Math.round(v * 10) / 10}%`
+      );
+    } else {
+      setText('stat-admin-avg-accuracy', '—');
+    }
+
+    setText(
+      'stat-admin-maps-count',
+      `${maps.length} CARTE${maps.length > 1 ? 'S' : ''}`
+    );
+
+    const mapsListEl = document.getElementById('stats-admin-maps-list');
+    if (mapsListEl) {
+      mapsListEl.innerHTML =
+        maps.length > 0
+          ? maps.map(renderAdminMapRow).join('')
+          : `<div class="stats-empty-line">Aucune partie enregistrée sur les cartes.</div>`;
+    }
+  }
+
+  async function loadAdminStats(): Promise<void> {
+    if (!isAuthenticated() || !isCurrentUserAdmin) {
+      activeScope = 'personal';
+      syncTabsDOM();
+      return;
+    }
+    if (cachedAdminPayload) {
+      populateAdminStats(cachedAdminPayload);
+    }
+    if (isAdminLoading) return;
+
+    isAdminLoading = true;
+    try {
+      const payload = await fetchAdminStats();
+      cachedAdminPayload = payload;
+      if (activeScope === 'admin') {
+        populateAdminStats(payload);
+      }
+    } catch (error) {
+      if (error instanceof StatsServiceError && error.status === 403) {
+        isCurrentUserAdmin = false;
+        syncAdminScopeButton();
+        activeScope = 'personal';
+        syncTabsDOM();
+        return;
+      }
+      const mapsListEl = document.getElementById('stats-admin-maps-list');
+      if (mapsListEl && !cachedAdminPayload) {
+        const message =
+          error instanceof StatsServiceError
+            ? error.message
+            : 'Impossible de charger les métriques administrateur.';
+        mapsListEl.innerHTML = `<div class="stats-empty-line stats-error-indicator">${escapeHtml(message)}</div>`;
+      }
+    } finally {
+      isAdminLoading = false;
+    }
+  }
+
   async function openMatchDetails(matchId: number): Promise<void> {
     if (isMatchDetailLoading && activeMatchId === matchId) return;
 
+    activeScope = 'personal';
     if (activeTab !== 'archives') {
       activeTab = 'archives';
-      syncTabsDOM();
     }
+    syncTabsDOM();
 
     activeMatchId = matchId;
     updateHeaderBackLabel();
@@ -1151,6 +1692,7 @@ export function initStats(): void {
 
   // Réinitialise systématiquement sur l'onglet principal Vue d'ensemble à l'ouverture
   function resetViewToDefault(): void {
+    activeScope = 'personal';
     activeTab = 'overview';
     activeRoleCamp = 'HIDER';
     activeArchiveFilter = 'ALL';
@@ -1198,12 +1740,15 @@ export function initStats(): void {
     }
 
     try {
-      const payload = await fetchMyStats();
+      const [myPayload] = await Promise.all([
+        fetchMyStats(),
+        loadGlobalStats(false),
+      ]);
       if (stateBanner) {
         stateBanner.classList.add('hidden');
         stateBanner.innerHTML = '';
       }
-      populateAllStats(payload);
+      populateAllStats(myPayload);
     } catch (error) {
       if (stateBanner) {
         stateBanner.classList.remove('hidden');
@@ -1225,6 +1770,14 @@ export function initStats(): void {
   viewStats.addEventListener('click', (event: MouseEvent) => {
     const target = event.target as HTMLElement | null;
     if (!target) return;
+
+    // 0. Sélecteur principal à 2 états : MES STATISTIQUES | STATISTIQUES GLOBALES
+    const scopeBtn = target.closest<HTMLElement>('[data-stats-scope]');
+    if (scopeBtn) {
+      const scope = scopeBtn.dataset.statsScope as StatsScope | undefined;
+      if (scope) switchScope(scope);
+      return;
+    }
 
     // 1. Action voir toutes les archives ("VOIR TOUTES LES ARCHIVES →")
     const seeAllBtn = target.closest<HTMLElement>(
@@ -1299,7 +1852,7 @@ export function initStats(): void {
     if (actionBtn) {
       const action = actionBtn.dataset.action;
       if (action === 'back') {
-        if (activeMatchId !== null) {
+        if (activeScope === 'personal' && activeMatchId !== null) {
           closeMatchReport();
         } else {
           switchView(viewStats, viewMain);
@@ -1326,6 +1879,12 @@ export function initStats(): void {
   observer.observe(viewStats, { attributes: true, attributeFilter: ['class'] });
 
   onAuthChange(() => {
+    invalidateGlobalStatsCache();
+    cachedGlobalPayload = null;
+    cachedAdminPayload = null;
+    isCurrentUserAdmin = false;
+    syncAdminScopeButton();
+    syncTabsDOM();
     if (!viewStats.classList.contains('hidden')) {
       void loadStats(true);
     }
