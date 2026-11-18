@@ -32,54 +32,73 @@ import {
 export function renderGame(): string {
   return `
     <div id="view-game" class="view" style="width: 100vw; height: 100vh; background: #0a0a0a; position: relative; overflow: hidden;">
-      <button id="btn-leave-game" class="btn primary" style="position: absolute; top: 20px; left: 20px; z-index: 20; width: auto; padding: 10px 20px;">
-        QUITTER
-      </button>
+      <!-- Haut Gauche : Engrenage Pause + Barre de Vie du Joueur -->
+      <div class="hud-top-left">
+        <button id="btn-pause-menu" class="hud-panel hud-gear-btn" title="Menu Pause (Échap)">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z" />
+          </svg>
+        </button>
 
-      <!-- HUD Central Supérieur (Timer, Phase & Rôle) -->
-      <div id="game-hud-top" style="position: absolute; top: 20px; left: 50%; transform: translateX(-50%); z-index: 20; display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none;">
-        <div id="game-phase-badge" style="font-family: sans-serif; font-size: 13px; font-weight: bold; text-transform: uppercase; letter-spacing: 1.5px; padding: 4px 14px; border-radius: 20px; background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.4);">
-          EN ATTENTE
-        </div>
-        <div id="game-timer" style="font-family: monospace; font-size: 28px; font-weight: 900; color: #ffffff; text-shadow: 0 0 10px rgba(0,0,0,0.8);">
-          04:00
-        </div>
-        <div id="game-role-badge" style="font-family: sans-serif; font-size: 13px; font-weight: 800; padding: 4px 14px; border-radius: 6px; background: rgba(168, 85, 247, 0.25); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.5);">
-          RÔLE : EN ATTENTE
-        </div>
-        <div id="game-survivors-badge" style="font-family: sans-serif; font-size: 12px; font-weight: 700; color: #cbd5e1; background: rgba(0, 0, 0, 0.55); padding: 3px 12px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.12);">
-          🎯 0 Chasseur • 🪑 0 Prop
+        <div class="hud-panel hud-health-card">
+          <div class="hud-health-info">
+            <div class="hud-health-header">
+              <span id="game-role-badge" class="hud-role-label">PROP</span>
+              <span id="hud-hp-text" class="hud-hp-text">100 / 100 PV</span>
+            </div>
+            <div class="hud-hp-track">
+              <div id="hud-hp-fill" class="hud-hp-fill"></div>
+            </div>
+          </div>
         </div>
       </div>
 
-      <!-- Haut Droite : Statut WS + Musique + Minimap Circulaire -->
-      <div style="position: absolute; top: 20px; right: 20px; z-index: 20; display: flex; align-items: flex-start; gap: 14px;">
-        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 8px;">
-          <div id="ws-status" style="color: #4ade80; font-family: sans-serif; font-size: 14px; background: rgba(0,0,0,0.6); padding: 6px 12px; border-radius: 6px;">
-            WS: Connexion en cours...
+      <!-- Haut Centre : Chrono + Phase + Compteur Survivants (fond sombre haute lisibilité) -->
+      <div id="game-hud-top" class="hud-top-center">
+        <div class="hud-timer-card">
+          <div class="hud-timer-header">
+            <span id="game-phase-badge" class="hud-phase-label">EN ATTENTE</span>
+            <span id="game-timer" class="hud-timer-value">04:00</span>
           </div>
-          <button id="btn-toggle-music" title="Couper / Activer la musique (M)" style="cursor: pointer; background: rgba(15, 23, 42, 0.78); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.45); border-radius: 8px; padding: 6px 12px; font-family: sans-serif; font-size: 13px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; backdrop-filter: blur(6px); transition: all 0.2s ease;">
-            🔊 Musique : ON
-          </button>
+          <div id="game-survivors-badge" class="hud-survivors-strip">
+            <span>HUNTER 0</span>
+            <span class="hud-survivors-sep">|</span>
+            <span>PROPS 0</span>
+          </div>
         </div>
+      </div>
 
-        <div id="minimap-wrapper" title="Cliquer pour ouvrir le plan complet" style="width: 144px; height: 144px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.28); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.65); overflow: hidden; cursor: pointer; background: #0b1120; transform-origin: top right; transition: transform 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease; position: relative;">
+      <!-- Haut Droite : Minimap Circulaire encadrée -->
+      <div id="minimap-wrapper" class="hud-minimap-frame" title="Cliquer pour ouvrir le plan complet">
+        <div class="hud-minimap-inner">
           <canvas id="minimap-canvas" width="144" height="144" style="display: block; width: 100%; height: 100%; border-radius: 50%;"></canvas>
         </div>
       </div>
 
+      <!-- Menu Pause (regroupe Audio, Hitboxes & Quitter la partie) -->
+      <div id="pause-menu-overlay" class="hud-pause-overlay">
+        <div class="hud-panel hud-pause-card">
+          <h2 class="hud-pause-title">PAUSE</h2>
+          <button id="btn-resume-game" class="btn primary">REPRENDRE LA PARTIE</button>
+          <button id="btn-toggle-music" class="btn secondary">MUSIQUE : ON</button>
+          <button id="btn-toggle-hitbox" class="btn secondary">HITBOXES : ON</button>
+          <button id="btn-leave-game" class="btn back">QUITTER LA PARTIE</button>
+          <div id="ws-status" class="hud-pause-meta">WS: Connexion en cours...</div>
+        </div>
+      </div>
+
       <!-- Modal Plan Complet de la Carte (au clic sur la minimap) -->
-      <div id="fullmap-overlay" style="display: none; position: absolute; inset: 0; background: rgba(5, 8, 15, 0.84); z-index: 28; flex-direction: column; align-items: center; justify-content: center; backdrop-filter: blur(6px); font-family: sans-serif; color: #e2e8f0; padding: 20px;">
-        <div style="background: rgba(15, 23, 42, 0.96); border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 12px; padding: 16px 20px; box-shadow: 0 18px 45px rgba(0,0,0,0.75); display: flex; flex-direction: column; gap: 12px; max-width: 92vw;">
+      <div id="fullmap-overlay" style="display: none; position: absolute; inset: 0; background: rgba(5, 8, 15, 0.84); z-index: 28; flex-direction: column; align-items: center; justify-content: center; backdrop-filter: blur(6px); font-family: var(--font-main); color: #e2e8f0; padding: 20px;">
+        <div class="hud-panel" style="border-radius: 12px; padding: 16px 20px; display: flex; flex-direction: column; gap: 12px; max-width: 92vw;">
           <div style="display: flex; justify-content: space-between; align-items: center; gap: 24px;">
             <div style="display: flex; align-items: center; gap: 14px;">
-              <span style="font-size: 16px; font-weight: 800; letter-spacing: 1px; color: #f8fafc;">PLAN DE LA CARTE</span>
+              <span style="font-family: var(--font-display); font-size: 1.4rem; letter-spacing: 1.5px; color: #f8fafc;">PLAN DE LA CARTE</span>
               <span style="font-size: 12px; color: #94a3b8; display: inline-flex; align-items: center; gap: 10px;">
                 <span><span style="color: #38bdf8;">●</span> Toi</span>
                 <span><span style="color: #4ade80;">●</span> Allié</span>
               </span>
             </div>
-            <button id="btn-close-fullmap" style="cursor: pointer; background: rgba(255, 255, 255, 0.08); color: #cbd5e1; border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 6px; padding: 5px 12px; font-size: 12px; font-weight: 700;">
+            <button id="btn-close-fullmap" class="btn back" style="width: auto; padding: 5px 14px; font-size: 12px;">
               FERMER (Échap)
             </button>
           </div>
@@ -89,7 +108,6 @@ export function renderGame(): string {
 
       <!-- Overlay Aveuglement Hunter (30s de cachette) -->
       <div id="hunter-blindfold" style="display: none; position: absolute; inset: 0; background: rgba(5, 5, 8, 0.95); z-index: 25; flex-direction: column; align-items: center; justify-content: center; backdrop-filter: blur(12px); color: #ffffff;">
-        <div style="font-size: 3.5rem; margin-bottom: 8px;">🎯</div>
         <h2 style="font-size: 2.2rem; font-weight: 900; color: #f87171; letter-spacing: 2px; margin-bottom: 8px;">VOUS ÊTES CHASSEUR</h2>
         <p style="font-size: 1.15rem; color: #94a3b8; margin-bottom: 20px;">Les Props ont 30 secondes pour se disperser et se cacher...</p>
         <div id="hunter-countdown" style="font-family: monospace; font-size: 4rem; font-weight: 900; color: #fbbf24;">30</div>
@@ -141,9 +159,25 @@ export function renderGame(): string {
         <div id="spectator-help" style="background: rgba(0,0,0,0.55); border-radius: 6px; padding: 4px 12px; font-size: 12px; color: #d4d4d4;"></div>
       </div>
 
+      <!-- Zone d'actions / compétences du Prop (bas droite) -->
+      <div id="prop-actions-hud" class="hud-actions-bar">
+        <div class="hud-panel hud-action-slot">
+          <span class="hud-action-key">E</span>
+          <span class="hud-action-name">Métamorphose</span>
+        </div>
+        <div class="hud-panel hud-action-slot">
+          <span class="hud-action-key">R</span>
+          <span class="hud-action-name">Orientation</span>
+        </div>
+        <div class="hud-panel hud-action-slot">
+          <span class="hud-action-key">M</span>
+          <span class="hud-action-name">Musique</span>
+        </div>
+      </div>
+
       <!-- Barre d'aide des touches (bas gauche) -->
-      <div id="game-controls-bar" style="position: absolute; bottom: 20px; left: 20px; z-index: 20; pointer-events: none; background: rgba(10, 14, 23, 0.72); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; padding: 6px 12px; font-family: sans-serif; font-size: 12px; color: #94a3b8; backdrop-filter: blur(4px);">
-        [ZQSD] Bouger • [E] Transformer • [R] Tourner • [M] Musique • [H] Hitbox
+      <div id="game-controls-bar" class="hud-panel" style="position: absolute; bottom: 20px; left: 20px; z-index: 20; pointer-events: none; border-radius: 8px; padding: 6px 12px; font-size: 12px; color: #94a3b8;">
+        [ZQSD] Bouger • [Échap] Menu Pause • [Clic Minimap] Plan
       </div>
     </div>
   `;
@@ -160,8 +194,15 @@ export function initGame(): void {
   const gamePhaseBadge = document.getElementById('game-phase-badge');
   const gameTimer = document.getElementById('game-timer');
   const gameRoleBadge = document.getElementById('game-role-badge');
+  const hudHpText = document.getElementById('hud-hp-text');
+  const hudHpFill = document.getElementById('hud-hp-fill');
+  const propActionsHud = document.getElementById('prop-actions-hud');
   const gameSurvivorsBadge = document.getElementById('game-survivors-badge');
   const gameControlsBar = document.getElementById('game-controls-bar');
+  const pauseOverlay = document.getElementById('pause-menu-overlay');
+  const btnPauseMenu = document.getElementById('btn-pause-menu');
+  const btnResumeGame = document.getElementById('btn-resume-game');
+  const btnToggleHitbox = document.getElementById('btn-toggle-hitbox');
   const hunterBlindfold = document.getElementById('hunter-blindfold');
   const hunterCountdown = document.getElementById('hunter-countdown');
   const roundEndOverlay = document.getElementById('round-end-overlay');
@@ -177,29 +218,42 @@ export function initGame(): void {
 
   const vfx = new VisualEffectsManager();
   let lastVfxTime = performance.now();
+  let isPauseMenuOpen = false;
+
+  const setPauseMenuOpen = (open: boolean) => {
+    isPauseMenuOpen = open;
+    if (pauseOverlay) {
+      pauseOverlay.style.display = open ? 'flex' : 'none';
+    }
+  };
+
+  if (btnPauseMenu) {
+    btnPauseMenu.addEventListener('click', () => setPauseMenuOpen(!isPauseMenuOpen));
+  }
+  if (btnResumeGame) {
+    btnResumeGame.addEventListener('click', () => setPauseMenuOpen(false));
+  }
+  if (pauseOverlay) {
+    pauseOverlay.addEventListener('click', (e) => {
+      if (e.target === pauseOverlay) setPauseMenuOpen(false);
+    });
+  }
 
   // Gestion du retour au menu
   if (btnLeaveGame) {
     btnLeaveGame.addEventListener('click', () => {
+      setPauseMenuOpen(false);
       musicManager.stop();
       networkManager.send(MessageType.LEAVE_ROOM, {});
       switchView(viewGame, viewMain);
     });
   }
 
-  // Gestion du bouton Musique (haut droite) & détection entrée/sortie de partie
+  // Gestion du bouton Musique (dans le menu pause) & détection entrée/sortie de partie
   const btnToggleMusic = document.getElementById('btn-toggle-music');
   const updateMusicButton = (muted: boolean) => {
     if (!btnToggleMusic) return;
-    if (muted) {
-      btnToggleMusic.textContent = ' Musique : OFF';
-      btnToggleMusic.style.color = '#94a3b8';
-      btnToggleMusic.style.borderColor = 'rgba(148, 163, 184, 0.35)';
-    } else {
-      btnToggleMusic.textContent = ' Musique : ON';
-      btnToggleMusic.style.color = '#38bdf8';
-      btnToggleMusic.style.borderColor = 'rgba(56, 189, 248, 0.45)';
-    }
+    btnToggleMusic.textContent = muted ? 'MUSIQUE : OFF' : 'MUSIQUE : ON';
   };
   if (btnToggleMusic) {
     btnToggleMusic.addEventListener('click', () => {
@@ -213,6 +267,7 @@ export function initGame(): void {
     if (viewGame.classList.contains('active')) {
       musicManager.start();
     } else {
+      setPauseMenuOpen(false);
       musicManager.stop();
     }
   });
@@ -1067,6 +1122,19 @@ export function initGame(): void {
   // Gestion des inputs (Z, Q, S, D, et flèches)
   const keys: { [key: string]: boolean } = {};
 
+  const updateHitboxButton = () => {
+    if (btnToggleHitbox) {
+      btnToggleHitbox.textContent = showHitbox ? 'HITBOXES : ON' : 'HITBOXES : OFF';
+    }
+  };
+  if (btnToggleHitbox) {
+    btnToggleHitbox.addEventListener('click', () => {
+      showHitbox = !showHitbox;
+      updateHitboxButton();
+    });
+  }
+  updateHitboxButton();
+
   window.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && isFullMapOpen) {
       setFullMapOpen(false);
@@ -1082,9 +1150,15 @@ export function initGame(): void {
       }
     }
 
+    if (e.key === 'Escape' && viewGame?.classList.contains('active')) {
+      setPauseMenuOpen(!isPauseMenuOpen);
+      return;
+    }
+
     keys[e.key.toLowerCase()] = true;
     if (e.key.toLowerCase() === 'h') {
       showHitbox = !showHitbox;
+      updateHitboxButton();
       console.log(`[DEBUG] Affichage des hitboxes : ${showHitbox ? 'ACTIVÉ' : 'DÉSACTIVÉ'}`);
     }
     if (e.key.toLowerCase() === 'm' && viewGame?.classList.contains('active')) {
@@ -1887,7 +1961,35 @@ export function initGame(): void {
       // Vignette d'ambiance + flash d'impact en espace écran
       vfx.updateAndDrawScreen(ctx!, canvas.width, canvas.height, dtVfx);
 
-      // Compteur de survivants + barre de raccourcis contextuelle
+      // Mise à jour du HUD unifié (Vie, Rôle, Survivants, Compétences Prop)
+      if (hudHpText && hudHpFill) {
+        const curHp = Math.max(0, Math.round(player.health));
+        const maxHp = Math.max(1, Math.round(player.maxHealth));
+        const hpRatio = Math.min(100, (curHp / maxHp) * 100);
+        hudHpText.textContent = `${curHp} / ${maxHp} PV`;
+        hudHpFill.style.width = `${hpRatio}%`;
+        hudHpFill.style.background = hpRatio > 50
+          ? 'linear-gradient(90deg, #22c55e, #4ade80)'
+          : hpRatio > 25
+            ? 'linear-gradient(90deg, #eab308, #facc15)'
+            : 'linear-gradient(90deg, #dc2626, #ef4444)';
+      }
+
+      if (gameRoleBadge) {
+        if (isSpectator) {
+          gameRoleBadge.textContent = 'SPECTATEUR';
+        } else if (localPlayerRole === PlayerRole.HUNTER) {
+          gameRoleBadge.textContent = 'CHASSEUR';
+        } else {
+          gameRoleBadge.textContent = 'PROP';
+        }
+      }
+
+      if (propActionsHud) {
+        const showPropHud = !isSpectator && localPlayerRole === PlayerRole.PROP && currentPhase !== GamePhase.ROUND_END;
+        propActionsHud.style.display = showPropHud ? 'flex' : 'none';
+      }
+
       let huntersAlive = (!isSpectator && localPlayerRole === PlayerRole.HUNTER && player.health > 0) ? 1 : 0;
       let propsAlive = (!isSpectator && localPlayerRole === PlayerRole.PROP && player.health > 0) ? 1 : 0;
       otherPlayers.forEach(op => {
@@ -1897,15 +1999,15 @@ export function initGame(): void {
         }
       });
       if (gameSurvivorsBadge) {
-        gameSurvivorsBadge.textContent = `🎯 ${huntersAlive} Chasseur${huntersAlive > 1 ? 's' : ''} • 🪑 ${propsAlive} Prop${propsAlive > 1 ? 's' : ''}`;
+        gameSurvivorsBadge.innerHTML = `<span>HUNTER ${huntersAlive}</span><span class="hud-survivors-sep">|</span><span>PROPS ${propsAlive}</span>`;
       }
       if (gameControlsBar) {
         if (isSpectator) {
-          gameControlsBar.textContent = '[← / →] Changer cible • [Espace] Caméra libre • [M] Musique • [Clic Minimap] Plan';
+          gameControlsBar.textContent = '[← / →] Changer cible • [Espace] Caméra libre • [Échap] Menu';
         } else if (localPlayerRole === PlayerRole.HUNTER) {
-          gameControlsBar.textContent = '[ZQSD] Bouger • [1/2/3] Armes • [Clic] Tirer • [M] Musique • [H] Hitbox';
+          gameControlsBar.textContent = '[ZQSD] Bouger • [1/2/3] Armes • [Clic] Tirer • [Échap] Menu';
         } else {
-          gameControlsBar.textContent = '[ZQSD] Bouger • [E] Transformer • [R] Tourner • [M] Musique • [H] Hitbox';
+          gameControlsBar.textContent = '[ZQSD] Bouger • [Échap] Menu Pause • [Clic Minimap] Plan';
         }
       }
 

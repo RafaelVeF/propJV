@@ -146,6 +146,31 @@ export function renderMinimap(
   ctx.strokeStyle = '#ffffff';
   ctx.stroke();
 
+  // Anneau intérieur + points cardinaux sobres (N, S, E, O)
+  ctx.beginPath();
+  ctx.arc(half, half, half - 2, 0, Math.PI * 2);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = 'rgba(15, 23, 42, 0.85)';
+  ctx.stroke();
+
+  ctx.font = 'bold 10px Outfit, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.lineWidth = 2.5;
+  ctx.strokeStyle = 'rgba(11, 16, 28, 0.9)';
+
+  const cardinals: Array<{ label: string; x: number; y: number; color: string }> = [
+    { label: 'N', x: half, y: 11, color: '#38bdf8' },
+    { label: 'S', x: half, y: size - 11, color: '#94a3b8' },
+    { label: 'E', x: size - 11, y: half, color: '#94a3b8' },
+    { label: 'O', x: 11, y: half, color: '#94a3b8' }
+  ];
+  cardinals.forEach(c => {
+    ctx.strokeText(c.label, c.x, c.y);
+    ctx.fillStyle = c.color;
+    ctx.fillText(c.label, c.x, c.y);
+  });
+
   ctx.restore();
 }
 
