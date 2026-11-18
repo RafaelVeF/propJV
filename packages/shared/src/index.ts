@@ -285,35 +285,36 @@ export interface WeaponDefinition {
 export const WEAPONS: Record<WeaponType, WeaponDefinition> = {
   [WeaponType.PISTOL]: {
     type: WeaponType.PISTOL,
-    displayName: 'Pistolet',
+    displayName: 'Fusil',
     slot: 1,
     damage: 20,
     range: 400,
     cooldownMs: 350,
     magazineSize: 6,
     reloadMs: 1800,
-    iconPath: '/assets/weapons/pistol.png'
+    iconPath: '/assets/weapons/rifle.png'
   },
   [WeaponType.CROWBAR]: {
     type: WeaponType.CROWBAR,
-    displayName: 'Pied de biche',
+    displayName: 'Canon à ondes',
     slot: 2,
     damage: 40,
-    range: 48,
+    range: 80,
     cooldownMs: 700,
     arcDegrees: 100,
-    iconPath: '/assets/weapons/crowbar.png'
+    iconPath: '/assets/weapons/wave_gun.png'
   },
   [WeaponType.GRENADE]: {
     type: WeaponType.GRENADE,
-    displayName: 'Grenade',
+    displayName: 'Lanceur',
     slot: 3,
     damage: 70,
     range: 260,
     cooldownMs: 25000,
     blastRadius: 80,
     fuseMs: 1200,
-    edgeDamageRatio: 0.35
+    edgeDamageRatio: 0.35,
+    iconPath: '/assets/weapons/launcher.png'
   }
 };
 

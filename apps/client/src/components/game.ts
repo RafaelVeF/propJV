@@ -262,6 +262,7 @@ export function initGame(): void {
     btnLeaveGame.addEventListener('click', () => {
       setPauseMenuOpen(false);
       showHitbox = false;
+      hunterDrones.clear();
       chatManager.close();
       chatManager.clearMessages();
       musicManager.stop();
@@ -479,6 +480,28 @@ export function initGame(): void {
     }
   });
 
+  const droneReadyImg = new Image();
+  droneReadyImg.src = '/assets/drones/drone_ready.png';
+  const droneReloadingImg = new Image();
+  droneReloadingImg.src = '/assets/drones/drone_reloading.png';
+
+  const DRONE_MUZZLE_OFFSET: Record<WeaponType, number> = {
+    [WeaponType.PISTOL]: 14,
+    [WeaponType.CROWBAR]: 11,
+    [WeaponType.GRENADE]: 10
+  };
+
+  interface DroneState {
+    x: number;
+    y: number;
+    drawY: number;
+    bobPhase: number;
+    recoil: number;
+    lastDirX: number;
+    lastDirY: number;
+  }
+  const hunterDrones = new Map<string, DroneState>();
+
   let selectedWeapon: WeaponType = WeaponType.PISTOL;
   /** Copie locale de l'état officiel envoyé par le serveur (échéances converties en heure locale) */
   const weaponView = new Map<WeaponType, { ammo?: number; magazineSize?: number; cooldownEndsAt: number; reloadEndsAt: number }>();
@@ -518,8 +541,58 @@ export function initGame(): void {
   const deathEffects: DeathEffect[] = [];
   let hitMarkerAt = 0;
   let screenShake = 0;
-  /** Dernière arme / direction connue de chaque chasseur (pour dessiner l'arme dans sa main) */
-  const hunterAim = new Map<string, { angle: number; weapon: WeaponType }>();
+  /** Dernière arme / direction connue de chaque chasseur (pour orienter le canon du drone) */
+  const hunterAim = new Map<string, { angle: number; weapon: WeaponType; readyAt: number }>();
+
+  const getDroneOrigin = (hunterId: string, fallbackX: number, fallbackY: number) => {
+    const d = hunterDrones.get(hunterId);
+    return d ? { x: d.x, y: d.drawY } : { x: fallbackX, y: fallbackY };
+  };
+
+  const getDroneMuzzle = (dx: number, dy: number, angle: number, weapon: WeaponType) => {
+    const dist = DRONE_MUZZLE_OFFSET[weapon] ?? 12;
+    return {
+      x: dx + Math.cos(angle) * dist,
+      y: dy + Math.sin(angle) * dist
+    };
+  };
+
+  const updateHunterDrone = (id: string, hx: number, hy: number, moveX: number, moveY: number, now: number) => {
+    let drone = hunterDrones.get(id);
+    if (!drone) {
+      drone = {
+        x: hx - 28,
+        y: hy - 34,
+        drawY: hy - 34,
+        bobPhase: (id.charCodeAt(0) || 0) * 0.7,
+        recoil: 0,
+        lastDirX: 0.75,
+        lastDirY: 0.4
+      };
+      hunterDrones.set(id, drone);
+    }
+
+    const moveLen = Math.hypot(moveX, moveY);
+    if (moveLen > 0.15) {
+      drone.lastDirX = moveX / moveLen;
+      drone.lastDirY = moveY / moveLen;
+    }
+
+    const targetX = hx - drone.lastDirX * 36;
+    const targetY = hy - 28 - drone.lastDirY * 22;
+
+    if (Math.hypot(targetX - drone.x, targetY - drone.y) > 200) {
+      drone.x = targetX;
+      drone.y = targetY;
+    } else {
+      drone.x += (targetX - drone.x) * 0.14;
+      drone.y += (targetY - drone.y) * 0.14;
+    }
+
+    drone.recoil *= 0.8;
+    if (drone.recoil < 0.05) drone.recoil = 0;
+    drone.drawY = drone.y + Math.sin(now * 0.0055 + drone.bobPhase) * 2.5;
+  };
 
   const isLocalHunterArmed = () =>
     localPlayerRole === PlayerRole.HUNTER && !isSpectator && player.health > 0;
@@ -775,6 +848,7 @@ export function initGame(): void {
     setPauseMenuOpen(false);
     setFullMapOpen(false);
     showHitbox = false;
+    hunterDrones.clear();
     chatManager.close();
     chatManager.clearMessages();
     musicManager.stop();
@@ -823,6 +897,7 @@ export function initGame(): void {
   networkManager.on(MessageType.PLAYER_LEFT, (payload) => {
     otherPlayers.delete(payload.playerId);
     hunterAim.delete(payload.playerId);
+    hunterDrones.delete(payload.playerId);
     console.log('[WS] Joueur déconnecté :', payload.playerId);
     if (isSpectator && payload.playerId === spectateTargetId) cycleSpectateTarget(1);
   });
@@ -978,19 +1053,26 @@ export function initGame(): void {
 
   networkManager.on<ShotFiredPayload>(MessageType.HUNTER_SHOOT, (payload) => {
     const now = Date.now();
-    const angle = Math.atan2(payload.impactY - payload.originY, payload.impactX - payload.originX);
-    hunterAim.set(payload.hunterId, { angle, weapon: payload.weapon });
+    const dronePos = getDroneOrigin(payload.hunterId, payload.originX, payload.originY);
+    const angle = Math.atan2(payload.impactY - dronePos.y, payload.impactX - dronePos.x);
+    const readyAt = now + WEAPONS[payload.weapon].cooldownMs;
+    hunterAim.set(payload.hunterId, { angle, weapon: payload.weapon, readyAt });
+
+    const drone = hunterDrones.get(payload.hunterId);
+    if (drone) drone.recoil = 3.5;
+
+    const muzzle = getDroneMuzzle(dronePos.x, dronePos.y, angle, payload.weapon);
     const hit = payload.hitPlayerIds.length > 0;
     if (hit && payload.hunterId === networkManager.localPlayerId) hitMarkerAt = now;
 
     if (payload.weapon === WeaponType.PISTOL) {
-      tracers.push({ x1: payload.originX, y1: payload.originY, x2: payload.impactX, y2: payload.impactY, hit, at: now });
+      tracers.push({ x1: muzzle.x, y1: muzzle.y, x2: payload.impactX, y2: payload.impactY, hit, at: now });
     } else if (payload.weapon === WeaponType.CROWBAR) {
-      swings.push({ x: payload.originX, y: payload.originY, angle, hit, at: now });
+      swings.push({ x: muzzle.x, y: muzzle.y, angle, hit, at: now });
     } else if (payload.weapon === WeaponType.GRENADE) {
       grenades.push({
         id: payload.grenadeId ?? `${payload.hunterId}-${now}`,
-        x1: payload.originX, y1: payload.originY, x2: payload.impactX, y2: payload.impactY,
+        x1: muzzle.x, y1: muzzle.y, x2: payload.impactX, y2: payload.impactY,
         at: now, fuseMs: payload.fuseMs ?? 1200
       });
     }
@@ -1007,6 +1089,7 @@ export function initGame(): void {
 
   networkManager.on<PlayerDiedPayload>(MessageType.PLAYER_DIED, (payload) => {
     spawnDeathEffect(payload.x, payload.y, payload.playerName);
+    hunterDrones.delete(payload.playerId);
     console.log(`[MORT] ${payload.playerName} est mort${payload.killerName ? ` (tué par ${payload.killerName})` : ''}`);
     if (payload.playerId === networkManager.localPlayerId) {
       enterSpectatorMode(payload);
@@ -1032,6 +1115,7 @@ export function initGame(): void {
     resetWeaponView();
     selectWeapon(WeaponType.PISTOL);
     hunterAim.clear();
+    hunterDrones.clear();
     grenades.length = 0;
     updateWsStatus();
 
@@ -1351,43 +1435,50 @@ export function initGame(): void {
   const VISION_RADIUS = 200; // Rayon de vision visible autour du joueur
 
   /**
-   * Calibrage des sprites d'armes (16x16) : ils ne sont pas dessinés "canon vers la droite".
-   * - angle : direction vers laquelle pointe l'arme dans le PNG d'origine (radians)
-   * - pivotX / pivotY : pixel tenu par la main (crosse du pistolet, bas du manche du pied de biche)
-   * - mirrored : le PNG est dessiné "tourné vers la gauche" (crosse du mauvais côté), il faut le retourner
+   * Dessine le drone accompagnant du chasseur et son module d'arme superposé (sprites 32x32, arme orientée à droite par défaut).
    */
-  const WEAPON_SPRITE_CALIBRATION: Partial<Record<WeaponType, { angle: number; pivotX: number; pivotY: number; mirrored?: boolean }>> = {
-    [WeaponType.PISTOL]: { angle: -3 * Math.PI / 4, pivotX: 8, pivotY: 12, mirrored: true }, // Canon vers le haut-gauche
-    [WeaponType.CROWBAR]: { angle: -Math.PI / 4, pivotX: 4, pivotY: 13 }                     // Crochet vers le haut-droite
-  };
-
-  /** Dessine une arme tenue en main, orientée vers la cible */
-  const drawHeldWeapon = (x: number, y: number, angle: number, weapon: WeaponType) => {
-    const handX = x + Math.cos(angle) * 8;
-    const handY = y - HOLD_OFFSET_Y + Math.sin(angle) * 8;
+  const drawHunterDrone = (
+    dx: number,
+    dy: number,
+    baseY: number,
+    angle: number,
+    weapon: WeaponType,
+    ready: boolean,
+    recoil: number
+  ) => {
     ctx!.save();
-    ctx!.translate(handX, handY);
-    // 1. On oriente un repère dont l'axe X pointe vers la cible
-    ctx!.rotate(angle);
-    const img = weaponImages.get(weapon);
-    const calib = WEAPON_SPRITE_CALIBRATION[weapon];
-    // 2. Vers la gauche, on retourne l'arme pour qu'elle ne soit pas tenue à l'envers
-    //    (et on inverse ce retournement si le sprite d'origine est lui-même dessiné en miroir)
-    const facingLeft = Math.abs(angle) > Math.PI / 2;
-    if (facingLeft !== Boolean(calib?.mirrored)) ctx!.scale(1, -1);
-    if (img && img.complete && img.naturalWidth > 0 && calib) {
-      // 3. On compense l'orientation d'origine du sprite pour que son canon suive l'axe X
-      ctx!.rotate(-calib.angle);
-      ctx!.imageSmoothingEnabled = false;
-      ctx!.drawImage(img, -calib.pivotX, -calib.pivotY, 16, 16);
+
+    // 1. Ombre portée au sol sous le drone
+    ctx!.fillStyle = 'rgba(0, 0, 0, 0.28)';
+    ctx!.beginPath();
+    ctx!.ellipse(dx, baseY + 18, 9, 4, 0, 0, Math.PI * 2);
+    ctx!.fill();
+
+    // 2. Corps du drone (prêt vs en rechargement/cooldown)
+    ctx!.translate(dx, dy);
+    ctx!.imageSmoothingEnabled = false;
+    const droneImg = ready ? droneReadyImg : droneReloadingImg;
+    if (droneImg.complete && droneImg.naturalWidth > 0) {
+      ctx!.drawImage(droneImg, -16, -16, 32, 32);
     } else {
-      // Grenade : petite boule sombre avec sa goupille
-      ctx!.fillStyle = '#3f6212';
+      ctx!.fillStyle = ready ? '#f97316' : '#38bdf8';
       ctx!.beginPath();
-      ctx!.arc(4, 0, 4, 0, Math.PI * 2);
+      ctx!.arc(0, 0, 8, 0, Math.PI * 2);
       ctx!.fill();
-      ctx!.fillStyle = '#d4d4d4';
-      ctx!.fillRect(2, -6, 3, 2);
+    }
+
+    // 3. Arme branchée au centre du drone, tournée vers le curseur
+    ctx!.rotate(angle);
+    if (Math.abs(angle) > Math.PI / 2) {
+      ctx!.scale(1, -1);
+    }
+    if (recoil > 0) {
+      ctx!.translate(-recoil, 0);
+    }
+
+    const weaponImg = weaponImages.get(weapon);
+    if (weaponImg && weaponImg.complete && weaponImg.naturalWidth > 0) {
+      ctx!.drawImage(weaponImg, -16, -16, 32, 32);
     }
     ctx!.restore();
   };
@@ -1395,52 +1486,95 @@ export function initGame(): void {
   const drawCombatWorld = () => {
     const now = Date.now();
 
-    // A. Armes tenues par les chasseurs vivants
-    if (isLocalHunterArmed()) {
-      const aim = screenToWorld(mouse.x, mouse.y);
-      const angle = Math.atan2(aim.y - (player.y - HOLD_OFFSET_Y), aim.x - player.x);
-      drawHeldWeapon(player.x, player.y, angle, selectedWeapon);
+    // A. Drones accompagnants + armes orientées et prévisualisations de portée
+    if (isLocalHunterArmed() && networkManager.localPlayerId) {
+      const localDrone = hunterDrones.get(networkManager.localPlayerId);
+      const dx = localDrone ? localDrone.x : player.x - 14;
+      const dy = localDrone ? localDrone.drawY : player.y - 22;
+      const baseY = localDrone ? localDrone.y : dy;
+      const recoil = localDrone ? localDrone.recoil : 0;
 
-      // Aides à la visée (uniquement pour le chasseur local)
+      const aim = screenToWorld(mouse.x, mouse.y);
+      const aimDist = Math.hypot(aim.x - dx, aim.y - dy);
+      const angle = aimDist > 0.5 ? Math.atan2(aim.y - dy, aim.x - dx) : 0;
+      const ready = isWeaponReady(selectedWeapon, now);
+
+      // Prévisualisation des tirs et portées par rapport au drone (uniquement en chasse)
       if (mouse.inside && currentPhase === GamePhase.HUNTING) {
-        const ox = player.x;
-        const oy = player.y - HOLD_OFFSET_Y;
+        const muzzle = getDroneMuzzle(dx, dy, angle, selectedWeapon);
+        const serverOx = player.x;
+        const serverOy = player.y - HOLD_OFFSET_Y;
         ctx!.save();
-        if (selectedWeapon === WeaponType.GRENADE) {
-          const def = WEAPONS[WeaponType.GRENADE];
-          const dist = Math.min(def.range, Math.hypot(aim.x - ox, aim.y - oy));
-          const lx = ox + Math.cos(angle) * dist;
-          const ly = oy + Math.sin(angle) * dist;
+
+        if (selectedWeapon === WeaponType.PISTOL) {
+          const def = WEAPONS[WeaponType.PISTOL];
+          const cursorDistFromOrigin = Math.hypot(aim.x - serverOx, aim.y - serverOy);
+          const dirX = cursorDistFromOrigin > 0 ? (aim.x - serverOx) / cursorDistFromOrigin : Math.cos(angle);
+          const dirY = cursorDistFromOrigin > 0 ? (aim.y - serverOy) / cursorDistFromOrigin : Math.sin(angle);
+          const clampedDist = Math.min(def.range, cursorDistFromOrigin);
+          const endX = serverOx + dirX * clampedDist;
+          const endY = serverOy + dirY * clampedDist;
+
           ctx!.setLineDash([4, 4]);
-          ctx!.strokeStyle = isWeaponReady(WeaponType.GRENADE, now) ? 'rgba(251, 191, 36, 0.8)' : 'rgba(148, 163, 184, 0.5)';
+          ctx!.strokeStyle = ready ? 'rgba(251, 191, 36, 0.55)' : 'rgba(148, 163, 184, 0.35)';
+          ctx!.lineWidth = 1;
+          ctx!.beginPath();
+          ctx!.moveTo(muzzle.x, muzzle.y);
+          ctx!.lineTo(endX, endY);
+          ctx!.stroke();
+        } else if (selectedWeapon === WeaponType.GRENADE) {
+          const def = WEAPONS[WeaponType.GRENADE];
+          const cursorDistFromOrigin = Math.hypot(aim.x - serverOx, aim.y - serverOy);
+          const travel = Math.min(def.range, cursorDistFromOrigin);
+          const dirX = cursorDistFromOrigin > 0 ? (aim.x - serverOx) / cursorDistFromOrigin : Math.cos(angle);
+          const dirY = cursorDistFromOrigin > 0 ? (aim.y - serverOy) / cursorDistFromOrigin : Math.sin(angle);
+          const lx = serverOx + dirX * travel;
+          const ly = serverOy + dirY * travel;
+
+          ctx!.setLineDash([4, 4]);
+          ctx!.strokeStyle = ready ? 'rgba(251, 191, 36, 0.8)' : 'rgba(148, 163, 184, 0.45)';
           ctx!.lineWidth = 1;
           ctx!.beginPath();
           ctx!.arc(lx, ly, def.blastRadius ?? 80, 0, Math.PI * 2);
           ctx!.stroke();
           ctx!.beginPath();
-          ctx!.moveTo(ox, oy);
+          ctx!.moveTo(muzzle.x, muzzle.y);
           ctx!.lineTo(lx, ly);
           ctx!.stroke();
         } else if (selectedWeapon === WeaponType.CROWBAR) {
           const def = WEAPONS[WeaponType.CROWBAR];
-          const half = ((def.arcDegrees ?? 90) * Math.PI) / 360;
-          ctx!.fillStyle = 'rgba(251, 191, 36, 0.12)';
+          const half = ((def.arcDegrees ?? 100) * Math.PI) / 360;
+          ctx!.fillStyle = ready ? 'rgba(239, 68, 68, 0.14)' : 'rgba(148, 163, 184, 0.1)';
+          ctx!.strokeStyle = ready ? 'rgba(239, 68, 68, 0.45)' : 'rgba(148, 163, 184, 0.3)';
+          ctx!.lineWidth = 1;
           ctx!.beginPath();
-          ctx!.moveTo(ox, oy);
-          ctx!.arc(ox, oy, def.range, angle - half, angle + half);
+          ctx!.moveTo(dx, dy);
+          ctx!.arc(dx, dy, def.range, angle - half, angle + half);
           ctx!.closePath();
           ctx!.fill();
+          ctx!.beginPath();
+          ctx!.arc(dx, dy, def.range, angle - half, angle + half);
+          ctx!.stroke();
         }
         ctx!.restore();
       }
+
+      drawHunterDrone(dx, dy, baseY, angle, selectedWeapon, ready, recoil);
     }
+
     otherPlayers.forEach((op, id) => {
       if (op.role !== PlayerRole.HUNTER || op.health <= 0) return;
-      const aim = hunterAim.get(id) ?? { angle: 0, weapon: WeaponType.PISTOL };
-      drawHeldWeapon(op.x, op.y, aim.angle, aim.weapon);
+      const aim = hunterAim.get(id) ?? { angle: 0, weapon: WeaponType.PISTOL, readyAt: 0 };
+      const drone = hunterDrones.get(id);
+      const dx = drone ? drone.x : op.x - 14;
+      const dy = drone ? drone.drawY : op.y - 22;
+      const baseY = drone ? drone.y : dy;
+      const recoil = drone ? drone.recoil : 0;
+      const ready = now >= aim.readyAt;
+      drawHunterDrone(dx, dy, baseY, aim.angle, aim.weapon, ready, recoil);
     });
 
-    // B. Traînées de balles du pistolet
+    // B. Traînées de balles du fusil
     for (let i = tracers.length - 1; i >= 0; i--) {
       const t = tracers[i];
       const life = (now - t.at) / 260;
@@ -1465,23 +1599,40 @@ export function initGame(): void {
       ctx!.restore();
     }
 
-    // C. Coups de pied de biche
+    // C. Onde rouge en arc de cercle qui se propage (Canon à ondes / KAK)
     for (let i = swings.length - 1; i >= 0; i--) {
       const sw = swings[i];
-      const life = (now - sw.at) / 220;
+      const life = (now - sw.at) / 260;
       if (life >= 1) { swings.splice(i, 1); continue; }
       const def = WEAPONS[WeaponType.CROWBAR];
-      const half = ((def.arcDegrees ?? 90) * Math.PI) / 360;
-      // L'arc balaie de gauche à droite pendant l'animation
+      const maxR = def.range;
+      const half = ((def.arcDegrees ?? 100) * Math.PI) / 360;
       const start = sw.angle - half;
-      const end = start + 2 * half * Math.min(1, life * 1.6);
+      const end = sw.angle + half;
+
       ctx!.save();
-      ctx!.globalAlpha = 0.8 * (1 - life);
-      ctx!.strokeStyle = sw.hit ? '#ef4444' : '#e5e7eb';
-      ctx!.lineWidth = 3;
+      // Halo du cône qui se dissipe
+      const coneR = 10 + (maxR - 10) * Math.min(1, life * 1.15);
+      ctx!.fillStyle = `rgba(239, 68, 68, ${0.16 * (1 - life)})`;
       ctx!.beginPath();
-      ctx!.arc(sw.x, sw.y, def.range * 0.8, start, end);
-      ctx!.stroke();
+      ctx!.moveTo(sw.x, sw.y);
+      ctx!.arc(sw.x, sw.y, coneR, start, end);
+      ctx!.closePath();
+      ctx!.fill();
+
+      // 3 arcs d'onde concentriques rouges en propagation
+      const waveOffsets = [0, 0.22, 0.44];
+      waveOffsets.forEach((off, idx) => {
+        if (life <= off) return;
+        const p = Math.min(1, (life - off) / (1 - off));
+        const r = 8 + (maxR - 8) * p;
+        ctx!.globalAlpha = (1 - p) * (idx === 0 ? 0.95 : 0.7);
+        ctx!.strokeStyle = idx === 0 ? '#ef4444' : '#fca5a5';
+        ctx!.lineWidth = idx === 0 ? 3.2 : 2;
+        ctx!.beginPath();
+        ctx!.arc(sw.x, sw.y, r, start, end);
+        ctx!.stroke();
+      });
       ctx!.restore();
     }
 
@@ -1665,14 +1816,31 @@ export function initGame(): void {
         lastVy = vy;
       }
 
-      // Interpolation visuelle (Lerp) pour la fluidité d'affichage (même à 20 ticks/sec !)
+      // Interpolation visuelle (Lerp) + mise à jour des drones accompagnants
+      const nowDrone = Date.now();
+      const activeHunterIds = new Set<string>();
       const lerpFactor = 0.3;
       player.x += (player.targetX - player.x) * lerpFactor;
       player.y += (player.targetY - player.y) * lerpFactor;
-      
-      otherPlayers.forEach((op) => {
-        op.x += (op.targetX - op.x) * lerpFactor;
-        op.y += (op.targetY - op.y) * lerpFactor;
+
+      if (isLocalHunterArmed() && networkManager.localPlayerId) {
+        activeHunterIds.add(networkManager.localPlayerId);
+        updateHunterDrone(networkManager.localPlayerId, player.x, player.y, vx, vy, nowDrone);
+      }
+
+      otherPlayers.forEach((op, id) => {
+        const dx = op.targetX - op.x;
+        const dy = op.targetY - op.y;
+        op.x += dx * lerpFactor;
+        op.y += dy * lerpFactor;
+        if (op.role === PlayerRole.HUNTER && op.health > 0) {
+          activeHunterIds.add(id);
+          updateHunterDrone(id, op.x, op.y, dx, dy, nowDrone);
+        }
+      });
+
+      hunterDrones.forEach((_, id) => {
+        if (!activeHunterIds.has(id)) hunterDrones.delete(id);
       });
 
       // Rendu Canvas
