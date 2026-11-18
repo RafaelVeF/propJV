@@ -2583,3 +2583,84 @@ body {
   }
 }
 
+/* ==========================================================================
+   Système d'amis
+   ========================================================================== */
+
+.friends-container {
+  gap: 0.75rem;
+}
+
+.friends-guest-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.5rem 1rem;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(168, 85, 247, 0.35);
+  border-radius: 12px;
+  text-align: center;
+}
+
+.friends-guest-text {
+  color: #cbd5e1;
+  font-size: 1rem;
+  margin: 0;
+}
+
+.friends-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.friends-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  padding: 0.05rem 0.45rem;
+  margin-left: 0.35rem;
+  font-size: 0.85rem;
+  border-radius: 999px;
+  background: rgba(168, 85, 247, 0.2);
+  border: 1px solid rgba(168, 85, 247, 0.45);
+  color: #e9d5ff;
+}
+
+.friends-empty-state {
+  color: #94a3b8;
+  font-size: 0.95rem;
+  font-style: italic;
+  text-align: center;
+  padding: 0.6rem 0;
+  margin: 0;
+}
+
+.friend-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.friend-muted-btn {
+  width: auto !important;
+  padding: 0.35rem 0.75rem !important;
+  font-size: 0.95rem !important;
+  border-radius: 6px !important;
+  margin: 0 !important;
+  background: rgba(148, 163, 184, 0.12) !important;
+  border: 1px solid rgba(148, 163, 184, 0.35) !important;
+  color: #cbd5e1 !important;
+}
+
+.friend-muted-btn:hover {
+  background: rgba(148, 163, 184, 0.25) !important;
+  border-color: #e2e8f0 !important;
+  color: #ffffff !important;
+}
+
+

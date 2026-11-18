@@ -3,7 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { GAME_NAME } from '@prop-hunt/shared';
 import authRoutes from './routes/auth.js';
-import { requireAuth } from './middlewares/requireAuth.js';
+import friendsRoutes from './routes/friends.js';
 import { pool } from './db.js'; 
 
 dotenv.config();
@@ -21,6 +21,10 @@ app.use(express.json());
 // Activation des routes d'authentification (/auth et /api/auth pour compatibilité)
 app.use('/auth', authRoutes);
 app.use('/api/auth', authRoutes);
+
+// Activation des routes d'amis (/friends et /api/friends pour compatibilité)
+app.use('/friends', friendsRoutes);
+app.use('/api/friends', friendsRoutes);
 
 // Test de la connexion au démarrage
 pool.getConnection()
