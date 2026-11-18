@@ -1,6 +1,7 @@
 import { switchView } from './viewManager';
 import { networkManager } from '../network/networkManager';
 import { TransformationWheel } from '../game/ui/TransformationWheel';
+import { musicManager } from '../audio/MusicManager';
 import {
   MessageType,
   GamePhase,
@@ -46,8 +47,14 @@ export function renderGame(): string {
         </div>
       </div>
 
-      <div id="ws-status" style="position: absolute; top: 20px; right: 20px; z-index: 20; color: #4ade80; font-family: sans-serif; font-size: 14px; background: rgba(0,0,0,0.6); padding: 6px 12px; border-radius: 6px;">
-        WS: Connexion en cours...
+      <!-- Haut Droite : Statut WS + Bouton Musique -->
+      <div style="position: absolute; top: 20px; right: 20px; z-index: 20; display: flex; flex-direction: column; align-items: flex-end; gap: 8px;">
+        <div id="ws-status" style="color: #4ade80; font-family: sans-serif; font-size: 14px; background: rgba(0,0,0,0.6); padding: 6px 12px; border-radius: 6px;">
+          WS: Connexion en cours...
+        </div>
+        <button id="btn-toggle-music" title="Couper / Activer la musique (M)" style="cursor: pointer; background: rgba(15, 23, 42, 0.78); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.45); border-radius: 8px; padding: 6px 12px; font-family: sans-serif; font-size: 13px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; backdrop-filter: blur(6px); transition: all 0.2s ease;">
+          🔊 Musique : ON
+        </button>
       </div>
 
       <!-- Overlay Aveuglement Hunter (30s de cachette) -->
@@ -134,10 +141,42 @@ export function initGame(): void {
   // Gestion du retour au menu
   if (btnLeaveGame) {
     btnLeaveGame.addEventListener('click', () => {
+      musicManager.stop();
       networkManager.send(MessageType.LEAVE_ROOM, {});
       switchView(viewGame, viewMain);
     });
   }
+
+  // Gestion du bouton Musique (haut droite) & détection entrée/sortie de partie
+  const btnToggleMusic = document.getElementById('btn-toggle-music');
+  const updateMusicButton = (muted: boolean) => {
+    if (!btnToggleMusic) return;
+    if (muted) {
+      btnToggleMusic.textContent = ' Musique : OFF';
+      btnToggleMusic.style.color = '#94a3b8';
+      btnToggleMusic.style.borderColor = 'rgba(148, 163, 184, 0.35)';
+    } else {
+      btnToggleMusic.textContent = ' Musique : ON';
+      btnToggleMusic.style.color = '#38bdf8';
+      btnToggleMusic.style.borderColor = 'rgba(56, 189, 248, 0.45)';
+    }
+  };
+  if (btnToggleMusic) {
+    btnToggleMusic.addEventListener('click', () => {
+      musicManager.toggleMute();
+    });
+  }
+  musicManager.onMuteChange(updateMusicButton);
+  updateMusicButton(musicManager.getIsMuted());
+
+  const gameViewObserver = new MutationObserver(() => {
+    if (viewGame.classList.contains('active')) {
+      musicManager.start();
+    } else {
+      musicManager.stop();
+    }
+  });
+  gameViewObserver.observe(viewGame, { attributes: true, attributeFilter: ['class'] });
 
   // Redimensionnement du canvas
   function resize() {
@@ -941,6 +980,9 @@ export function initGame(): void {
     if (e.key.toLowerCase() === 'h') {
       showHitbox = !showHitbox;
       console.log(`[DEBUG] Affichage des hitboxes : ${showHitbox ? 'ACTIVÉ' : 'DÉSACTIVÉ'}`);
+    }
+    if (e.key.toLowerCase() === 'm' && viewGame?.classList.contains('active')) {
+      musicManager.toggleMute();
     }
 
     // Mode spectateur : on ne contrôle plus que la caméra
