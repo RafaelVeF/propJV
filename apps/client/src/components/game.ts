@@ -3,6 +3,7 @@ import { networkManager } from '../network/networkManager';
 import { TransformationWheel } from '../game/ui/TransformationWheel';
 import { musicManager } from '../audio/MusicManager';
 import { buildMapSnapshot, renderMinimap, renderFullMap, type MinimapPlayerMarker } from '../game/ui/Minimap';
+import { VisualEffectsManager } from '../game/ui/VisualEffects';
 import {
   MessageType,
   GamePhase,
@@ -45,6 +46,9 @@ export function renderGame(): string {
         </div>
         <div id="game-role-badge" style="font-family: sans-serif; font-size: 13px; font-weight: 800; padding: 4px 14px; border-radius: 6px; background: rgba(168, 85, 247, 0.25); color: #c084fc; border: 1px solid rgba(168, 85, 247, 0.5);">
           RÔLE : EN ATTENTE
+        </div>
+        <div id="game-survivors-badge" style="font-family: sans-serif; font-size: 12px; font-weight: 700; color: #cbd5e1; background: rgba(0, 0, 0, 0.55); padding: 3px 12px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.12);">
+          🎯 0 Chasseur • 🪑 0 Prop
         </div>
       </div>
 
@@ -136,6 +140,11 @@ export function renderGame(): string {
         </div>
         <div id="spectator-help" style="background: rgba(0,0,0,0.55); border-radius: 6px; padding: 4px 12px; font-size: 12px; color: #d4d4d4;"></div>
       </div>
+
+      <!-- Barre d'aide des touches (bas gauche) -->
+      <div id="game-controls-bar" style="position: absolute; bottom: 20px; left: 20px; z-index: 20; pointer-events: none; background: rgba(10, 14, 23, 0.72); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 8px; padding: 6px 12px; font-family: sans-serif; font-size: 12px; color: #94a3b8; backdrop-filter: blur(4px);">
+        [ZQSD] Bouger • [E] Transformer • [R] Tourner • [M] Musique • [H] Hitbox
+      </div>
     </div>
   `;
 }
@@ -151,6 +160,8 @@ export function initGame(): void {
   const gamePhaseBadge = document.getElementById('game-phase-badge');
   const gameTimer = document.getElementById('game-timer');
   const gameRoleBadge = document.getElementById('game-role-badge');
+  const gameSurvivorsBadge = document.getElementById('game-survivors-badge');
+  const gameControlsBar = document.getElementById('game-controls-bar');
   const hunterBlindfold = document.getElementById('hunter-blindfold');
   const hunterCountdown = document.getElementById('hunter-countdown');
   const roundEndOverlay = document.getElementById('round-end-overlay');
@@ -163,6 +174,9 @@ export function initGame(): void {
 
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
+
+  const vfx = new VisualEffectsManager();
+  let lastVfxTime = performance.now();
 
   // Gestion du retour au menu
   if (btnLeaveGame) {
@@ -726,6 +740,7 @@ export function initGame(): void {
         if (player.health > newProp.health) {
           player.health = newProp.health;
         }
+        vfx.spawnTransformPoof(player.x, player.y);
         console.log(`[PROP] Transformation réussie en : ${newProp.displayName} (orientation: ${player.variantIndex}) (${player.health}/${player.maxHealth} HP)`);
       } else if (otherPlayers.has(payload.playerId)) {
         const op = otherPlayers.get(payload.playerId)!;
@@ -737,6 +752,7 @@ export function initGame(): void {
         if (op.health > newProp.health) {
           op.health = newProp.health;
         }
+        vfx.spawnTransformPoof(op.x, op.y);
       }
     }
   });
@@ -751,6 +767,7 @@ export function initGame(): void {
     }
     if (targetId === networkManager.localPlayerId) {
       player.lastHitTimestamp = hitTime;
+      vfx.triggerDamageFlash();
       if (payload.health !== undefined) {
         player.health = payload.health;
       } else {
@@ -1858,7 +1875,39 @@ export function initGame(): void {
         });
       }
 
+      const nowVfx = performance.now();
+      const dtVfx = Math.min(0.05, (nowVfx - lastVfxTime) / 1000);
+      lastVfxTime = nowVfx;
+
+      // Effets visuels en espace monde (particules de transformation)
+      vfx.updateAndDrawWorld(ctx!, dtVfx);
+
       ctx!.restore();
+
+      // Vignette d'ambiance + flash d'impact en espace écran
+      vfx.updateAndDrawScreen(ctx!, canvas.width, canvas.height, dtVfx);
+
+      // Compteur de survivants + barre de raccourcis contextuelle
+      let huntersAlive = (!isSpectator && localPlayerRole === PlayerRole.HUNTER && player.health > 0) ? 1 : 0;
+      let propsAlive = (!isSpectator && localPlayerRole === PlayerRole.PROP && player.health > 0) ? 1 : 0;
+      otherPlayers.forEach(op => {
+        if (op.health > 0) {
+          if (op.role === PlayerRole.HUNTER) huntersAlive++;
+          else if (op.role === PlayerRole.PROP) propsAlive++;
+        }
+      });
+      if (gameSurvivorsBadge) {
+        gameSurvivorsBadge.textContent = `🎯 ${huntersAlive} Chasseur${huntersAlive > 1 ? 's' : ''} • 🪑 ${propsAlive} Prop${propsAlive > 1 ? 's' : ''}`;
+      }
+      if (gameControlsBar) {
+        if (isSpectator) {
+          gameControlsBar.textContent = '[← / →] Changer cible • [Espace] Caméra libre • [M] Musique • [Clic Minimap] Plan';
+        } else if (localPlayerRole === PlayerRole.HUNTER) {
+          gameControlsBar.textContent = '[ZQSD] Bouger • [1/2/3] Armes • [Clic] Tirer • [M] Musique • [H] Hitbox';
+        } else {
+          gameControlsBar.textContent = '[ZQSD] Bouger • [E] Transformer • [R] Tourner • [M] Musique • [H] Hitbox';
+        }
+      }
 
       // Réticule du chasseur (en espace écran)
       drawCrosshair();
