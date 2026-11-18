@@ -2,6 +2,7 @@ import { switchView } from './viewManager';
 import { networkManager } from '../network/networkManager';
 import { TransformationWheel } from '../game/ui/TransformationWheel';
 import { musicManager } from '../audio/MusicManager';
+import { buildMapSnapshot, renderMinimap, renderFullMap, type MinimapPlayerMarker } from '../game/ui/Minimap';
 import {
   MessageType,
   GamePhase,
@@ -47,14 +48,39 @@ export function renderGame(): string {
         </div>
       </div>
 
-      <!-- Haut Droite : Statut WS + Bouton Musique -->
-      <div style="position: absolute; top: 20px; right: 20px; z-index: 20; display: flex; flex-direction: column; align-items: flex-end; gap: 8px;">
-        <div id="ws-status" style="color: #4ade80; font-family: sans-serif; font-size: 14px; background: rgba(0,0,0,0.6); padding: 6px 12px; border-radius: 6px;">
-          WS: Connexion en cours...
+      <!-- Haut Droite : Statut WS + Musique + Minimap Circulaire -->
+      <div style="position: absolute; top: 20px; right: 20px; z-index: 20; display: flex; align-items: flex-start; gap: 14px;">
+        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 8px;">
+          <div id="ws-status" style="color: #4ade80; font-family: sans-serif; font-size: 14px; background: rgba(0,0,0,0.6); padding: 6px 12px; border-radius: 6px;">
+            WS: Connexion en cours...
+          </div>
+          <button id="btn-toggle-music" title="Couper / Activer la musique (M)" style="cursor: pointer; background: rgba(15, 23, 42, 0.78); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.45); border-radius: 8px; padding: 6px 12px; font-family: sans-serif; font-size: 13px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; backdrop-filter: blur(6px); transition: all 0.2s ease;">
+            🔊 Musique : ON
+          </button>
         </div>
-        <button id="btn-toggle-music" title="Couper / Activer la musique (M)" style="cursor: pointer; background: rgba(15, 23, 42, 0.78); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.45); border-radius: 8px; padding: 6px 12px; font-family: sans-serif; font-size: 13px; font-weight: 700; display: inline-flex; align-items: center; gap: 6px; backdrop-filter: blur(6px); transition: all 0.2s ease;">
-          🔊 Musique : ON
-        </button>
+
+        <div id="minimap-wrapper" title="Cliquer pour ouvrir le plan complet" style="width: 144px; height: 144px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.28); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.65); overflow: hidden; cursor: pointer; background: #0b1120; transform-origin: top right; transition: transform 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease; position: relative;">
+          <canvas id="minimap-canvas" width="144" height="144" style="display: block; width: 100%; height: 100%; border-radius: 50%;"></canvas>
+        </div>
+      </div>
+
+      <!-- Modal Plan Complet de la Carte (au clic sur la minimap) -->
+      <div id="fullmap-overlay" style="display: none; position: absolute; inset: 0; background: rgba(5, 8, 15, 0.84); z-index: 28; flex-direction: column; align-items: center; justify-content: center; backdrop-filter: blur(6px); font-family: sans-serif; color: #e2e8f0; padding: 20px;">
+        <div style="background: rgba(15, 23, 42, 0.96); border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 12px; padding: 16px 20px; box-shadow: 0 18px 45px rgba(0,0,0,0.75); display: flex; flex-direction: column; gap: 12px; max-width: 92vw;">
+          <div style="display: flex; justify-content: space-between; align-items: center; gap: 24px;">
+            <div style="display: flex; align-items: center; gap: 14px;">
+              <span style="font-size: 16px; font-weight: 800; letter-spacing: 1px; color: #f8fafc;">PLAN DE LA CARTE</span>
+              <span style="font-size: 12px; color: #94a3b8; display: inline-flex; align-items: center; gap: 10px;">
+                <span><span style="color: #38bdf8;">●</span> Toi</span>
+                <span><span style="color: #4ade80;">●</span> Allié</span>
+              </span>
+            </div>
+            <button id="btn-close-fullmap" style="cursor: pointer; background: rgba(255, 255, 255, 0.08); color: #cbd5e1; border: 1px solid rgba(255, 255, 255, 0.16); border-radius: 6px; padding: 5px 12px; font-size: 12px; font-weight: 700;">
+              FERMER (Échap)
+            </button>
+          </div>
+          <canvas id="fullmap-canvas" width="880" height="656" style="display: block; max-width: 84vw; max-height: 74vh; width: auto; height: auto; border-radius: 6px; border: 1px solid rgba(255,255,255,0.12); background: #0b1120;"></canvas>
+        </div>
       </div>
 
       <!-- Overlay Aveuglement Hunter (30s de cachette) -->
@@ -188,18 +214,76 @@ export function initGame(): void {
   window.addEventListener('resize', resize);
   resize();
 
-  // Chargement de la Map et du Tileset
+  // Chargement de la Map et du Tileset + Snapshot pour la Minimap
   let mapData: any = null;
+  let mapSnapshot: HTMLCanvasElement | null = null;
+  let mapWidthPx = 3520;
+  let mapHeightPx = 2624;
   const tilesetImg = new Image();
   tilesetImg.src = '/assets/tilesets/PropJVTileSetMap32.png';
+
+  const tryBuildMapSnapshot = () => {
+    if (!mapSnapshot && mapData && tilesetImg.complete && tilesetImg.naturalWidth > 0) {
+      mapWidthPx = mapData.width * mapData.tilewidth;
+      mapHeightPx = mapData.height * mapData.tileheight;
+      mapSnapshot = buildMapSnapshot(mapData, tilesetImg);
+    }
+  };
+  tilesetImg.addEventListener('load', tryBuildMapSnapshot);
 
   fetch('/assets/maps/map_01_32p.tmj')
     .then(res => res.json())
     .then(data => {
       mapData = data;
+      tryBuildMapSnapshot();
       console.log('[MAP] Carte chargée avec succès !', data.width, 'x', data.height);
     })
     .catch(err => console.error('[MAP] Erreur de chargement de la carte:', err));
+
+  // Contrôles Minimap & Plan Complet
+  const minimapWrapper = document.getElementById('minimap-wrapper');
+  const minimapCanvas = document.getElementById('minimap-canvas') as HTMLCanvasElement | null;
+  const minimapCtx = minimapCanvas?.getContext('2d') || null;
+  const fullMapOverlay = document.getElementById('fullmap-overlay');
+  const fullMapCanvas = document.getElementById('fullmap-canvas') as HTMLCanvasElement | null;
+  const fullMapCtx = fullMapCanvas?.getContext('2d') || null;
+  const btnCloseFullMap = document.getElementById('btn-close-fullmap');
+
+  let isMinimapHovered = false;
+  let isFullMapOpen = false;
+
+  const setFullMapOpen = (open: boolean) => {
+    isFullMapOpen = open;
+    if (fullMapOverlay) {
+      fullMapOverlay.style.display = open ? 'flex' : 'none';
+    }
+  };
+
+  if (minimapWrapper) {
+    minimapWrapper.addEventListener('mouseenter', () => {
+      isMinimapHovered = true;
+      minimapWrapper.style.transform = 'scale(1.18)';
+      minimapWrapper.style.borderColor = 'rgba(56, 189, 248, 0.7)';
+      minimapWrapper.style.boxShadow = '0 10px 28px rgba(0, 0, 0, 0.8)';
+    });
+    minimapWrapper.addEventListener('mouseleave', () => {
+      isMinimapHovered = false;
+      minimapWrapper.style.transform = 'scale(1)';
+      minimapWrapper.style.borderColor = 'rgba(255, 255, 255, 0.28)';
+      minimapWrapper.style.boxShadow = '0 6px 20px rgba(0, 0, 0, 0.65)';
+    });
+    minimapWrapper.addEventListener('click', () => {
+      setFullMapOpen(true);
+    });
+  }
+  if (btnCloseFullMap) {
+    btnCloseFullMap.addEventListener('click', () => setFullMapOpen(false));
+  }
+  if (fullMapOverlay) {
+    fullMapOverlay.addEventListener('click', (e) => {
+      if (e.target === fullMapOverlay) setFullMapOpen(false);
+    });
+  }
 
   // Préchargement des textures de props (y compris toutes les orientations/variantes)
   const propImages = new Map<string, HTMLImageElement>();
@@ -967,6 +1051,11 @@ export function initGame(): void {
   const keys: { [key: string]: boolean } = {};
 
   window.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && isFullMapOpen) {
+      setFullMapOpen(false);
+      return;
+    }
+
     // 1. Si la roue de transformation est ouverte, elle capture les touches en priorité
     if (transformationWheel.getIsOpen()) {
       const handled = transformationWheel.handleKeyDown(e);
@@ -1779,6 +1868,45 @@ export function initGame(): void {
       if (transformationWheel.getIsOpen()) {
         transformationWheel.setCurrentEquippedPropId(player.currentProp.id);
         transformationWheel.render(ctx!, canvas.width, canvas.height);
+      }
+
+      // Rendu de la Minimap circulaire (et du Plan complet si ouvert)
+      if (minimapCtx && minimapCanvas) {
+        tryBuildMapSnapshot();
+        const allies: MinimapPlayerMarker[] = [];
+        otherPlayers.forEach(op => {
+          if (op.health <= 0 || op.role === PlayerRole.SPECTATOR) return;
+          if (isSpectator || op.role === localPlayerRole) {
+            allies.push({ x: op.x, y: op.y, name: op.name, role: op.role });
+          }
+        });
+
+        renderMinimap(
+          minimapCtx,
+          minimapCanvas.width,
+          mapSnapshot,
+          mapWidthPx,
+          mapHeightPx,
+          player.x,
+          player.y,
+          localPlayerRole,
+          allies,
+          isMinimapHovered
+        );
+
+        if (isFullMapOpen && fullMapCtx && fullMapCanvas) {
+          renderFullMap(
+            fullMapCtx,
+            fullMapCanvas,
+            mapSnapshot,
+            mapWidthPx,
+            mapHeightPx,
+            player.x,
+            player.y,
+            localPlayerRole,
+            allies
+          );
+        }
       }
     }
 
