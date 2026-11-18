@@ -13,16 +13,32 @@ import {
     type HunterShootPayload,
     type CreateRoomPayload,
     type JoinRoomPayload,
+    type ShotFiredPayload,
+    type GrenadeExplodedPayload,
+    type PlayerDiedPayload,
+    type PlayerHitPayload,
+    type SpectatorPlayer,
     type KickPlayerPayload,
     Rectangle,
     DEFAULT_PROPS,
-    GAMEPLAY_CONFIG
+    GAMEPLAY_CONFIG,
+    GamePhase,
+    WeaponType,
+    WEAPONS,
+    isAlive
 } from '@prop-hunt/shared';
 import { GameLoop } from './GameLoop.js';
 import { updatePlayerPosition } from './systems/movement.js';
 import { parseTiledCollisions } from './utils/mapLoader.js';
 import { GAME_CONFIG } from './config/game.js';
 import { RoundManager } from './RoundManager.js';
+import {
+    HunterArsenal,
+    resolvePistolShot,
+    resolveMeleeHit,
+    computeGrenadeLanding,
+    resolveExplosion
+} from './systems/combat.js';
 
 const wss = new WebSocketServer({ port: 8080 }); // Serveur WebSocket sur le port 8080
 console.log('[GameServer] Serveur WebSocket démarré sur le port 8080');
@@ -38,6 +54,18 @@ interface GameRoom {
     players: Map<string, Player>;
     playerInputs: Map<string, { vx: number; vy: number }>;
     playerRegenTimers: Map<string, number>;
+    /** Armes de chaque chasseur (munitions, délais), recréées à chaque manche */
+    arsenals: Map<string, HunterArsenal>;
+    /** Grenades lancées qui n'ont pas encore explosé */
+    pendingGrenades: PendingGrenade[];
+}
+
+interface PendingGrenade {
+    id: string;
+    hunterId: string;
+    x: number;
+    y: number;
+    explodeAt: number;
 }
 
 const rooms = new Map<string, GameRoom>();
@@ -59,6 +87,230 @@ function broadcastToRoom(roomKey: string, message: NetworkMessage, excludeWs?: W
     });
 }
 
+/** Envoie un message à un seul joueur d'un salon */
+function sendToPlayer(roomKey: string, playerId: string, message: NetworkMessage) {
+    const dataString = JSON.stringify(message);
+    clients.forEach((clientPlayerId, clientWs) => {
+        if (
+            clientPlayerId === playerId &&
+            clientRooms.get(clientWs) === roomKey &&
+            clientWs.readyState === WebSocket.OPEN
+        ) {
+            clientWs.send(dataString);
+        }
+    });
+}
+
+/**
+ * Recrée l'état "en jeu" d'un joueur pour une nouvelle manche (ou le retour au salon).
+ * Indispensable car un joueur mort a été remplacé par un SpectatorPlayer sans prop.
+ */
+function buildRoundPlayer(previous: Player, role: PlayerRole.HUNTER | PlayerRole.PROP, spawn: { x: number; y: number }): Player {
+    const base = {
+        id: previous.id,
+        name: previous.name,
+        x: spawn.x,
+        y: spawn.y,
+        lastHitTimestamp: 0
+    };
+    if (role === PlayerRole.HUNTER) {
+        return {
+            ...base,
+            role: PlayerRole.HUNTER,
+            health: 100,
+            maxHealth: 100,
+            ammo: WEAPONS[WeaponType.PISTOL].magazineSize
+        };
+    }
+    // Les props commencent chaque manche sous forme humaine
+    const humanProp = DEFAULT_PROPS[0];
+    return {
+        ...base,
+        role: PlayerRole.PROP,
+        health: humanProp.health,
+        maxHealth: humanProp.health,
+        isLocked: false,
+        currentProp: humanProp,
+        variantIndex: 0,
+        currentSpriteKey: humanProp.internalName
+    };
+}
+
+function sendWeaponState(room: GameRoom, hunterId: string, now: number = Date.now()) {
+    const arsenal = room.arsenals.get(hunterId);
+    if (!arsenal) return;
+    sendToPlayer(room.key, hunterId, {
+        type: MessageType.WEAPON_STATE,
+        payload: arsenal.getState(now)
+    });
+}
+
+/**
+ * Applique des dégâts de façon autoritaire, prévient tout le salon,
+ * et gère la mort (passage en spectateur + vérification de fin de manche).
+ */
+function applyDamage(room: GameRoom, targetId: string, damage: number, attackerId?: string, weapon?: WeaponType) {
+    const target = room.players.get(targetId);
+    if (!target || !isAlive(target) || damage <= 0) return;
+
+    target.health = Math.max(0, target.health - damage);
+    target.lastHitTimestamp = Date.now();
+    room.playerRegenTimers.delete(targetId);
+    const isKilled = target.health <= 0;
+
+    console.log(`[GameServer][${room.key}] ${target.name} a subi ${damage} dégâts${weapon ? ` (${WEAPONS[weapon].displayName})` : ''} (HP: ${target.health}/${target.maxHealth || 100})`);
+
+    broadcastToRoom(room.key, {
+        type: MessageType.PLAYER_HIT,
+        payload: {
+            targetPlayerId: targetId,
+            damage,
+            isKilled,
+            attackerId,
+            weapon,
+            health: target.health,
+            maxHealth: target.maxHealth,
+            lastHitTimestamp: target.lastHitTimestamp
+        } satisfies PlayerHitPayload
+    });
+
+    if (isKilled) {
+        killPlayer(room, targetId, attackerId, weapon);
+    }
+}
+
+/** Passe un joueur mort en mode spectateur jusqu'à la fin de la manche */
+function killPlayer(room: GameRoom, victimId: string, killerId?: string, weapon?: WeaponType) {
+    const victim = room.players.get(victimId);
+    if (!victim || victim.role === PlayerRole.SPECTATOR) return;
+
+    const propDisplayName = 'currentProp' in victim ? victim.currentProp?.displayName : undefined;
+    const killer = killerId && killerId !== victimId ? room.players.get(killerId) : undefined;
+
+    const spectator: SpectatorPlayer = {
+        id: victim.id,
+        name: victim.name,
+        x: victim.x,
+        y: victim.y,
+        health: 0,
+        maxHealth: victim.maxHealth,
+        lastHitTimestamp: victim.lastHitTimestamp,
+        role: PlayerRole.SPECTATOR
+    };
+    room.players.set(victimId, spectator);
+    room.playerInputs.set(victimId, { vx: 0, vy: 0 });
+    room.playerRegenTimers.delete(victimId);
+    room.arsenals.delete(victimId);
+
+    console.log(`[GameServer][${room.key}] ${victim.name} est mort${killer ? ` (tué par ${killer.name})` : ''} -> spectateur`);
+
+    broadcastToRoom(room.key, {
+        type: MessageType.PLAYER_DIED,
+        payload: {
+            playerId: victimId,
+            playerName: victim.name,
+            killerId: killer?.id,
+            killerName: killer?.name,
+            weapon,
+            x: victim.x,
+            y: victim.y,
+            propDisplayName
+        } satisfies PlayerDiedPayload
+    });
+
+    // Le RoundManager compte les kills/score et termine la manche s'il ne reste plus de prop
+    room.roundManager.handlePlayerDeath(victimId, killer?.id);
+}
+
+/** Traite une attaque de chasseur (pistolet, pied de biche ou grenade) */
+function handleHunterAttack(room: GameRoom, hunterId: string, payload: HunterShootPayload) {
+    const hunter = room.players.get(hunterId);
+    if (!hunter || !isAlive(hunter) || hunter.role !== PlayerRole.HUNTER) return;
+    if (!room.roundManager.canPlayerShoot(hunterId)) return;
+
+    const weapon = payload.weapon;
+    if (!weapon || !(weapon in WEAPONS)) return;
+    if (!Number.isFinite(payload.targetX) || !Number.isFinite(payload.targetY)) return;
+
+    const arsenal = room.arsenals.get(hunterId);
+    if (!arsenal) return;
+
+    const now = Date.now();
+    const refusal = arsenal.checkUse(weapon, now);
+    if (refusal) {
+        // On renvoie l'état officiel pour que le HUD du client se recale
+        sendWeaponState(room, hunterId, now);
+        return;
+    }
+    arsenal.consume(weapon, now);
+
+    const aim = { x: payload.targetX, y: payload.targetY };
+    const players = room.players.values();
+
+    if (weapon === WeaponType.GRENADE) {
+        const { origin, landing } = computeGrenadeLanding(hunter, aim, staticObstacles);
+        const fuseMs = WEAPONS[WeaponType.GRENADE].fuseMs ?? 1000;
+        const grenadeId = `${hunterId}-${now}`;
+        room.pendingGrenades.push({ id: grenadeId, hunterId, x: landing.x, y: landing.y, explodeAt: now + fuseMs });
+
+        broadcastToRoom(room.key, {
+            type: MessageType.HUNTER_SHOOT,
+            payload: {
+                hunterId, weapon,
+                originX: origin.x, originY: origin.y,
+                impactX: landing.x, impactY: landing.y,
+                hitPlayerIds: [],
+                fuseMs, grenadeId
+            } satisfies ShotFiredPayload
+        });
+    } else {
+        const result = weapon === WeaponType.PISTOL
+            ? resolvePistolShot(hunter, aim, players, staticObstacles)
+            : resolveMeleeHit(hunter, aim, players, staticObstacles);
+
+        broadcastToRoom(room.key, {
+            type: MessageType.HUNTER_SHOOT,
+            payload: {
+                hunterId, weapon,
+                originX: result.origin.x, originY: result.origin.y,
+                impactX: result.impact.x, impactY: result.impact.y,
+                hitPlayerIds: result.hits.map(h => h.playerId)
+            } satisfies ShotFiredPayload
+        });
+
+        result.hits.forEach(hit => applyDamage(room, hit.playerId, hit.damage, hunterId, weapon));
+    }
+
+    sendWeaponState(room, hunterId, now);
+}
+
+/** Fait exploser les grenades dont le délai est écoulé */
+function updateGrenades(room: GameRoom, now: number) {
+    if (room.pendingGrenades.length === 0) return;
+    const ready = room.pendingGrenades.filter(g => now >= g.explodeAt);
+    if (ready.length === 0) return;
+    room.pendingGrenades = room.pendingGrenades.filter(g => now < g.explodeAt);
+
+    for (const grenade of ready) {
+        // Si la manche est finie entre temps, la grenade fait long feu
+        if (room.roundManager.getPhase() !== GamePhase.HUNTING) continue;
+
+        const hits = resolveExplosion(grenade, grenade.hunterId, room.players.values(), staticObstacles);
+        broadcastToRoom(room.key, {
+            type: MessageType.GRENADE_EXPLODED,
+            payload: {
+                grenadeId: grenade.id,
+                hunterId: grenade.hunterId,
+                x: grenade.x,
+                y: grenade.y,
+                radius: WEAPONS[WeaponType.GRENADE].blastRadius ?? 80,
+                hitPlayerIds: hits.map(h => h.playerId)
+            } satisfies GrenadeExplodedPayload
+        });
+        hits.forEach(hit => applyDamage(room, hit.playerId, hit.damage, grenade.hunterId, WeaponType.GRENADE));
+    }
+}
+
 function generateRoomKey(prefix: string = 'LOCAL'): string {
     let key = '';
     do {
@@ -72,6 +324,7 @@ function createRoom(isFreeplay: boolean = false): GameRoom {
     const roomPlayers = new Map<string, Player>();
     const roomInputs = new Map<string, { vx: number; vy: number }>();
     const roomRegenTimers = new Map<string, number>();
+    const roomArsenals = new Map<string, HunterArsenal>();
 
     const roundManager = new RoundManager({
         onLobbyStateChanged: (lobbyState) => {
@@ -94,22 +347,18 @@ function createRoom(isFreeplay: boolean = false): GameRoom {
         },
         onRoundStarted: (assignments) => {
             console.log(`[GameServer][${roomKey}] Démarrage de la manche #${roundManager.getRoundNumber()} !`);
+            roomArsenals.clear();
+            room.pendingGrenades = [];
             assignments.forEach((role, assignedPlayerId) => {
-                const p = roomPlayers.get(assignedPlayerId);
-                if (p) {
-                    p.role = role;
-                    p.health = 100;
-                    p.maxHealth = 100;
+                const previous = roomPlayers.get(assignedPlayerId);
+                if (previous && (role === PlayerRole.HUNTER || role === PlayerRole.PROP)) {
+                    // On reconstruit le joueur : il a pu mourir (spectateur) à la manche précédente
+                    const p = buildRoundPlayer(previous, role, role === PlayerRole.HUNTER ? SPAWN_HUNTER : SPAWN_PROP);
+                    roomPlayers.set(assignedPlayerId, p);
+                    roomInputs.set(assignedPlayerId, { vx: 0, vy: 0 });
+                    roomRegenTimers.delete(assignedPlayerId);
                     if (role === PlayerRole.HUNTER) {
-                        p.x = SPAWN_HUNTER.x;
-                        p.y = SPAWN_HUNTER.y;
-                    } else {
-                        p.x = SPAWN_PROP.x;
-                        p.y = SPAWN_PROP.y;
-                        if ('currentProp' in p && p.currentProp) {
-                            p.health = p.currentProp.health;
-                            p.maxHealth = p.currentProp.health;
-                        }
+                        roomArsenals.set(assignedPlayerId, new HunterArsenal());
                     }
                     console.log(`  - ${p.name} : ${role} (Spawn: ${p.x}, ${p.y})`);
                 }
@@ -132,6 +381,10 @@ function createRoom(isFreeplay: boolean = false): GameRoom {
                         } satisfies NetworkMessage));
                     }
                 });
+
+                if (role === PlayerRole.HUNTER) {
+                    sendWeaponState(room, assignedPlayerId);
+                }
             });
         },
         onTimerTick: (phase, timeRemaining) => {
@@ -141,6 +394,18 @@ function createRoom(isFreeplay: boolean = false): GameRoom {
             });
         },
         onPhaseChanged: (phase, timeRemaining) => {
+            if (phase === GamePhase.ROUND_END) {
+                room.pendingGrenades = [];
+            }
+            if (phase === GamePhase.LOBBY) {
+                // Retour au salon : tout le monde ressuscite sous forme humaine
+                roomArsenals.clear();
+                room.pendingGrenades = [];
+                roomPlayers.forEach((p, id) => {
+                    roomPlayers.set(id, buildRoundPlayer(p, PlayerRole.PROP, { x: p.x, y: p.y }));
+                    roomInputs.set(id, { vx: 0, vy: 0 });
+                });
+            }
             broadcastToRoom(roomKey, {
                 type: MessageType.ROUND_TIMER_TICK,
                 payload: { phase, timeRemaining }
@@ -166,7 +431,9 @@ function createRoom(isFreeplay: boolean = false): GameRoom {
         roundManager,
         players: roomPlayers,
         playerInputs: roomInputs,
-        playerRegenTimers: roomRegenTimers
+        playerRegenTimers: roomRegenTimers,
+        arsenals: roomArsenals,
+        pendingGrenades: []
     };
     rooms.set(roomKey, room);
     console.log(`[GameServer] Salon créé : ${roomKey}`);
@@ -354,7 +621,8 @@ wss.on('connection', (ws) => {
                 }
 
                 case MessageType.PLAYER_MOVE: {
-                    if (!room.roundManager.canPlayerMove(playerId)) {
+                    const mover = room.players.get(playerId);
+                    if (!mover || !isAlive(mover) || !room.roundManager.canPlayerMove(playerId)) {
                         room.playerInputs.set(playerId, { vx: 0, vy: 0 });
                         break;
                     }
@@ -417,6 +685,8 @@ wss.on('connection', (ws) => {
 
                 case MessageType.PROP_WHISTLE: {
                     const payload = message.payload as PropWhistlePayload;
+                    const whistler = room.players.get(playerId);
+                    if (!whistler || !isAlive(whistler)) break; // Les morts ne sifflent pas
                     broadcastToRoom(room.key, {
                         type: MessageType.PROP_WHISTLE,
                         payload: { playerId, soundKey: payload.soundKey }
@@ -425,48 +695,28 @@ wss.on('connection', (ws) => {
                 }
 
                 case MessageType.HUNTER_SHOOT: {
-                    if (!room.roundManager.canPlayerShoot(playerId)) {
-                        break;
+                    // Le client n'envoie que son intention : tout est vérifié et calculé côté serveur
+                    handleHunterAttack(room, playerId, message.payload as HunterShootPayload);
+                    break;
+                }
+
+                case MessageType.HUNTER_RELOAD: {
+                    const hunter = room.players.get(playerId);
+                    const arsenal = room.arsenals.get(playerId);
+                    if (hunter && isAlive(hunter) && arsenal && arsenal.startReload(Date.now())) {
+                        sendWeaponState(room, playerId);
                     }
-                    const payload = message.payload as HunterShootPayload;
-                    broadcastToRoom(room.key, {
-                        type: MessageType.HUNTER_SHOOT,
-                        payload
-                    });
                     break;
                 }
 
                 case MessageType.PLAYER_HIT: {
-                    const payload = message.payload as { targetPlayerId?: string; playerId?: string; damage: number };
-                    const targetId = payload.targetPlayerId || payload.playerId;
-                    if (targetId && room.players.has(targetId)) {
-                        const targetPlayer = room.players.get(targetId)!;
-                        const damage = payload.damage ?? 10;
-                        targetPlayer.health = Math.max(0, targetPlayer.health - damage);
-                        targetPlayer.lastHitTimestamp = Date.now();
-                        room.playerRegenTimers.delete(targetId);
-                        room.players.set(targetId, targetPlayer);
-
-                        const isKilled = targetPlayer.health <= 0;
-                        if (isKilled) {
-                            room.roundManager.handlePlayerDeath(targetId, playerId);
-                        }
-
-                        console.log(`[GameServer][${room.key}] ${targetPlayer.name} a subi ${damage} dégâts (HP: ${targetPlayer.health}/${targetPlayer.maxHealth || 100})`);
-
-                        broadcastToRoom(room.key, {
-                            type: MessageType.PLAYER_HIT,
-                            payload: {
-                                targetPlayerId: targetId,
-                                playerId: targetId,
-                                damage: damage,
-                                health: targetPlayer.health,
-                                maxHealth: targetPlayer.maxHealth,
-                                lastHitTimestamp: targetPlayer.lastHitTimestamp,
-                                isKilled
-                            }
-                        });
-                    }
+                    // Les clients ne peuvent plus infliger de dégâts aux autres : seul le serveur le fait.
+                    // Exception de debug (touche K) : un joueur peut s'infliger des dégâts à lui-même.
+                    if (!GAME_CONFIG.DEBUG_SELF_DAMAGE) break;
+                    const payload = message.payload as { targetPlayerId?: string; damage?: number };
+                    if (payload.targetPlayerId !== playerId) break;
+                    const damage = Math.max(0, Math.min(100, Number(payload.damage) || 0));
+                    applyDamage(room, playerId, damage);
                     break;
                 }
             }
@@ -488,8 +738,15 @@ const gameLoop = new GameLoop((deltaTime: number) => {
     const now = Date.now();
 
     rooms.forEach((room) => {
+        updateGrenades(room, now);
+
+        // Fin de rechargement du pistolet : on prévient le chasseur concerné
+        room.arsenals.forEach((arsenal, hunterId) => {
+            if (arsenal.update(now)) sendWeaponState(room, hunterId, now);
+        });
+
         room.players.forEach((player, id) => {
-            if (!room.roundManager.canPlayerMove(id)) {
+            if (!isAlive(player) || !room.roundManager.canPlayerMove(id)) {
                 return;
             }
 

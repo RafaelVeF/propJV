@@ -12,7 +12,18 @@ import {
   type RoundStartPayload,
   type RoundTimerTickPayload,
   type RoundEndPayload,
-  type LobbyStatePayload
+  type LobbyStatePayload,
+  WeaponType,
+  WEAPONS,
+  WEAPON_ORDER,
+  getPlayerHurtbox,
+  getNextSpectateTarget,
+  type HunterShootPayload,
+  type ShotFiredPayload,
+  type GrenadeExplodedPayload,
+  type WeaponStatePayload,
+  type PlayerDiedPayload,
+  type PlayerHitPayload
 } from '@prop-hunt/shared';
 
 export function renderGame(): string {
@@ -57,6 +68,41 @@ export function renderGame(): string {
       </div>
 
       <canvas id="game-canvas" style="display: block;"></canvas>
+
+      <!-- Barre d'armes du chasseur (bas droite) -->
+      <div id="weapon-hud" style="display: none; position: absolute; bottom: 24px; right: 24px; z-index: 20; gap: 8px; pointer-events: none; font-family: sans-serif;">
+        ${WEAPON_ORDER.map(type => {
+          const w = WEAPONS[type];
+          const icon = w.iconPath
+            ? `<img src="${w.iconPath}" alt="" style="width: 32px; height: 32px; image-rendering: pixelated;">`
+            : `<div style="width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; font-size: 22px;">💣</div>`;
+          return `
+          <div class="weapon-slot" data-weapon="${type}" style="position: relative; width: 92px; padding: 8px 6px 6px; border-radius: 8px; background: rgba(0,0,0,0.65); border: 2px solid rgba(255,255,255,0.15); display: flex; flex-direction: column; align-items: center; gap: 3px; overflow: hidden;">
+            <span style="position: absolute; top: 3px; left: 6px; font-size: 11px; font-weight: 800; color: #94a3b8;">${w.slot}</span>
+            ${icon}
+            <span style="font-size: 11px; font-weight: 700; color: #e2e8f0;">${w.displayName}</span>
+            <span class="weapon-slot-info" style="font-family: monospace; font-size: 12px; color: #fbbf24; min-height: 14px;"></span>
+            <div class="weapon-slot-progress" style="position: absolute; left: 0; bottom: 0; height: 3px; width: 0%; background: #38bdf8;"></div>
+          </div>`;
+        }).join('')}
+      </div>
+
+      <!-- Écran de mort (affiché quelques secondes quand le joueur local meurt) -->
+      <div id="death-overlay" style="position: absolute; inset: 0; z-index: 26; display: none; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; background: radial-gradient(ellipse at center, rgba(120,0,0,0.15) 0%, rgba(0,0,0,0.75) 100%); font-family: sans-serif; transition: opacity 0.6s ease;">
+        <div style="font-size: 56px; font-weight: 900; letter-spacing: 6px; color: #ef4444; text-shadow: 0 0 24px rgba(239,68,68,0.6);">VOUS ÊTES MORT</div>
+        <div id="death-overlay-killer" style="margin-top: 12px; font-size: 18px; color: #e5e5e5;"></div>
+        <div id="death-overlay-prop" style="margin-top: 6px; font-size: 14px; color: #a3a3a3;"></div>
+        <div style="margin-top: 28px; font-size: 13px; color: #737373;">Passage en mode spectateur...</div>
+      </div>
+
+      <!-- Bandeau du mode spectateur -->
+      <div id="spectator-hud" style="position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 20; display: none; flex-direction: column; align-items: center; gap: 6px; pointer-events: none; font-family: sans-serif;">
+        <div style="background: rgba(0,0,0,0.7); border: 1px solid rgba(168,85,247,0.6); border-radius: 8px; padding: 8px 20px; text-align: center;">
+          <div style="font-size: 12px; letter-spacing: 3px; color: #a855f7; font-weight: 700;">SPECTATEUR</div>
+          <div id="spectator-target" style="font-size: 18px; color: #ffffff; font-weight: 600; margin-top: 2px;"></div>
+        </div>
+        <div id="spectator-help" style="background: rgba(0,0,0,0.55); border-radius: 6px; padding: 4px 12px; font-size: 12px; color: #d4d4d4;"></div>
+      </div>
     </div>
   `;
 }
@@ -161,6 +207,7 @@ export function initGame(): void {
     name?: string;
     currentProp?: PropDefinition;
     variantIndex?: number;
+    role?: PlayerRole;
   }>();
 
   // Roue radiale de transformation des Props (8 slots, paginée)
@@ -195,11 +242,303 @@ export function initGame(): void {
     }
   });
 
+  // =========================================================================
+  // COMBAT (côté client : visée, affichage et effets uniquement)
+  // Le client envoie seulement son intention de tir, le serveur décide du résultat.
+  // =========================================================================
+  const weaponHud = document.getElementById('weapon-hud');
+  const weaponSlots = new Map<WeaponType, { root: HTMLElement; info: HTMLElement; progress: HTMLElement }>();
+  weaponHud?.querySelectorAll<HTMLElement>('.weapon-slot').forEach(el => {
+    weaponSlots.set(el.dataset.weapon as WeaponType, {
+      root: el,
+      info: el.querySelector('.weapon-slot-info') as HTMLElement,
+      progress: el.querySelector('.weapon-slot-progress') as HTMLElement
+    });
+  });
+
+  const weaponImages = new Map<WeaponType, HTMLImageElement>();
+  WEAPON_ORDER.forEach(type => {
+    const path = WEAPONS[type].iconPath;
+    if (path) {
+      const img = new Image();
+      img.src = path;
+      weaponImages.set(type, img);
+    }
+  });
+
+  let selectedWeapon: WeaponType = WeaponType.PISTOL;
+  /** Copie locale de l'état officiel envoyé par le serveur (échéances converties en heure locale) */
+  const weaponView = new Map<WeaponType, { ammo?: number; magazineSize?: number; cooldownEndsAt: number; reloadEndsAt: number }>();
+  const resetWeaponView = () => {
+    WEAPON_ORDER.forEach(type => {
+      weaponView.set(type, {
+        ammo: WEAPONS[type].magazineSize,
+        magazineSize: WEAPONS[type].magazineSize,
+        cooldownEndsAt: 0,
+        reloadEndsAt: 0
+      });
+    });
+  };
+  resetWeaponView();
+
+  // Souris (coordonnées écran) et transformation caméra du dernier rendu, pour convertir en coordonnées monde
+  const mouse = { x: 0, y: 0, inside: false };
+  const view = { camX: 0, camY: 0, zoom: 1 };
+  const screenToWorld = (sx: number, sy: number) => ({
+    x: view.camX + (sx - canvas.width / 2) / view.zoom,
+    y: view.camY + (sy - canvas.height / 2) / view.zoom
+  });
+  const HOLD_OFFSET_Y = 14; // Même valeur que WEAPON_HOLD_OFFSET_Y côté serveur
+
+  // Effets visuels éphémères
+  interface Tracer { x1: number; y1: number; x2: number; y2: number; hit: boolean; at: number; }
+  interface Swing { x: number; y: number; angle: number; hit: boolean; at: number; }
+  interface FlyingGrenade { id: string; x1: number; y1: number; x2: number; y2: number; at: number; fuseMs: number; }
+  interface Explosion { x: number; y: number; radius: number; at: number; }
+  interface DamageNumber { x: number; y: number; text: string; at: number; color: string; }
+  interface DeathEffect { x: number; y: number; at: number; name: string; particles: { vx: number; vy: number; size: number; color: string }[]; }
+  const tracers: Tracer[] = [];
+  const swings: Swing[] = [];
+  const grenades: FlyingGrenade[] = [];
+  const explosions: Explosion[] = [];
+  const damageNumbers: DamageNumber[] = [];
+  const deathEffects: DeathEffect[] = [];
+  let hitMarkerAt = 0;
+  let screenShake = 0;
+  /** Dernière arme / direction connue de chaque chasseur (pour dessiner l'arme dans sa main) */
+  const hunterAim = new Map<string, { angle: number; weapon: WeaponType }>();
+
+  const isLocalHunterArmed = () =>
+    localPlayerRole === PlayerRole.HUNTER && !isSpectator && player.health > 0;
+
+  const selectWeapon = (type: WeaponType) => {
+    selectedWeapon = type;
+    updateWeaponHud();
+  };
+
+  const cycleWeapon = (direction: 1 | -1) => {
+    const idx = WEAPON_ORDER.indexOf(selectedWeapon);
+    selectWeapon(WEAPON_ORDER[(idx + direction + WEAPON_ORDER.length) % WEAPON_ORDER.length]);
+  };
+
+  /** Vérification locale, uniquement pour éviter d'envoyer des tirs inutiles (le serveur revérifie tout) */
+  const isWeaponReady = (type: WeaponType, now = Date.now()) => {
+    const state = weaponView.get(type);
+    if (!state) return false;
+    if (now < state.cooldownEndsAt) return false;
+    if (type === WeaponType.PISTOL && (now < state.reloadEndsAt || (state.ammo ?? 0) <= 0)) return false;
+    return true;
+  };
+
+  const tryAttack = () => {
+    if (!isLocalHunterArmed() || currentPhase !== GamePhase.HUNTING) return;
+    if (!networkManager.localPlayerId) return;
+    const now = Date.now();
+    if (!isWeaponReady(selectedWeapon, now)) return;
+
+    const target = screenToWorld(mouse.x, mouse.y);
+    networkManager.send<HunterShootPayload>(MessageType.HUNTER_SHOOT, {
+      weapon: selectedWeapon,
+      targetX: target.x,
+      targetY: target.y
+    });
+
+    // Prédiction locale du délai (corrigée par le WEAPON_STATE du serveur)
+    const state = weaponView.get(selectedWeapon)!;
+    state.cooldownEndsAt = now + WEAPONS[selectedWeapon].cooldownMs;
+    if (selectedWeapon === WeaponType.PISTOL && state.ammo !== undefined) {
+      state.ammo = Math.max(0, state.ammo - 1);
+      if (state.ammo === 0) state.reloadEndsAt = now + (WEAPONS[WeaponType.PISTOL].reloadMs ?? 0);
+    }
+    updateWeaponHud();
+  };
+
+  const requestReload = () => {
+    const state = weaponView.get(WeaponType.PISTOL);
+    if (!isLocalHunterArmed() || !state) return;
+    if (state.ammo === state.magazineSize || Date.now() < state.reloadEndsAt) return;
+    networkManager.send(MessageType.HUNTER_RELOAD, { weapon: WeaponType.PISTOL });
+  };
+
+  const updateWeaponHud = () => {
+    if (!weaponHud) return;
+    const visible = isLocalHunterArmed() && currentPhase !== GamePhase.LOBBY && currentPhase !== GamePhase.ROUND_END;
+    weaponHud.style.display = visible ? 'flex' : 'none';
+    canvas.style.cursor = visible ? 'none' : 'default';
+    if (!visible) return;
+
+    const now = Date.now();
+    WEAPON_ORDER.forEach(type => {
+      const slot = weaponSlots.get(type);
+      const state = weaponView.get(type);
+      if (!slot || !state) return;
+      const def = WEAPONS[type];
+      const isSelected = type === selectedWeapon;
+      slot.root.style.borderColor = isSelected ? '#fbbf24' : 'rgba(255,255,255,0.15)';
+      slot.root.style.transform = isSelected ? 'translateY(-4px)' : 'none';
+
+      const reloadLeft = state.reloadEndsAt - now;
+      const cooldownLeft = state.cooldownEndsAt - now;
+      if (type === WeaponType.PISTOL && reloadLeft > 0) {
+        slot.info.textContent = 'RECHARGE...';
+        slot.info.style.color = '#38bdf8';
+        slot.progress.style.width = `${100 * (1 - reloadLeft / (def.reloadMs ?? 1))}%`;
+      } else if (cooldownLeft > 1000) {
+        // Long délai (grenade) : on affiche le compte à rebours
+        slot.info.textContent = `${Math.ceil(cooldownLeft / 1000)}s`;
+        slot.info.style.color = '#f87171';
+        slot.progress.style.width = `${100 * (1 - cooldownLeft / def.cooldownMs)}%`;
+      } else {
+        slot.info.textContent = state.magazineSize !== undefined ? `${state.ammo} / ${state.magazineSize}` : 'PRÊT';
+        slot.info.style.color = state.ammo === 0 ? '#f87171' : '#fbbf24';
+        slot.progress.style.width = '0%';
+      }
+    });
+  };
+
+  const addDamageNumber = (x: number, y: number, damage: number, color = '#fca5a5') => {
+    damageNumbers.push({ x: x + (Math.random() - 0.5) * 10, y, text: `-${damage}`, at: Date.now(), color });
+  };
+
+  /** Position monde d'un joueur (local ou distant) à partir de son ID */
+  const getPlayerRenderInfo = (id: string) => {
+    if (id === networkManager.localPlayerId) {
+      return { x: player.x, y: player.y, prop: player.currentProp, variantIndex: player.variantIndex };
+    }
+    const op = otherPlayers.get(id);
+    return op ? { x: op.x, y: op.y, prop: op.currentProp, variantIndex: op.variantIndex ?? 0 } : null;
+  };
+
+  // =========================================================================
+  // MODE SPECTATEUR (activé quand le joueur local meurt, jusqu'à la fin de la manche)
+  // =========================================================================
+  const deathOverlay = document.getElementById('death-overlay');
+  const deathOverlayKiller = document.getElementById('death-overlay-killer');
+  const deathOverlayProp = document.getElementById('death-overlay-prop');
+  const spectatorHud = document.getElementById('spectator-hud');
+  const spectatorTargetEl = document.getElementById('spectator-target');
+  const spectatorHelpEl = document.getElementById('spectator-help');
+
+  const DEATH_SCREEN_DURATION = 3000;
+  const DEATH_EFFECT_DURATION = 1600;
+  const FREE_CAM_SPEED = 8;
+  const MIN_SPECTATOR_ZOOM = 0.4;
+  const MAX_SPECTATOR_ZOOM = 1.5;
+
+  let isSpectator = false;
+  let spectateTargetId: string | null = null;
+  let freeCam = false;
+  let spectatorZoom = 1;
+  const camera = { x: player.x, y: player.y };
+  let deathOverlayTimeout: ReturnType<typeof setTimeout> | null = null;
+
+  const spawnDeathEffect = (x: number, y: number, name: string) => {
+    const colors = ['#a3a3a3', '#78716c', '#d6d3d1', '#ef4444', '#57534e'];
+    const particles = Array.from({ length: 18 }, () => {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 20 + Math.random() * 45;
+      return { vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed - 25, size: 2 + Math.random() * 3, color: colors[Math.floor(Math.random() * colors.length)] };
+    });
+    deathEffects.push({ x, y, at: Date.now(), name, particles });
+  };
+
+  const getAlivePlayerIds = (): string[] => {
+    const ids: string[] = [];
+    otherPlayers.forEach((op, id) => {
+      if (op.role !== PlayerRole.SPECTATOR && op.health > 0) ids.push(id);
+    });
+    return ids;
+  };
+
+  const updateSpectatorHud = () => {
+    if (!spectatorHud || !spectatorTargetEl || !spectatorHelpEl) return;
+    if (!isSpectator) {
+      spectatorHud.style.display = 'none';
+      return;
+    }
+    spectatorHud.style.display = 'flex';
+    const target = spectateTargetId ? otherPlayers.get(spectateTargetId) : undefined;
+    if (freeCam || !target) {
+      spectatorTargetEl.innerText = 'Caméra libre';
+      spectatorHelpEl.innerText = getAlivePlayerIds().length > 0
+        ? 'ZQSD : déplacer | Molette : zoom | Espace / Clic : suivre un joueur'
+        : 'ZQSD : déplacer | Molette : zoom | Aucun joueur en vie à suivre';
+    } else {
+      const roleTag = target.role === PlayerRole.HUNTER ? 'Chasseur' : (target.currentProp?.displayName ?? 'Prop');
+      spectatorTargetEl.innerText = `Vous suivez : ${target.name || 'Joueur'} (${roleTag})`;
+      spectatorHelpEl.innerText = '← / → ou Clic G / D : changer de joueur | Espace : caméra libre | Molette : zoom';
+    }
+  };
+
+  const cycleSpectateTarget = (direction: 1 | -1) => {
+    const next = getNextSpectateTarget(getAlivePlayerIds(), spectateTargetId, direction);
+    spectateTargetId = next;
+    freeCam = next === null;
+    updateSpectatorHud();
+  };
+
+  const enterSpectatorMode = (death?: PlayerDiedPayload) => {
+    if (isSpectator) return;
+    isSpectator = true;
+    freeCam = false;
+    spectatorZoom = 1;
+    camera.x = player.x;
+    camera.y = player.y;
+    player.health = 0;
+    if (transformationWheel.getIsOpen()) transformationWheel.toggle();
+    Object.keys(keys).forEach(k => { keys[k] = false; });
+    updateWeaponHud();
+    updateWsStatus();
+
+    if (deathOverlay) {
+      if (deathOverlayKiller) {
+        deathOverlayKiller.innerText = death?.killerName ? `Éliminé par ${death.killerName}` : 'Vous avez été éliminé';
+      }
+      if (deathOverlayProp) {
+        deathOverlayProp.innerText = death?.propDisplayName ? `Vous étiez caché en : ${death.propDisplayName}` : '';
+      }
+      deathOverlay.style.display = 'flex';
+      deathOverlay.style.opacity = '1';
+      if (deathOverlayTimeout) clearTimeout(deathOverlayTimeout);
+      deathOverlayTimeout = setTimeout(() => {
+        deathOverlay.style.opacity = '0';
+        deathOverlayTimeout = setTimeout(() => { deathOverlay.style.display = 'none'; }, 600);
+      }, DEATH_SCREEN_DURATION);
+    }
+
+    // On commence par suivre le tueur s'il est encore en vie
+    const killer = death?.killerId ? otherPlayers.get(death.killerId) : undefined;
+    if (death?.killerId && killer && killer.role !== PlayerRole.SPECTATOR && killer.health > 0) {
+      spectateTargetId = death.killerId;
+      updateSpectatorHud();
+    } else {
+      spectateTargetId = null;
+      cycleSpectateTarget(1);
+    }
+  };
+
+  /** Fin de manche / nouvelle manche : on redevient un joueur normal */
+  const exitSpectatorMode = () => {
+    if (deathOverlayTimeout) clearTimeout(deathOverlayTimeout);
+    if (deathOverlay) deathOverlay.style.display = 'none';
+    isSpectator = false;
+    spectateTargetId = null;
+    freeCam = false;
+    updateSpectatorHud();
+    updateWsStatus();
+  };
+
   // Connexion via le NetworkManager partagé
   const updateWsStatus = () => {
     if (!wsStatus) return;
     if (networkManager.isConnected) {
-      wsStatus.innerText = 'WS: Connecté | E: Changer Prop | R: Tourner Prop | K: Dégâts (-15) | H: Hitbox';
+      if (isSpectator) {
+        wsStatus.innerText = 'WS: Connecté | Mode spectateur | H: Hitbox';
+      } else if (localPlayerRole === PlayerRole.HUNTER) {
+        wsStatus.innerText = 'WS: Connecté | Clic: Attaquer | 1/2/3 ou Molette: Arme | R: Recharger | H: Hitbox';
+      } else {
+        wsStatus.innerText = 'WS: Connecté | E: Changer Prop | R: Tourner Prop | K: Dégâts (-15) | H: Hitbox';
+      }
       wsStatus.style.color = '#4ade80';
     } else {
       wsStatus.innerText = 'WS: Déconnecté';
@@ -236,14 +575,17 @@ export function initGame(): void {
       lastHitTimestamp: newP.lastHitTimestamp ?? 0,
       name: newP.name,
       currentProp: propDef,
-      variantIndex: ('variantIndex' in newP && newP.variantIndex !== undefined) ? newP.variantIndex : 0
+      variantIndex: ('variantIndex' in newP && newP.variantIndex !== undefined) ? newP.variantIndex : 0,
+      role: newP.role
     });
     console.log('[WS] Nouveau joueur rejoint :', newP.id);
   });
 
   networkManager.on(MessageType.PLAYER_LEFT, (payload) => {
     otherPlayers.delete(payload.playerId);
+    hunterAim.delete(payload.playerId);
     console.log('[WS] Joueur déconnecté :', payload.playerId);
+    if (isSpectator && payload.playerId === spectateTargetId) cycleSpectateTarget(1);
   });
 
   networkManager.on(MessageType.TRANSFORM_PROP, (payload) => {
@@ -276,9 +618,14 @@ export function initGame(): void {
     }
   });
 
-  networkManager.on(MessageType.PLAYER_HIT, (payload) => {
+  networkManager.on<PlayerHitPayload & { playerId?: string }>(MessageType.PLAYER_HIT, (payload) => {
     const targetId = payload.targetPlayerId || payload.playerId;
     const hitTime = payload.lastHitTimestamp || Date.now();
+    const victim = targetId ? getPlayerRenderInfo(targetId) : null;
+    if (victim) {
+      const box = getPlayerHurtbox(victim.x, victim.y, victim.prop, victim.variantIndex);
+      addDamageNumber(victim.x, box.y - 4, payload.damage, targetId === networkManager.localPlayerId ? '#f87171' : '#fde68a');
+    }
     if (targetId === networkManager.localPlayerId) {
       player.lastHitTimestamp = hitTime;
       if (payload.health !== undefined) {
@@ -315,6 +662,10 @@ export function initGame(): void {
         if ('variantIndex' in p && p.variantIndex !== undefined) {
           player.variantIndex = p.variantIndex;
         }
+        // Filet de sécurité si le message PLAYER_DIED a été manqué
+        if (p.role === PlayerRole.SPECTATOR && !isSpectator && currentPhase !== GamePhase.LOBBY) {
+          enterSpectatorMode();
+        }
       } else {
         const propDef = ('currentProp' in p && p.currentProp) ? p.currentProp : DEFAULT_PROPS[0];
         const pVariantIndex = ('variantIndex' in p && p.variantIndex !== undefined) ? p.variantIndex : 0;
@@ -327,6 +678,7 @@ export function initGame(): void {
           if ('lastHitTimestamp' in p && p.lastHitTimestamp !== undefined) op.lastHitTimestamp = p.lastHitTimestamp;
           op.currentProp = propDef;
           op.variantIndex = pVariantIndex;
+          op.role = p.role;
         } else {
           otherPlayers.set(p.id, {
             x: p.x,
@@ -338,7 +690,8 @@ export function initGame(): void {
             lastHitTimestamp: p.lastHitTimestamp ?? 0,
             name: p.name,
             currentProp: propDef,
-            variantIndex: pVariantIndex
+            variantIndex: pVariantIndex,
+            role: p.role
           });
         }
       }
@@ -347,12 +700,85 @@ export function initGame(): void {
     otherPlayers.forEach((_, id) => {
       if (!currentIds.has(id)) otherPlayers.delete(id);
     });
+    // Le joueur suivi a disparu ou est mort entre deux messages : on change de cible
+    if (isSpectator && !freeCam) {
+      const target = spectateTargetId ? otherPlayers.get(spectateTargetId) : undefined;
+      if (!target || target.role === PlayerRole.SPECTATOR || target.health <= 0) cycleSpectateTarget(1);
+    }
+  });
+
+  // --- COMBAT : résultats calculés par le serveur ---
+  networkManager.on<WeaponStatePayload>(MessageType.WEAPON_STATE, (payload) => {
+    const now = Date.now();
+    payload.weapons.forEach(w => {
+      weaponView.set(w.weapon, {
+        ammo: w.ammo,
+        magazineSize: w.magazineSize,
+        cooldownEndsAt: now + w.cooldownRemainingMs,
+        reloadEndsAt: now + w.reloadRemainingMs
+      });
+    });
+    updateWeaponHud();
+  });
+
+  networkManager.on<ShotFiredPayload>(MessageType.HUNTER_SHOOT, (payload) => {
+    const now = Date.now();
+    const angle = Math.atan2(payload.impactY - payload.originY, payload.impactX - payload.originX);
+    hunterAim.set(payload.hunterId, { angle, weapon: payload.weapon });
+    const hit = payload.hitPlayerIds.length > 0;
+    if (hit && payload.hunterId === networkManager.localPlayerId) hitMarkerAt = now;
+
+    if (payload.weapon === WeaponType.PISTOL) {
+      tracers.push({ x1: payload.originX, y1: payload.originY, x2: payload.impactX, y2: payload.impactY, hit, at: now });
+    } else if (payload.weapon === WeaponType.CROWBAR) {
+      swings.push({ x: payload.originX, y: payload.originY, angle, hit, at: now });
+    } else if (payload.weapon === WeaponType.GRENADE) {
+      grenades.push({
+        id: payload.grenadeId ?? `${payload.hunterId}-${now}`,
+        x1: payload.originX, y1: payload.originY, x2: payload.impactX, y2: payload.impactY,
+        at: now, fuseMs: payload.fuseMs ?? 1200
+      });
+    }
+  });
+
+  networkManager.on<GrenadeExplodedPayload>(MessageType.GRENADE_EXPLODED, (payload) => {
+    const idx = grenades.findIndex(g => g.id === payload.grenadeId);
+    if (idx >= 0) grenades.splice(idx, 1);
+    explosions.push({ x: payload.x, y: payload.y, radius: payload.radius, at: Date.now() });
+    const dist = Math.hypot(payload.x - view.camX, payload.y - view.camY);
+    if (dist < 400) screenShake = Math.max(screenShake, 6 * (1 - dist / 400));
+    if (payload.hitPlayerIds.length > 0 && payload.hunterId === networkManager.localPlayerId) hitMarkerAt = Date.now();
+  });
+
+  networkManager.on<PlayerDiedPayload>(MessageType.PLAYER_DIED, (payload) => {
+    spawnDeathEffect(payload.x, payload.y, payload.playerName);
+    console.log(`[MORT] ${payload.playerName} est mort${payload.killerName ? ` (tué par ${payload.killerName})` : ''}`);
+    if (payload.playerId === networkManager.localPlayerId) {
+      enterSpectatorMode(payload);
+    } else {
+      const op = otherPlayers.get(payload.playerId);
+      if (op) {
+        op.role = PlayerRole.SPECTATOR;
+        op.health = 0;
+      }
+      if (isSpectator && payload.playerId === spectateTargetId) {
+        cycleSpectateTarget(1);
+      } else if (isSpectator) {
+        updateSpectatorHud();
+      }
+    }
   });
 
   // --- RÉCEPTION DES ÉVÉNEMENTS DE ROUND ---
   networkManager.on<RoundStartPayload>(MessageType.ROUND_START, (payload) => {
     localPlayerRole = payload.role;
     currentPhase = GamePhase.HIDING;
+    exitSpectatorMode();
+    resetWeaponView();
+    selectWeapon(WeaponType.PISTOL);
+    hunterAim.clear();
+    grenades.length = 0;
+    updateWsStatus();
 
     if (roundEndOverlay) {
       roundEndOverlay.style.display = 'none';
@@ -422,6 +848,11 @@ export function initGame(): void {
       roundEndCountdown.textContent = timeRemaining.toString();
     }
 
+    if (previousPhase !== currentPhase) {
+      updateWeaponHud();
+      if (currentPhase === GamePhase.LOBBY) exitSpectatorMode();
+    }
+
     // Retour automatique au salon lorsque le serveur repasse en LOBBY après ROUND_END
     if (payload.phase === GamePhase.LOBBY && previousPhase === GamePhase.ROUND_END) {
       if (roundEndOverlay) roundEndOverlay.style.display = 'none';
@@ -435,6 +866,8 @@ export function initGame(): void {
   networkManager.on<RoundEndPayload>(MessageType.ROUND_END, (payload) => {
     currentPhase = GamePhase.ROUND_END;
     if (hunterBlindfold) hunterBlindfold.style.display = 'none';
+    updateWeaponHud();
+    grenades.length = 0;
 
     if (roundEndOverlay && roundEndWinner && roundEndReason && roundEndScores) {
       roundEndOverlay.style.display = 'flex';
@@ -482,6 +915,8 @@ export function initGame(): void {
 
     if (currentPhase === GamePhase.ROUND_END) {
       currentPhase = GamePhase.LOBBY;
+      exitSpectatorMode();
+      updateWeaponHud();
       if (roundEndOverlay) roundEndOverlay.style.display = 'none';
       if (viewGame && viewLobby) {
         switchView(viewGame, viewLobby);
@@ -507,13 +942,44 @@ export function initGame(): void {
       showHitbox = !showHitbox;
       console.log(`[DEBUG] Affichage des hitboxes : ${showHitbox ? 'ACTIVÉ' : 'DÉSACTIVÉ'}`);
     }
+
+    // Mode spectateur : on ne contrôle plus que la caméra
+    if (isSpectator) {
+      if (!viewGame?.classList.contains('active')) return;
+      if (e.key === 'ArrowRight') cycleSpectateTarget(1);
+      if (e.key === 'ArrowLeft') cycleSpectateTarget(-1);
+      if (e.key === ' ') {
+        e.preventDefault();
+        if (freeCam) {
+          cycleSpectateTarget(1);
+        } else {
+          freeCam = true;
+          updateSpectatorHud();
+        }
+      }
+      return;
+    }
+
+    // Chasseur : sélection d'arme (1/2/3) et rechargement (R)
+    if (localPlayerRole === PlayerRole.HUNTER) {
+      const slotWeapon = WEAPON_ORDER.find(type => String(WEAPONS[type].slot) === e.key);
+      if (slotWeapon) {
+        selectWeapon(slotWeapon);
+        return;
+      }
+      if (e.key.toLowerCase() === 'r') {
+        requestReload();
+        return;
+      }
+    }
+
     // Touche 'E' : Ouvrir / Fermer la roue de transformation des Props
     if (e.key.toLowerCase() === 'e' && localPlayerRole === PlayerRole.PROP) {
       transformationWheel.toggle(player.currentProp.id);
       return;
     }
     // Touche 'R' : Tourner le prop actuel (boucler sur ses variantes d'orientation)
-    if (e.key.toLowerCase() === 'r') {
+    if (e.key.toLowerCase() === 'r' && localPlayerRole === PlayerRole.PROP) {
       const variants = player.currentProp.variants || [];
       if (variants.length > 1) {
         player.variantIndex = (player.variantIndex + 1) % variants.length;
@@ -553,28 +1019,336 @@ export function initGame(): void {
 
   // Événements souris / molette pour la roue de transformation
   canvas.addEventListener('mousemove', (e) => {
+    const rect = canvas.getBoundingClientRect();
+    mouse.x = e.clientX - rect.left;
+    mouse.y = e.clientY - rect.top;
+    mouse.inside = true;
     if (transformationWheel.getIsOpen()) {
       transformationWheel.handleMouseMove(e.clientX, e.clientY, canvas);
     }
   });
 
+  canvas.addEventListener('mouseleave', () => { mouse.inside = false; });
+
   canvas.addEventListener('mousedown', (e) => {
     if (transformationWheel.getIsOpen()) {
       const handled = transformationWheel.handleClick(e.clientX, e.clientY, canvas);
       if (handled) e.stopPropagation();
+      return;
     }
+    if (isSpectator) {
+      if (e.button === 0) cycleSpectateTarget(1);
+      if (e.button === 2) cycleSpectateTarget(-1);
+      return;
+    }
+    if (e.button === 0 && localPlayerRole === PlayerRole.HUNTER) {
+      const rect = canvas.getBoundingClientRect();
+      mouse.x = e.clientX - rect.left;
+      mouse.y = e.clientY - rect.top;
+      tryAttack();
+    }
+  });
+
+  canvas.addEventListener('contextmenu', (e) => {
+    if (isSpectator || localPlayerRole === PlayerRole.HUNTER) e.preventDefault();
   });
 
   canvas.addEventListener('wheel', (e) => {
     if (transformationWheel.getIsOpen()) {
       const handled = transformationWheel.handleWheel(e);
       if (handled) e.preventDefault();
+      return;
+    }
+    if (isSpectator) {
+      e.preventDefault();
+      const factor = e.deltaY > 0 ? 0.9 : 1.1;
+      spectatorZoom = Math.max(MIN_SPECTATOR_ZOOM, Math.min(MAX_SPECTATOR_ZOOM, spectatorZoom * factor));
+      return;
+    }
+    if (localPlayerRole === PlayerRole.HUNTER) {
+      e.preventDefault();
+      cycleWeapon(e.deltaY > 0 ? 1 : -1);
     }
   }, { passive: false });
 
   let lastVx = 0;
   let lastVy = 0;
   const VISION_RADIUS = 200; // Rayon de vision visible autour du joueur
+
+  /**
+   * Calibrage des sprites d'armes (16x16) : ils ne sont pas dessinés "canon vers la droite".
+   * - angle : direction vers laquelle pointe l'arme dans le PNG d'origine (radians)
+   * - pivotX / pivotY : pixel tenu par la main (crosse du pistolet, bas du manche du pied de biche)
+   * - mirrored : le PNG est dessiné "tourné vers la gauche" (crosse du mauvais côté), il faut le retourner
+   */
+  const WEAPON_SPRITE_CALIBRATION: Partial<Record<WeaponType, { angle: number; pivotX: number; pivotY: number; mirrored?: boolean }>> = {
+    [WeaponType.PISTOL]: { angle: -3 * Math.PI / 4, pivotX: 8, pivotY: 12, mirrored: true }, // Canon vers le haut-gauche
+    [WeaponType.CROWBAR]: { angle: -Math.PI / 4, pivotX: 4, pivotY: 13 }                     // Crochet vers le haut-droite
+  };
+
+  /** Dessine une arme tenue en main, orientée vers la cible */
+  const drawHeldWeapon = (x: number, y: number, angle: number, weapon: WeaponType) => {
+    const handX = x + Math.cos(angle) * 8;
+    const handY = y - HOLD_OFFSET_Y + Math.sin(angle) * 8;
+    ctx!.save();
+    ctx!.translate(handX, handY);
+    // 1. On oriente un repère dont l'axe X pointe vers la cible
+    ctx!.rotate(angle);
+    const img = weaponImages.get(weapon);
+    const calib = WEAPON_SPRITE_CALIBRATION[weapon];
+    // 2. Vers la gauche, on retourne l'arme pour qu'elle ne soit pas tenue à l'envers
+    //    (et on inverse ce retournement si le sprite d'origine est lui-même dessiné en miroir)
+    const facingLeft = Math.abs(angle) > Math.PI / 2;
+    if (facingLeft !== Boolean(calib?.mirrored)) ctx!.scale(1, -1);
+    if (img && img.complete && img.naturalWidth > 0 && calib) {
+      // 3. On compense l'orientation d'origine du sprite pour que son canon suive l'axe X
+      ctx!.rotate(-calib.angle);
+      ctx!.imageSmoothingEnabled = false;
+      ctx!.drawImage(img, -calib.pivotX, -calib.pivotY, 16, 16);
+    } else {
+      // Grenade : petite boule sombre avec sa goupille
+      ctx!.fillStyle = '#3f6212';
+      ctx!.beginPath();
+      ctx!.arc(4, 0, 4, 0, Math.PI * 2);
+      ctx!.fill();
+      ctx!.fillStyle = '#d4d4d4';
+      ctx!.fillRect(2, -6, 3, 2);
+    }
+    ctx!.restore();
+  };
+
+  const drawCombatWorld = () => {
+    const now = Date.now();
+
+    // A. Armes tenues par les chasseurs vivants
+    if (isLocalHunterArmed()) {
+      const aim = screenToWorld(mouse.x, mouse.y);
+      const angle = Math.atan2(aim.y - (player.y - HOLD_OFFSET_Y), aim.x - player.x);
+      drawHeldWeapon(player.x, player.y, angle, selectedWeapon);
+
+      // Aides à la visée (uniquement pour le chasseur local)
+      if (mouse.inside && currentPhase === GamePhase.HUNTING) {
+        const ox = player.x;
+        const oy = player.y - HOLD_OFFSET_Y;
+        ctx!.save();
+        if (selectedWeapon === WeaponType.GRENADE) {
+          const def = WEAPONS[WeaponType.GRENADE];
+          const dist = Math.min(def.range, Math.hypot(aim.x - ox, aim.y - oy));
+          const lx = ox + Math.cos(angle) * dist;
+          const ly = oy + Math.sin(angle) * dist;
+          ctx!.setLineDash([4, 4]);
+          ctx!.strokeStyle = isWeaponReady(WeaponType.GRENADE, now) ? 'rgba(251, 191, 36, 0.8)' : 'rgba(148, 163, 184, 0.5)';
+          ctx!.lineWidth = 1;
+          ctx!.beginPath();
+          ctx!.arc(lx, ly, def.blastRadius ?? 80, 0, Math.PI * 2);
+          ctx!.stroke();
+          ctx!.beginPath();
+          ctx!.moveTo(ox, oy);
+          ctx!.lineTo(lx, ly);
+          ctx!.stroke();
+        } else if (selectedWeapon === WeaponType.CROWBAR) {
+          const def = WEAPONS[WeaponType.CROWBAR];
+          const half = ((def.arcDegrees ?? 90) * Math.PI) / 360;
+          ctx!.fillStyle = 'rgba(251, 191, 36, 0.12)';
+          ctx!.beginPath();
+          ctx!.moveTo(ox, oy);
+          ctx!.arc(ox, oy, def.range, angle - half, angle + half);
+          ctx!.closePath();
+          ctx!.fill();
+        }
+        ctx!.restore();
+      }
+    }
+    otherPlayers.forEach((op, id) => {
+      if (op.role !== PlayerRole.HUNTER || op.health <= 0) return;
+      const aim = hunterAim.get(id) ?? { angle: 0, weapon: WeaponType.PISTOL };
+      drawHeldWeapon(op.x, op.y, aim.angle, aim.weapon);
+    });
+
+    // B. Traînées de balles du pistolet
+    for (let i = tracers.length - 1; i >= 0; i--) {
+      const t = tracers[i];
+      const life = (now - t.at) / 260;
+      if (life >= 1) { tracers.splice(i, 1); continue; }
+      ctx!.save();
+      ctx!.globalAlpha = 1 - life;
+      ctx!.strokeStyle = '#fde68a';
+      ctx!.lineWidth = 1.5;
+      ctx!.beginPath();
+      ctx!.moveTo(t.x1, t.y1);
+      ctx!.lineTo(t.x2, t.y2);
+      ctx!.stroke();
+      // Flash au canon et impact
+      ctx!.fillStyle = '#fbbf24';
+      ctx!.beginPath();
+      ctx!.arc(t.x1, t.y1, 4 * (1 - life), 0, Math.PI * 2);
+      ctx!.fill();
+      ctx!.fillStyle = t.hit ? '#ef4444' : '#a3a3a3';
+      ctx!.beginPath();
+      ctx!.arc(t.x2, t.y2, 3 + life * 4, 0, Math.PI * 2);
+      ctx!.fill();
+      ctx!.restore();
+    }
+
+    // C. Coups de pied de biche
+    for (let i = swings.length - 1; i >= 0; i--) {
+      const sw = swings[i];
+      const life = (now - sw.at) / 220;
+      if (life >= 1) { swings.splice(i, 1); continue; }
+      const def = WEAPONS[WeaponType.CROWBAR];
+      const half = ((def.arcDegrees ?? 90) * Math.PI) / 360;
+      // L'arc balaie de gauche à droite pendant l'animation
+      const start = sw.angle - half;
+      const end = start + 2 * half * Math.min(1, life * 1.6);
+      ctx!.save();
+      ctx!.globalAlpha = 0.8 * (1 - life);
+      ctx!.strokeStyle = sw.hit ? '#ef4444' : '#e5e7eb';
+      ctx!.lineWidth = 3;
+      ctx!.beginPath();
+      ctx!.arc(sw.x, sw.y, def.range * 0.8, start, end);
+      ctx!.stroke();
+      ctx!.restore();
+    }
+
+    // D. Grenades en vol puis au sol (clignotement avant explosion)
+    for (let i = grenades.length - 1; i >= 0; i--) {
+      const g = grenades[i];
+      const elapsed = now - g.at;
+      if (elapsed > g.fuseMs + 1000) { grenades.splice(i, 1); continue; } // Sécurité si l'explosion est perdue
+      const flight = Math.min(1, elapsed / 350);
+      const gx = g.x1 + (g.x2 - g.x1) * flight;
+      const gy = g.y1 + (g.y2 - g.y1) * flight - Math.sin(flight * Math.PI) * 24; // Petite parabole
+      ctx!.save();
+      if (flight >= 1) {
+        const blink = Math.floor(elapsed / Math.max(60, 200 - elapsed / 8)) % 2 === 0;
+        ctx!.fillStyle = blink ? 'rgba(239, 68, 68, 0.25)' : 'rgba(239, 68, 68, 0.08)';
+        ctx!.beginPath();
+        ctx!.arc(g.x2, g.y2, WEAPONS[WeaponType.GRENADE].blastRadius ?? 80, 0, Math.PI * 2);
+        ctx!.fill();
+      }
+      ctx!.fillStyle = '#3f6212';
+      ctx!.strokeStyle = '#1a2e05';
+      ctx!.lineWidth = 1;
+      ctx!.beginPath();
+      ctx!.arc(gx, gy, 4, 0, Math.PI * 2);
+      ctx!.fill();
+      ctx!.stroke();
+      ctx!.restore();
+    }
+
+    // E. Explosions
+    for (let i = explosions.length - 1; i >= 0; i--) {
+      const ex = explosions[i];
+      const life = (now - ex.at) / 600;
+      if (life >= 1) { explosions.splice(i, 1); continue; }
+      ctx!.save();
+      const r = ex.radius * (0.3 + 0.7 * Math.min(1, life * 2.5));
+      const gradient = ctx!.createRadialGradient(ex.x, ex.y, 0, ex.x, ex.y, r);
+      gradient.addColorStop(0, `rgba(255, 237, 160, ${0.9 * (1 - life)})`);
+      gradient.addColorStop(0.4, `rgba(251, 146, 60, ${0.75 * (1 - life)})`);
+      gradient.addColorStop(1, 'rgba(239, 68, 68, 0)');
+      ctx!.fillStyle = gradient;
+      ctx!.beginPath();
+      ctx!.arc(ex.x, ex.y, r, 0, Math.PI * 2);
+      ctx!.fill();
+      ctx!.strokeStyle = `rgba(255, 255, 255, ${0.6 * (1 - life)})`;
+      ctx!.lineWidth = 2;
+      ctx!.beginPath();
+      ctx!.arc(ex.x, ex.y, ex.radius * life, 0, Math.PI * 2);
+      ctx!.stroke();
+      ctx!.restore();
+    }
+
+    // F. Effets de mort (débris + nom qui s'envole)
+    for (let i = deathEffects.length - 1; i >= 0; i--) {
+      const fx = deathEffects[i];
+      const elapsed = now - fx.at;
+      if (elapsed > DEATH_EFFECT_DURATION) { deathEffects.splice(i, 1); continue; }
+      const t = elapsed / 1000;
+      const progress = elapsed / DEATH_EFFECT_DURATION;
+      ctx!.save();
+      ctx!.globalAlpha = 1 - progress;
+      ctx!.beginPath();
+      ctx!.arc(fx.x, fx.y, 6 + progress * 34, 0, Math.PI * 2);
+      ctx!.strokeStyle = '#ef4444';
+      ctx!.lineWidth = 2 * (1 - progress) + 0.5;
+      ctx!.stroke();
+      fx.particles.forEach(pt => {
+        const px = fx.x + pt.vx * t;
+        const py = fx.y + pt.vy * t + 40 * t * t;
+        ctx!.fillStyle = pt.color;
+        ctx!.fillRect(px - pt.size / 2, py - pt.size / 2, pt.size, pt.size);
+      });
+      ctx!.font = 'bold 10px monospace';
+      ctx!.textAlign = 'center';
+      ctx!.lineWidth = 3;
+      ctx!.strokeStyle = 'rgba(0, 0, 0, 0.9)';
+      const textY = fx.y - 30 - progress * 20;
+      ctx!.strokeText(`✝ ${fx.name}`, fx.x, textY);
+      ctx!.fillStyle = '#fca5a5';
+      ctx!.fillText(`✝ ${fx.name}`, fx.x, textY);
+      ctx!.restore();
+    }
+
+    // G. Chiffres de dégâts
+    for (let i = damageNumbers.length - 1; i >= 0; i--) {
+      const dn = damageNumbers[i];
+      const life = (now - dn.at) / 900;
+      if (life >= 1) { damageNumbers.splice(i, 1); continue; }
+      ctx!.save();
+      ctx!.globalAlpha = 1 - life * life;
+      ctx!.font = 'bold 11px monospace';
+      ctx!.textAlign = 'center';
+      ctx!.lineWidth = 3;
+      ctx!.strokeStyle = 'rgba(0, 0, 0, 0.9)';
+      const y = dn.y - life * 22;
+      ctx!.strokeText(dn.text, dn.x, y);
+      ctx!.fillStyle = dn.color;
+      ctx!.fillText(dn.text, dn.x, y);
+      ctx!.restore();
+    }
+  };
+
+  /** Réticule à la souris, avec indicateur de touche (hit marker) */
+  const drawCrosshair = () => {
+    if (!isLocalHunterArmed() || !mouse.inside || transformationWheel.getIsOpen()) return;
+    if (currentPhase !== GamePhase.HUNTING && currentPhase !== GamePhase.HIDING) return;
+    const now = Date.now();
+    const ready = currentPhase === GamePhase.HUNTING && isWeaponReady(selectedWeapon, now);
+    const color = ready ? '#ffffff' : 'rgba(148, 163, 184, 0.7)';
+    const { x, y } = mouse;
+    ctx!.save();
+    ctx!.strokeStyle = color;
+    ctx!.lineWidth = 2;
+    ctx!.beginPath();
+    ctx!.moveTo(x - 12, y); ctx!.lineTo(x - 4, y);
+    ctx!.moveTo(x + 4, y); ctx!.lineTo(x + 12, y);
+    ctx!.moveTo(x, y - 12); ctx!.lineTo(x, y - 4);
+    ctx!.moveTo(x, y + 4); ctx!.lineTo(x, y + 12);
+    ctx!.stroke();
+
+    // Rechargement : cercle de progression autour du réticule
+    const pistol = weaponView.get(WeaponType.PISTOL);
+    if (selectedWeapon === WeaponType.PISTOL && pistol && now < pistol.reloadEndsAt) {
+      const ratio = 1 - (pistol.reloadEndsAt - now) / (WEAPONS[WeaponType.PISTOL].reloadMs ?? 1);
+      ctx!.strokeStyle = '#38bdf8';
+      ctx!.beginPath();
+      ctx!.arc(x, y, 16, -Math.PI / 2, -Math.PI / 2 + ratio * Math.PI * 2);
+      ctx!.stroke();
+    }
+
+    // Hit marker : petite croix rouge en X quand le serveur confirme une touche
+    if (now - hitMarkerAt < 200) {
+      ctx!.strokeStyle = '#ef4444';
+      ctx!.beginPath();
+      ctx!.moveTo(x - 9, y - 9); ctx!.lineTo(x - 4, y - 4);
+      ctx!.moveTo(x + 9, y - 9); ctx!.lineTo(x + 4, y - 4);
+      ctx!.moveTo(x - 9, y + 9); ctx!.lineTo(x - 4, y + 4);
+      ctx!.moveTo(x + 9, y + 9); ctx!.lineTo(x + 4, y + 4);
+      ctx!.stroke();
+    }
+    ctx!.restore();
+  };
 
   // Boucle de jeu (Game Loop)
   function gameLoop() {
@@ -592,8 +1366,19 @@ export function initGame(): void {
       // Envoi de la vélocité brute (non normalisée) via WebSocket
       // La normalisation diagonale se fera sur le serveur !
 
+      // En spectateur, ZQSD pilote la caméra libre et n'est plus envoyé au serveur
+      if (isSpectator) {
+        if (freeCam) {
+          const len = Math.hypot(vx, vy) || 1;
+          camera.x += (vx / len) * FREE_CAM_SPEED / spectatorZoom;
+          camera.y += (vy / len) * FREE_CAM_SPEED / spectatorZoom;
+        }
+        vx = 0;
+        vy = 0;
+      }
+
       // Envoi de la vélocité via WebSocket (uniquement si l'intention change)
-      if ((vx !== lastVx || vy !== lastVy) && networkManager.localPlayerId) {
+      if (!isSpectator && (vx !== lastVx || vy !== lastVy) && networkManager.localPlayerId) {
         networkManager.send(MessageType.PLAYER_MOVE, {
           playerId: networkManager.localPlayerId,
           x: player.x,
@@ -619,11 +1404,28 @@ export function initGame(): void {
       ctx!.clearRect(0, 0, canvas.width, canvas.height);
       ctx!.save();
 
-      // Caméra qui centre sur le joueur local
-      const zoom = Math.min(canvas.width, canvas.height) / (VISION_RADIUS * 2);
-      ctx!.translate(canvas.width / 2, canvas.height / 2);
+      // Caméra : centrée sur le joueur local, ou sur la cible / caméra libre en mode spectateur
+      if (!isSpectator) {
+        camera.x = player.x;
+        camera.y = player.y;
+      } else if (!freeCam && spectateTargetId) {
+        const target = otherPlayers.get(spectateTargetId);
+        if (target) {
+          camera.x += (target.x - camera.x) * 0.15;
+          camera.y += (target.y - camera.y) * 0.15;
+        }
+      }
+      const zoom = (Math.min(canvas.width, canvas.height) / (VISION_RADIUS * 2)) * (isSpectator ? spectatorZoom : 1);
+      // Petite secousse d'écran lors des explosions proches
+      const shakeX = screenShake > 0.1 ? (Math.random() - 0.5) * screenShake : 0;
+      const shakeY = screenShake > 0.1 ? (Math.random() - 0.5) * screenShake : 0;
+      screenShake *= 0.88;
+      view.camX = camera.x;
+      view.camY = camera.y;
+      view.zoom = zoom;
+      ctx!.translate(canvas.width / 2 + shakeX, canvas.height / 2 + shakeY);
       ctx!.scale(zoom, zoom);
-      ctx!.translate(-player.x, -player.y);
+      ctx!.translate(-camera.x, -camera.y);
 
       // --- 1. DESSINER LA CARTE (Ground & Walls) ---
       if (mapData && tilesetImg.complete) {
@@ -845,7 +1647,9 @@ export function initGame(): void {
         label: string;
       }
 
-      const charactersToDraw: RenderableCharacter[] = [
+      const charactersToDraw: RenderableCharacter[] = [];
+      // Le joueur local n'est plus dessiné une fois mort
+      if (!isSpectator) charactersToDraw.push(
         {
           x: player.x,
           y: player.y,
@@ -856,11 +1660,13 @@ export function initGame(): void {
           lastHitTimestamp: player.lastHitTimestamp,
           bodyColor: '#ef4444',
           glowColor: '#dc2626',
-          label: `Moi : ${player.currentProp.displayName}`
+          label: localPlayerRole === PlayerRole.HUNTER ? 'Moi : Chasseur' : `Moi : ${player.currentProp.displayName}`
         }
-      ];
+      );
 
-      otherPlayers.forEach((op) => {
+      otherPlayers.forEach((op, id) => {
+        if (op.role === PlayerRole.SPECTATOR) return; // Les morts sont invisibles
+        const isSpectated = isSpectator && !freeCam && id === spectateTargetId;
         const propToDraw = op.currentProp || DEFAULT_PROPS[0];
         charactersToDraw.push({
           x: op.x,
@@ -870,9 +1676,9 @@ export function initGame(): void {
           health: op.health ?? propToDraw.health,
           maxHealth: op.maxHealth ?? propToDraw.health,
           lastHitTimestamp: op.lastHitTimestamp,
-          bodyColor: '#a855f7',
-          glowColor: '#7c3aed',
-          label: `${op.name || 'Joueur'} : ${propToDraw.displayName}`
+          bodyColor: op.role === PlayerRole.HUNTER ? '#f97316' : '#a855f7',
+          glowColor: op.role === PlayerRole.HUNTER ? '#ea580c' : '#7c3aed',
+          label: `${isSpectated ? '👁 ' : ''}${op.name || 'Joueur'} : ${op.role === PlayerRole.HUNTER ? 'Chasseur' : propToDraw.displayName}`
         });
       });
 
@@ -894,6 +1700,9 @@ export function initGame(): void {
           c.label
         );
       });
+
+      // --- 3bis. ARMES EN MAIN, AIDES À LA VISÉE ET EFFETS DE COMBAT ---
+      drawCombatWorld();
 
       // --- 4. DESSINER LA CARTE (Above) ---
       if (mapData && tilesetImg.complete) {
@@ -919,6 +1728,10 @@ export function initGame(): void {
       }
 
       ctx!.restore();
+
+      // Réticule du chasseur (en espace écran)
+      drawCrosshair();
+      updateWeaponHud();
 
       // Rendu de la roue de transformation (en espace écran, au-dessus du monde)
       if (transformationWheel.getIsOpen()) {

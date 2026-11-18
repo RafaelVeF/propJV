@@ -14,6 +14,9 @@ export const GAME_CONFIG = {
     PROJECTILE_SPEED: 400, // Vitesse de déplacement maximale du projectile en pixels par tick
     PROJECTILE_RADIUS: 4, // Taille de la hitbox du projectile en pixels
 
+    // Debug : autorise la touche K (un joueur s'inflige des dégâts à lui-même). Mettre à false en production.
+    DEBUG_SELF_DAMAGE: true,
+
     // Dimensions de la carte de jeu
     MAP_WIDTH: 800, // Largeur de la carte en pixels
     MAP_HEIGHT: 800, // Hauteur de la carte en pixels
