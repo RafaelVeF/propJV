@@ -44,7 +44,7 @@ export function buildMapSnapshot(
       layer.layers.forEach(drawLayer);
       return;
     }
-    if (layer.type !== 'tilelayer' || layer.name === 'above') return;
+    if (layer.type !== 'tilelayer') return;
 
     const data: number[] = layer.data || [];
     for (let i = 0; i < data.length; i++) {
