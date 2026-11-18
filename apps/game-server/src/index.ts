@@ -28,6 +28,7 @@ import {
     isAlive
 } from '@prop-hunt/shared';
 import { GameLoop } from './GameLoop.js';
+import { handleChatMessage } from './systems/chat.js';
 import { updatePlayerPosition } from './systems/movement.js';
 import { parseTiledCollisions } from './utils/mapLoader.js';
 import { GAME_CONFIG } from './config/game.js';
@@ -717,6 +718,17 @@ wss.on('connection', (ws) => {
                     if (payload.targetPlayerId !== playerId) break;
                     const damage = Math.max(0, Math.min(100, Number(payload.damage) || 0));
                     applyDamage(room, playerId, damage);
+                    break;
+                }
+
+                case MessageType.CHAT_MESSAGE: {
+                    handleChatMessage(message.payload, {
+                        ws,
+                        playerId,
+                        roomKey: room.key,
+                        players: room.players,
+                        broadcastToRoom
+                    });
                     break;
                 }
             }

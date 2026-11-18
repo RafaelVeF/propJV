@@ -4,6 +4,7 @@ import { TransformationWheel } from '../game/ui/TransformationWheel';
 import { musicManager } from '../audio/MusicManager';
 import { buildMapSnapshot, renderMinimap, renderFullMap, type MinimapPlayerMarker } from '../game/ui/Minimap';
 import { VisualEffectsManager } from '../game/ui/VisualEffects';
+import { ChatManager } from '../game/ui/ChatManager';
 import {
   MessageType,
   GamePhase,
@@ -26,7 +27,8 @@ import {
   type GrenadeExplodedPayload,
   type WeaponStatePayload,
   type PlayerDiedPayload,
-  type PlayerHitPayload
+  type PlayerHitPayload,
+  type ChatMessagePayload
 } from '@prop-hunt/shared';
 
 export function renderGame(): string {
@@ -220,6 +222,14 @@ export function initGame(): void {
   let lastVfxTime = performance.now();
   let isPauseMenuOpen = false;
 
+  const chatManager = new ChatManager({
+    onSendMessage: (text: string) => {
+      networkManager.send(MessageType.CHAT_MESSAGE, { text });
+    },
+    getLocalPlayerId: () => networkManager.localPlayerId
+  });
+  chatManager.mount(viewGame);
+
   const setPauseMenuOpen = (open: boolean) => {
     isPauseMenuOpen = open;
     if (pauseOverlay) {
@@ -243,6 +253,8 @@ export function initGame(): void {
   if (btnLeaveGame) {
     btnLeaveGame.addEventListener('click', () => {
       setPauseMenuOpen(false);
+      chatManager.close();
+      chatManager.clearMessages();
       musicManager.stop();
       networkManager.send(MessageType.LEAVE_ROOM, {});
       switchView(viewGame, viewMain);
@@ -741,6 +753,10 @@ export function initGame(): void {
   networkManager.onClose(updateWsStatus);
   updateWsStatus();
 
+  networkManager.on(MessageType.CHAT_MESSAGE, (payload) => {
+    chatManager.addMessage(payload as ChatMessagePayload);
+  });
+
   networkManager.on(MessageType.WELCOME, (payload) => {
     if (payload.player.currentProp) {
       player.currentProp = payload.player.currentProp;
@@ -1136,6 +1152,10 @@ export function initGame(): void {
   updateHitboxButton();
 
   window.addEventListener('keydown', (e) => {
+    if (chatManager.getIsOpen()) {
+      return;
+    }
+
     if (e.key === 'Escape' && isFullMapOpen) {
       setFullMapOpen(false);
       return;
@@ -1152,6 +1172,13 @@ export function initGame(): void {
 
     if (e.key === 'Escape' && viewGame?.classList.contains('active')) {
       setPauseMenuOpen(!isPauseMenuOpen);
+      return;
+    }
+
+    if (e.key.toLowerCase() === 't' && viewGame?.classList.contains('active') && !isPauseMenuOpen && !isFullMapOpen) {
+      e.preventDefault();
+      Object.keys(keys).forEach(k => { keys[k] = false; });
+      chatManager.open();
       return;
     }
 
@@ -1577,8 +1604,8 @@ export function initGame(): void {
     if (viewGame?.classList.contains('active')) {
       let vx = 0;
       let vy = 0;
-      // Input Handler (Intention) - gelé pendant que la roue est ouverte
-      if (!transformationWheel.getIsOpen()) {
+      // Input Handler (Intention) - gelé pendant que la roue ou le chat est ouvert
+      if (!transformationWheel.getIsOpen() && !chatManager.getIsOpen()) {
         if (keys['z'] || keys['arrowup']) { vy -= 1; }
         if (keys['s'] || keys['arrowdown']) { vy += 1; }
         if (keys['q'] || keys['arrowleft']) { vx -= 1; }
@@ -2003,11 +2030,11 @@ export function initGame(): void {
       }
       if (gameControlsBar) {
         if (isSpectator) {
-          gameControlsBar.textContent = '[← / →] Changer cible • [Espace] Caméra libre • [Échap] Menu';
+          gameControlsBar.textContent = '[← / →] Cible • [Espace] Caméra libre • [T] Chat • [Échap] Menu';
         } else if (localPlayerRole === PlayerRole.HUNTER) {
-          gameControlsBar.textContent = '[ZQSD] Bouger • [1/2/3] Armes • [Clic] Tirer • [Échap] Menu';
+          gameControlsBar.textContent = '[ZQSD] Bouger • [1/2/3] Armes • [Clic] Tirer • [T] Chat • [Échap] Menu';
         } else {
-          gameControlsBar.textContent = '[ZQSD] Bouger • [Échap] Menu Pause • [Clic Minimap] Plan';
+          gameControlsBar.textContent = '[ZQSD] Bouger • [T] Chat • [Échap] Menu • [Clic Minimap] Plan';
         }
       }
 

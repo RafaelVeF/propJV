@@ -29,6 +29,7 @@ export enum MessageType {
   PLAYER_DIED = 'PLAYER_DIED',
   PROP_LOCK = 'PROP_LOCK',
   PROP_WHISTLE = 'PROP_WHISTLE',
+  CHAT_MESSAGE = 'CHAT_MESSAGE',
 
   // État général
   GAME_START = 'GAME_START',
@@ -569,3 +570,5 @@ export interface AuthResponsePayload {
   user?: AuthUser;
   errors?: unknown[];
 }
+
+export * from './chat.js';
