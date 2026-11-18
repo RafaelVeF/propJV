@@ -3,8 +3,10 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { GAME_NAME } from '@prop-hunt/shared';
 import authRoutes from './routes/auth.js';
+import statsRoutes from './routes/stats.js';
 import { requireAuth } from './middlewares/requireAuth.js';
-import { pool } from './db.js'; 
+import { pool } from './db.js';
+import { initMongo } from './mongo.js';
 
 dotenv.config();
 
@@ -22,15 +24,20 @@ app.use(express.json());
 app.use('/auth', authRoutes);
 app.use('/api/auth', authRoutes);
 
-// Test de la connexion au démarrage
+// Activation des routes de statistiques
+app.use('/api/stats', statsRoutes);
+
+// Test des connexions aux bases de données au démarrage
 pool.getConnection()
     .then(connection => {
-        console.log("Connecté avec succès à TiDB !");
+        console.log("[TiDB] Connecté avec succès à TiDB !");
         connection.release();
     })
     .catch(err => {
-        console.error("Erreur de connexion à TiDB :", err.message);
+        console.error("[TiDB] Erreur de connexion à TiDB :", err.message);
     });
+
+void initMongo();
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', app: GAME_NAME, service: 'api-master' });
