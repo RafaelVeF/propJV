@@ -18,7 +18,8 @@ import {
     parsePositiveIntId,
     validateAcceptRequest,
     validateDeleteRelationship,
-    validateRejectRequest
+    validateRejectRequest,
+    type ValidationOutcome
 } from '../services/friendsLogic.js';
 
 const router: Router = Router();
@@ -57,18 +58,27 @@ interface TargetUserRow extends RowDataPacket {
     username: string;
 }
 
-function getAuthenticatedUserId(req: AuthRequest): number | null {
+interface TargetContext {
+    currentUserId: number;
+    target: TargetUserRow;
+    userId1: number;
+    userId2: number;
+    existing: RelationshipRow | null;
+}
+
+interface RelationshipContext {
+    currentUserId: number;
+    relationshipId: number;
+    relationship: RelationshipRow;
+}
+
+function requireUserId(req: AuthRequest, res: Response): number | null {
     const payload = req.user as { userId?: unknown } | undefined;
     if (!payload || typeof payload.userId !== 'number' || !Number.isSafeInteger(payload.userId)) {
+        res.status(401).json({ success: false, message: 'Session invalide.' });
         return null;
     }
     return payload.userId;
-}
-
-function extractRelationshipId(req: AuthRequest): number | null {
-    const raw = req.params.relationshipId;
-    const value = Array.isArray(raw) ? raw[0] : raw;
-    return parsePositiveIntId(value);
 }
 
 function handleFriendsError(res: Response, error: unknown, context: string): void {
@@ -89,7 +99,65 @@ function handleFriendsError(res: Response, error: unknown, context: string): voi
     });
 }
 
-async function fetchRelationshipById(relationshipId: number): Promise<RelationshipRow | null> {
+async function resolveTargetContext(
+    req: AuthRequest,
+    res: Response,
+    selfErrorMessage: string
+): Promise<TargetContext | null> {
+    const currentUserId = requireUserId(req, res);
+    if (!currentUserId) return null;
+
+    const { username } = friendUsernameSchema.parse(req.body);
+    const [targetRows] = await pool.query<TargetUserRow[]>(
+        'SELECT user_id, username FROM users WHERE username = ? LIMIT 1',
+        [username]
+    );
+
+    if (targetRows.length === 0) {
+        res.status(404).json({ success: false, message: 'Aucun joueur trouvé avec ce pseudo.' });
+        return null;
+    }
+
+    const target = targetRows[0];
+    if (target.user_id === currentUserId) {
+        res.status(400).json({ success: false, message: selfErrorMessage });
+        return null;
+    }
+
+    const [userId1, userId2] = normalizeUserPair(currentUserId, target.user_id);
+    const [existingRows] = await pool.query<RelationshipRow[]>(
+        `SELECT user_relationship_id, user_id_1, user_id_2, status, created_by, modified_by
+         FROM users_relationships
+         WHERE user_id_1 = ? AND user_id_2 = ?
+         LIMIT 1`,
+        [userId1, userId2]
+    );
+
+    return {
+        currentUserId,
+        target,
+        userId1,
+        userId2,
+        existing: existingRows[0] ?? null
+    };
+}
+
+async function resolveRelationshipContext(
+    req: AuthRequest,
+    res: Response,
+    notFoundMessage: string,
+    validator: (row: RelationshipRow, userId: number) => ValidationOutcome
+): Promise<RelationshipContext | null> {
+    const currentUserId = requireUserId(req, res);
+    if (!currentUserId) return null;
+
+    const rawId = req.params.relationshipId;
+    const relationshipId = parsePositiveIntId(Array.isArray(rawId) ? rawId[0] : rawId);
+    if (!relationshipId) {
+        res.status(400).json({ success: false, message: 'Identifiant de relation invalide.' });
+        return null;
+    }
+
     const [rows] = await pool.query<RelationshipRow[]>(
         `SELECT user_relationship_id, user_id_1, user_id_2, status, created_by, modified_by
          FROM users_relationships
@@ -97,7 +165,20 @@ async function fetchRelationshipById(relationshipId: number): Promise<Relationsh
          LIMIT 1`,
         [relationshipId]
     );
-    return rows[0] ?? null;
+
+    const relationship = rows[0];
+    if (!relationship) {
+        res.status(404).json({ success: false, message: notFoundMessage });
+        return null;
+    }
+
+    const check = validator(relationship, currentUserId);
+    if (!check.ok) {
+        res.status(check.httpStatus ?? 403).json({ success: false, message: check.message });
+        return null;
+    }
+
+    return { currentUserId, relationshipId, relationship };
 }
 
 // Toutes les routes /api/friends nécessitent un JWT valide
@@ -106,11 +187,8 @@ router.use(requireAuth);
 // GET / : Liste des amis, demandes reçues, demandes envoyées et utilisateurs bloqués
 router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const currentUserId = getAuthenticatedUserId(req);
-        if (!currentUserId) {
-            res.status(401).json({ success: false, message: 'Session invalide.' });
-            return;
-        }
+        const currentUserId = requireUserId(req, res);
+        if (!currentUserId) return;
 
         const [rows] = await pool.query<RelationshipJoinedRow[]>(
             `SELECT
@@ -187,42 +265,15 @@ router.get('/', async (req: AuthRequest, res: Response): Promise<void> => {
 // POST /request : Envoyer une demande d'ami par pseudo
 router.post('/request', friendsActionLimiter, async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const currentUserId = getAuthenticatedUserId(req);
-        if (!currentUserId) {
-            res.status(401).json({ success: false, message: 'Session invalide.' });
-            return;
-        }
-
-        const { username } = friendUsernameSchema.parse(req.body);
-
-        const [targetRows] = await pool.query<TargetUserRow[]>(
-            'SELECT user_id, username FROM users WHERE username = ? LIMIT 1',
-            [username]
+        const ctx = await resolveTargetContext(
+            req,
+            res,
+            'Vous ne pouvez pas vous ajouter vous-même en ami.'
         );
+        if (!ctx) return;
 
-        if (targetRows.length === 0) {
-            res.status(404).json({ success: false, message: 'Aucun joueur trouvé avec ce pseudo.' });
-            return;
-        }
-
-        const target = targetRows[0];
-        if (target.user_id === currentUserId) {
-            res.status(400).json({ success: false, message: 'Vous ne pouvez pas vous ajouter vous-même en ami.' });
-            return;
-        }
-
-        const [userId1, userId2] = normalizeUserPair(currentUserId, target.user_id);
-
-        const [existingRows] = await pool.query<RelationshipRow[]>(
-            `SELECT user_relationship_id, user_id_1, user_id_2, status, created_by, modified_by
-             FROM users_relationships
-             WHERE user_id_1 = ? AND user_id_2 = ?
-             LIMIT 1`,
-            [userId1, userId2]
-        );
-
-        if (existingRows.length > 0) {
-            const conflict = evaluateExistingRelationship(existingRows[0], currentUserId);
+        if (ctx.existing) {
+            const conflict = evaluateExistingRelationship(ctx.existing, ctx.currentUserId);
             res.status(conflict.httpStatus).json({ success: false, message: conflict.message });
             return;
         }
@@ -230,12 +281,12 @@ router.post('/request', friendsActionLimiter, async (req: AuthRequest, res: Resp
         const [insertResult] = await pool.query<ResultSetHeader>(
             `INSERT INTO users_relationships (user_id_1, user_id_2, status, created_by)
              VALUES (?, ?, 'PENDING', ?)`,
-            [userId1, userId2, currentUserId]
+            [ctx.userId1, ctx.userId2, ctx.currentUserId]
         );
 
         res.status(201).json({
             success: true,
-            message: `Demande d'ami envoyée à ${target.username}.`,
+            message: `Demande d'ami envoyée à ${ctx.target.username}.`,
             relationshipId: insertResult.insertId,
             status: 'PENDING'
         });
@@ -247,41 +298,25 @@ router.post('/request', friendsActionLimiter, async (req: AuthRequest, res: Resp
 // POST /:relationshipId/accept : Accepter une demande d'ami reçue
 router.post('/:relationshipId/accept', friendsActionLimiter, async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const currentUserId = getAuthenticatedUserId(req);
-        if (!currentUserId) {
-            res.status(401).json({ success: false, message: 'Session invalide.' });
-            return;
-        }
-
-        const relationshipId = extractRelationshipId(req);
-        if (!relationshipId) {
-            res.status(400).json({ success: false, message: 'Identifiant de relation invalide.' });
-            return;
-        }
-
-        const relationship = await fetchRelationshipById(relationshipId);
-        if (!relationship) {
-            res.status(404).json({ success: false, message: "Demande d'ami introuvable." });
-            return;
-        }
-
-        const check = validateAcceptRequest(relationship, currentUserId);
-        if (!check.ok) {
-            res.status(check.httpStatus ?? 403).json({ success: false, message: check.message });
-            return;
-        }
+        const ctx = await resolveRelationshipContext(
+            req,
+            res,
+            "Demande d'ami introuvable.",
+            validateAcceptRequest
+        );
+        if (!ctx) return;
 
         await pool.query(
             `UPDATE users_relationships
              SET status = 'ACCEPTED', modified_by = ?
              WHERE user_relationship_id = ?`,
-            [currentUserId, relationshipId]
+            [ctx.currentUserId, ctx.relationshipId]
         );
 
         res.json({
             success: true,
             message: "Demande d'ami acceptée.",
-            relationshipId,
+            relationshipId: ctx.relationshipId,
             status: 'ACCEPTED'
         });
     } catch (error) {
@@ -292,40 +327,24 @@ router.post('/:relationshipId/accept', friendsActionLimiter, async (req: AuthReq
 // POST /:relationshipId/reject : Refuser une demande reçue ou annuler une demande envoyée
 router.post('/:relationshipId/reject', friendsActionLimiter, async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const currentUserId = getAuthenticatedUserId(req);
-        if (!currentUserId) {
-            res.status(401).json({ success: false, message: 'Session invalide.' });
-            return;
-        }
-
-        const relationshipId = extractRelationshipId(req);
-        if (!relationshipId) {
-            res.status(400).json({ success: false, message: 'Identifiant de relation invalide.' });
-            return;
-        }
-
-        const relationship = await fetchRelationshipById(relationshipId);
-        if (!relationship) {
-            res.status(404).json({ success: false, message: "Demande d'ami introuvable." });
-            return;
-        }
-
-        const check = validateRejectRequest(relationship, currentUserId);
-        if (!check.ok) {
-            res.status(check.httpStatus ?? 403).json({ success: false, message: check.message });
-            return;
-        }
+        const ctx = await resolveRelationshipContext(
+            req,
+            res,
+            "Demande d'ami introuvable.",
+            validateRejectRequest
+        );
+        if (!ctx) return;
 
         await pool.query(
             'DELETE FROM users_relationships WHERE user_relationship_id = ?',
-            [relationshipId]
+            [ctx.relationshipId]
         );
 
-        const isOutgoing = relationship.created_by === currentUserId;
+        const isOutgoing = ctx.relationship.created_by === ctx.currentUserId;
         res.json({
             success: true,
             message: isOutgoing ? "Demande d'ami annulée." : "Demande d'ami refusée.",
-            relationshipId
+            relationshipId: ctx.relationshipId
         });
     } catch (error) {
         handleFriendsError(res, error, 'POST /:relationshipId/reject');
@@ -335,47 +354,19 @@ router.post('/:relationshipId/reject', friendsActionLimiter, async (req: AuthReq
 // POST /block : Bloquer un joueur par pseudo
 router.post('/block', friendsActionLimiter, async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const currentUserId = getAuthenticatedUserId(req);
-        if (!currentUserId) {
-            res.status(401).json({ success: false, message: 'Session invalide.' });
-            return;
-        }
-
-        const { username } = friendUsernameSchema.parse(req.body);
-
-        const [targetRows] = await pool.query<TargetUserRow[]>(
-            'SELECT user_id, username FROM users WHERE username = ? LIMIT 1',
-            [username]
+        const ctx = await resolveTargetContext(
+            req,
+            res,
+            'Vous ne pouvez pas vous bloquer vous-même.'
         );
+        if (!ctx) return;
 
-        if (targetRows.length === 0) {
-            res.status(404).json({ success: false, message: 'Aucun joueur trouvé avec ce pseudo.' });
-            return;
-        }
-
-        const target = targetRows[0];
-        if (target.user_id === currentUserId) {
-            res.status(400).json({ success: false, message: 'Vous ne pouvez pas vous bloquer vous-même.' });
-            return;
-        }
-
-        const [userId1, userId2] = normalizeUserPair(currentUserId, target.user_id);
-
-        const [existingRows] = await pool.query<RelationshipRow[]>(
-            `SELECT user_relationship_id, user_id_1, user_id_2, status, created_by, modified_by
-             FROM users_relationships
-             WHERE user_id_1 = ? AND user_id_2 = ?
-             LIMIT 1`,
-            [userId1, userId2]
-        );
-
-        if (existingRows.length > 0) {
-            const existing = existingRows[0];
-            if (existing.status === 'BLOCKED' && getBlockerUserId(existing) === currentUserId) {
+        if (ctx.existing) {
+            if (ctx.existing.status === 'BLOCKED' && getBlockerUserId(ctx.existing) === ctx.currentUserId) {
                 res.status(409).json({ success: false, message: 'Cet utilisateur est déjà bloqué.' });
                 return;
             }
-            if (existing.status === 'BLOCKED') {
+            if (ctx.existing.status === 'BLOCKED') {
                 res.status(403).json({ success: false, message: 'Action impossible sur cet utilisateur.' });
                 return;
             }
@@ -384,13 +375,13 @@ router.post('/block', friendsActionLimiter, async (req: AuthRequest, res: Respon
                 `UPDATE users_relationships
                  SET status = 'BLOCKED', modified_by = ?
                  WHERE user_relationship_id = ?`,
-                [currentUserId, existing.user_relationship_id]
+                [ctx.currentUserId, ctx.existing.user_relationship_id]
             );
 
             res.json({
                 success: true,
-                message: `${target.username} a été bloqué.`,
-                relationshipId: existing.user_relationship_id,
+                message: `${ctx.target.username} a été bloqué.`,
+                relationshipId: ctx.existing.user_relationship_id,
                 status: 'BLOCKED'
             });
             return;
@@ -399,12 +390,12 @@ router.post('/block', friendsActionLimiter, async (req: AuthRequest, res: Respon
         const [insertResult] = await pool.query<ResultSetHeader>(
             `INSERT INTO users_relationships (user_id_1, user_id_2, status, created_by, modified_by)
              VALUES (?, ?, 'BLOCKED', ?, ?)`,
-            [userId1, userId2, currentUserId, currentUserId]
+            [ctx.userId1, ctx.userId2, ctx.currentUserId, ctx.currentUserId]
         );
 
         res.status(201).json({
             success: true,
-            message: `${target.username} a été bloqué.`,
+            message: `${ctx.target.username} a été bloqué.`,
             relationshipId: insertResult.insertId,
             status: 'BLOCKED'
         });
@@ -416,43 +407,27 @@ router.post('/block', friendsActionLimiter, async (req: AuthRequest, res: Respon
 // DELETE /:relationshipId : Supprimer un ami ou lever un blocage
 router.delete('/:relationshipId', friendsActionLimiter, async (req: AuthRequest, res: Response): Promise<void> => {
     try {
-        const currentUserId = getAuthenticatedUserId(req);
-        if (!currentUserId) {
-            res.status(401).json({ success: false, message: 'Session invalide.' });
-            return;
-        }
-
-        const relationshipId = extractRelationshipId(req);
-        if (!relationshipId) {
-            res.status(400).json({ success: false, message: 'Identifiant de relation invalide.' });
-            return;
-        }
-
-        const relationship = await fetchRelationshipById(relationshipId);
-        if (!relationship) {
-            res.status(404).json({ success: false, message: 'Relation introuvable.' });
-            return;
-        }
-
-        const check = validateDeleteRelationship(relationship, currentUserId);
-        if (!check.ok) {
-            res.status(check.httpStatus ?? 403).json({ success: false, message: check.message });
-            return;
-        }
+        const ctx = await resolveRelationshipContext(
+            req,
+            res,
+            'Relation introuvable.',
+            validateDeleteRelationship
+        );
+        if (!ctx) return;
 
         await pool.query(
             'DELETE FROM users_relationships WHERE user_relationship_id = ?',
-            [relationshipId]
+            [ctx.relationshipId]
         );
 
-        const message = relationship.status === 'BLOCKED'
+        const message = ctx.relationship.status === 'BLOCKED'
             ? 'Utilisateur débloqué.'
             : 'Ami supprimé de votre liste.';
 
         res.json({
             success: true,
             message,
-            relationshipId
+            relationshipId: ctx.relationshipId
         });
     } catch (error) {
         handleFriendsError(res, error, 'DELETE /:relationshipId');
