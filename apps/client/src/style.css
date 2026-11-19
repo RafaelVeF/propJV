@@ -2054,6 +2054,234 @@ body {
   color: var(--color-text-muted);
 }
 
+/* Onglets de filtrage par catégorie des succès */
+.achievements-tabs-bar {
+  display: flex;
+  gap: 0.5rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 0.5rem;
+  overflow-x: auto;
+}
+
+.ach-tab-btn {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--color-text-muted);
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  letter-spacing: 0.6px;
+  padding: 0.35rem 0.9rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+
+.ach-tab-btn:hover {
+  background: rgba(170, 91, 240, 0.15);
+  border-color: rgba(170, 91, 240, 0.4);
+  color: #fff;
+}
+
+.ach-tab-btn.active {
+  background: var(--color-purple);
+  border-color: var(--color-purple-light);
+  color: #fff;
+  box-shadow: 0 0 10px rgba(170, 91, 240, 0.4);
+}
+
+/* Bannière récompenses non réclamées */
+.ach-unclaimed-banner {
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.2), rgba(170, 91, 240, 0.2));
+  border: 1.5px solid #fbbf24;
+  border-radius: var(--radius);
+  padding: 0.6rem 1.2rem;
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  color: #fef08a;
+  font-size: 0.9rem;
+  animation: pulse-glow 2s infinite ease-in-out;
+}
+
+.ach-unclaimed-banner .bell-icon {
+  font-size: 1.3rem;
+}
+
+/* Bandeau mode invité */
+.ach-auth-prompt-banner {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: var(--radius);
+  padding: 0.6rem 1.2rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.ach-auth-prompt-banner .prompt-text {
+  font-size: 0.85rem;
+  color: #fca5a5;
+}
+
+.btn-ach-connect {
+  background: #ef4444;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  padding: 0.35rem 0.9rem;
+  cursor: pointer;
+  transition: all var(--transition);
+  white-space: nowrap;
+}
+
+.btn-ach-connect:hover {
+  background: #dc2626;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
+  transform: translateY(-1px);
+}
+
+/* Progression dans la carte de succès */
+.ach-card-progress-wrapper {
+  margin: 0.4rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.ach-card-progress-bar-bg {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.ach-card-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #10b981, #34d399);
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+
+.achievement-card-wide.locked .ach-card-progress-fill {
+  background: linear-gradient(90deg, #6b7280, #9ca3af);
+}
+
+.achievement-card-wide.claimable .ach-card-progress-fill {
+  background: linear-gradient(90deg, #f59e0b, #fbbf24);
+}
+
+.ach-card-progress-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
+/* Bouton Réclamer récompense */
+.btn-claim-reward {
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  border: 1px solid #fbbf24;
+  color: #111;
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  font-weight: bold;
+  padding: 0.3rem 0.75rem;
+  border-radius: 6px;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  box-shadow: 0 0 12px rgba(245, 158, 11, 0.45);
+  transition: all var(--transition);
+}
+
+.btn-claim-reward:hover:not(:disabled) {
+  background: linear-gradient(135deg, #fbbf24, #f59e0b);
+  box-shadow: 0 0 18px rgba(245, 158, 11, 0.7);
+  transform: translateY(-1px);
+}
+
+.btn-claim-reward:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+/* Carte réclamable avec effet spécial */
+.achievement-card-wide.claimable {
+  background: linear-gradient(155deg, rgba(245, 158, 11, 0.15), rgba(15, 17, 24, 0.98));
+  border: 1.5px solid #fbbf24;
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.25);
+}
+
+.ach-status-badge.claimable {
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.2);
+  border: 1px solid rgba(245, 158, 11, 0.6);
+  animation: pulse-glow 1.5s infinite alternate;
+}
+
+.badge-dot.pulse {
+  background: #fbbf24;
+  box-shadow: 0 0 8px #fbbf24;
+}
+
+@keyframes pulse-glow {
+  0% { transform: scale(1); opacity: 0.85; }
+  100% { transform: scale(1.03); opacity: 1; }
+}
+
+/* Boîte de chargement et d'erreur */
+.achievements-loading-box,
+.achievements-empty-box,
+.achievements-error-box {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+  padding: 3rem 1rem;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.achievements-error-box {
+  color: #fca5a5;
+}
+
+.achievements-error-box .error-icon {
+  font-size: 2.5rem;
+}
+
+/* Toast de notification succès */
+.ach-toast {
+  position: absolute;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: rgba(17, 24, 39, 0.95);
+  border: 1.5px solid #10b981;
+  color: #ecfdf5;
+  padding: 0.65rem 1.4rem;
+  border-radius: 8px;
+  font-size: 0.92rem;
+  font-weight: 600;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6), 0 0 16px rgba(16, 185, 129, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  z-index: 100;
+}
+
+.ach-toast.show {
+  transform: translateX(-50%) translateY(0);
+  opacity: 1;
+}
+
 .achievements-footer-bar {
   display: flex;
   justify-content: center;

@@ -569,3 +569,42 @@ export interface AuthResponsePayload {
   user?: AuthUser;
   errors?: unknown[];
 }
+
+// =========================================================================
+// SUCCÈS (ACHIEVEMENTS)
+// =========================================================================
+
+export type AchievementCategory = 'all' | 'general' | 'hunter' | 'prop' | 'fun';
+
+export interface AchievementItem {
+  id: number;
+  internalName: string;
+  displayName: string;
+  description: string;
+  reward: number;
+  targetValue: number;
+  progress: number;
+  progressPercent: number;
+  isUnlocked: boolean;
+  unlockedAt: string | null;
+  isClaimed: boolean;
+  category: AchievementCategory;
+  icon: string;
+}
+
+export interface AchievementsOverviewResponse {
+  success: boolean;
+  achievements: AchievementItem[];
+  unclaimedCount: number;
+  totalUnlocked: number;
+  totalAchievements: number;
+  userCurrencyBalance?: number;
+}
+
+export interface ClaimAchievementResponse {
+  success: boolean;
+  message?: string;
+  achievementId: number;
+  rewardClaimed: number;
+  newCurrencyBalance: number;
+}

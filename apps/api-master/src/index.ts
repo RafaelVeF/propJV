@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { GAME_NAME } from '@prop-hunt/shared';
 import authRoutes from './routes/auth.js';
+import achievementsRoutes from './routes/achievements.js';
 import { requireAuth } from './middlewares/requireAuth.js';
 import { pool } from './db.js'; 
 
@@ -21,6 +22,10 @@ app.use(express.json());
 // Activation des routes d'authentification (/auth et /api/auth pour compatibilité)
 app.use('/auth', authRoutes);
 app.use('/api/auth', authRoutes);
+
+// Activation des routes de gestion des succès (/achievements et /api/achievements)
+app.use('/achievements', achievementsRoutes);
+app.use('/api/achievements', achievementsRoutes);
 
 // Test de la connexion au démarrage
 pool.getConnection()
