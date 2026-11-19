@@ -66,3 +66,35 @@ test('MatchTelemetryTracker : suivi des événements et barème exact des pièce
     assert.equal(seeker.propsDestroyed, 1);
     assert.equal(seeker.currencyEarned, 12);
 });
+
+test('MatchTelemetryTracker : partie courte de test (< 1s) génère un rapport complet avec récompenses', () => {
+    const tracker = new MatchTelemetryTracker();
+    tracker.startMatch('map_01_32p', [
+        {
+            playerId: 'p1',
+            userId: 10,
+            username: 'PlayerHider',
+            role: 'HIDER',
+            initialProp: 'prop_human',
+        },
+        {
+            playerId: 'p2',
+            userId: 11,
+            username: 'PlayerSeeker',
+            role: 'SEEKER',
+            seekerClass: 'seeker_recruit',
+        },
+    ]);
+
+    const report = tracker.finalizeMatch('HIDER', 'srv-test-short');
+    assert.ok(report, 'Le rapport doit être généré même sur une manche < 1s');
+    assert.ok(report.durationSec >= 1, 'durationSec doit valoir au moins 1s');
+
+    const hider = report.players.find((p) => p.playerId === 'p1')!;
+    const seeker = report.players.find((p) => p.playerId === 'p2')!;
+
+    // Hider gagnant + survivant : 10 (participation) + 25 (victoire) + 10 (survie finale) = 45
+    assert.equal(hider.currencyEarned, 45);
+    // Seeker perdant : 10 (participation)
+    assert.equal(seeker.currencyEarned, 10);
+});

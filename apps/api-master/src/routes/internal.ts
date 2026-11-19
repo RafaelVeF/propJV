@@ -81,10 +81,24 @@ interface ExistingUserRow extends RowDataPacket {
     user_id: number;
 }
 
+const PARIS_DATETIME_FORMATTER = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Europe/Paris',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+});
+
 function toMysqlDateTime(isoOrDate: string | Date | undefined, fallback: Date): string {
     const parsed = isoOrDate ? new Date(isoOrDate) : fallback;
     const d = Number.isNaN(parsed.getTime()) ? fallback : parsed;
-    return d.toISOString().slice(0, 19).replace('T', ' ');
+    const parts = PARIS_DATETIME_FORMATTER.formatToParts(d);
+    const get = (type: Intl.DateTimeFormatPartTypes) =>
+        parts.find((p) => p.type === type)?.value ?? '00';
+    return `${get('year')}-${get('month')}-${get('day')} ${get('hour')}:${get('minute')}:${get('second')}`;
 }
 
 // 1. POST /api/internal/servers/heartbeat : Upsert dans MongoDB active_servers
@@ -243,6 +257,12 @@ router.post('/matches/report', async (req: Request, res: Response): Promise<void
             (p): p is MatchReportPlayer & { userId: number } =>
                 typeof p.userId === 'number' && Number.isInteger(p.userId) && p.userId > 0
         );
+
+        if (authPlayers.length === 0 && players.length > 0) {
+            console.warn(
+                `[Internal] Match #${matchId} reçu avec ${players.length} joueur(s) mais aucun userId SQL authentifié (tous invités ou JWT non résolu côté game-server).`
+            );
+        }
 
         const validUserIds = new Set<number>();
         if (authPlayers.length > 0) {

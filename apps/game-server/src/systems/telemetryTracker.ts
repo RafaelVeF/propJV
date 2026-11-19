@@ -271,7 +271,7 @@ export class MatchTelemetryTracker {
         if (!this.active) return null;
 
         const endTimeMs = Date.now();
-        const durationSec = Math.max(0, Math.floor((endTimeMs - this.startTimeMs) / 1000));
+        const durationSec = Math.max(1, Math.floor((endTimeMs - this.startTimeMs) / 1000));
         this.active = false;
 
         const finalizedPlayers = Array.from(this.players.values()).map((p) => {

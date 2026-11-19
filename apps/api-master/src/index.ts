@@ -5,6 +5,7 @@ import { GAME_NAME } from '@prop-hunt/shared';
 import authRoutes from './routes/auth.js';
 import friendsRoutes from './routes/friends.js';
 import internalRoutes from './routes/internal.js';
+import statsRoutes from './routes/stats.js';
 import { pool } from './db.js';
 import { initMongo } from './mongo.js';
 
@@ -31,14 +32,17 @@ app.use('/api/friends', friendsRoutes);
 // Routes internes sécurisées (game-server -> api-master)
 app.use('/api/internal', internalRoutes);
 
-// Test de la connexion TiDB & MongoDB au démarrage
+// Activation des routes de statistiques
+app.use('/api/stats', statsRoutes);
+
+// Test des connexions aux bases de données au démarrage
 pool.getConnection()
   .then(connection => {
-    console.log("Connecté avec succès à TiDB !");
+    console.log("[TiDB] Connecté avec succès à TiDB !");
     connection.release();
   })
   .catch(err => {
-    console.error("Erreur de connexion à TiDB :", err.message);
+    console.error("[TiDB] Erreur de connexion à TiDB :", err.message);
   });
 
 void initMongo();

@@ -343,8 +343,9 @@ export function initLobby(): void {
     }
   });
 
-  // Notification si le joueur local est expulsé par l'hôte
+  // Notification si le joueur local est expulsé par l'hôte depuis le salon
   networkManager.on<KickedPayload>(MessageType.KICKED, (payload) => {
+    if (!viewLobby?.classList.contains('active')) return;
     if (playersModal) playersModal.style.display = 'none';
     if (countdownBanner) countdownBanner.style.display = 'none';
     if (countdownInterval) {

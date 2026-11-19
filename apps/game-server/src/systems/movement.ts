@@ -1,7 +1,6 @@
-import { Player } from '@prop-hunt/shared';
+import { Player, type Rectangle } from '@prop-hunt/shared';
 import { GAME_CONFIG } from '../config/game.js';
 import { isValidMovement } from './collision.js';
-import { type Rectangle } from '@prop-hunt/shared';
 
 export interface SpeedAnomalyInfo {
     playerId: string;
@@ -16,6 +15,8 @@ export function updatePlayerPosition(
     vy: number,
     deltaTime: number,
     obstacles: Rectangle[] = [],
+    speedMultiplier: number = 1,
+    ignoreObstacles: boolean = false,
     onSpeedAnomaly?: (info: SpeedAnomalyInfo) => void
 ): void {
     // Vérification d'anomalie de vitesse (vecteur d'entrée anormalement grand)
@@ -44,8 +45,9 @@ export function updatePlayerPosition(
     }
 
     // Application de la vitesse maximale autorisée par le serveur
-    const finalVx = normalizedVx * GAME_CONFIG.PLAYER_SPEED;
-    const finalVy = normalizedVy * GAME_CONFIG.PLAYER_SPEED;
+    const effectiveSpeed = GAME_CONFIG.PLAYER_SPEED * speedMultiplier;
+    const finalVx = normalizedVx * effectiveSpeed;
+    const finalVy = normalizedVy * effectiveSpeed;
 
     // Calcul des positions futures souhaitées
     const nextX = player.x + finalVx * deltaTime;
@@ -58,13 +60,15 @@ export function updatePlayerPosition(
         ? player.currentProp.hitboxRadius
         : GAME_CONFIG.PLAYER_RADIUS;
 
+    const activeObstacles = ignoreObstacles ? [] : obstacles;
+
     // 1. Test et application du mouvement sur l'axe X (permet de glisser le long d'un obstacle vertical)
-    if (isValidMovement(nextX, player.y, playerRadius, mapWidth, mapHeight, obstacles)) {
+    if (isValidMovement(nextX, player.y, playerRadius, mapWidth, mapHeight, activeObstacles)) {
         player.x = nextX;
     }
 
     // 2. Test et application du mouvement sur l'axe Y (permet de glisser le long d'un obstacle horizontal)
-    if (isValidMovement(player.x, nextY, playerRadius, mapWidth, mapHeight, obstacles)) {
+    if (isValidMovement(player.x, nextY, playerRadius, mapWidth, mapHeight, activeObstacles)) {
         player.y = nextY;
     }
 }

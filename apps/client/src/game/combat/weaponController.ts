@@ -9,9 +9,11 @@ import {
   type WeaponStatePayload
 } from '@prop-hunt/shared';
 import { networkManager } from '../../network/networkManager';
+import type { DroneImages } from '../assets';
 import { isLocalHunterArmed, screenToWorld, type GameState } from '../state';
 import type { CombatEffects } from './combatEffects';
-import { drawHeldWeapon, HOLD_OFFSET_Y } from './weaponSprites';
+import type { DroneController } from './droneController';
+import { drawHunterDrone, HOLD_OFFSET_Y } from './weaponSprites';
 
 /** Copie locale de l'état officiel d'une arme (échéances converties en heure locale) */
 interface WeaponView {
@@ -34,7 +36,8 @@ export class WeaponController {
     private readonly state: GameState,
     private readonly canvas: HTMLCanvasElement,
     private readonly weaponHud: HTMLElement | null,
-    private readonly weaponImages: Map<WeaponType, HTMLImageElement>
+    private readonly weaponImages: Map<WeaponType, HTMLImageElement>,
+    private readonly droneImages: DroneImages
   ) {
     weaponHud?.querySelectorAll<HTMLElement>('.weapon-slot').forEach(el => {
       this.weaponSlots.set(el.dataset.weapon as WeaponType, {
@@ -172,54 +175,105 @@ export class WeaponController {
     });
   }
 
-  /** Armes tenues par les chasseurs vivants, et aides à la visée du chasseur local (coordonnées monde) */
-  public drawHeldWeapons(ctx: CanvasRenderingContext2D, effects: CombatEffects): void {
+  /** Drones accompagnants et aides à la visée du chasseur local (coordonnées monde) */
+  public drawHeldWeapons(ctx: CanvasRenderingContext2D, effects: CombatEffects, drones: DroneController): void {
     const { player, mouse, currentPhase } = this.state;
+    const now = Date.now();
 
-    if (isLocalHunterArmed(this.state)) {
+    if (isLocalHunterArmed(this.state) && networkManager.localPlayerId) {
+      const localDrone = drones.get(networkManager.localPlayerId);
+      const dx = localDrone ? localDrone.x : player.x - 28;
+      const dy = localDrone ? localDrone.drawY : player.y - 34;
+      const baseY = localDrone ? localDrone.y : dy;
+      const recoil = localDrone ? localDrone.recoil : 0;
+
       const aim = screenToWorld(this.state, this.canvas, mouse.x, mouse.y);
-      const angle = Math.atan2(aim.y - (player.y - HOLD_OFFSET_Y), aim.x - player.x);
-      drawHeldWeapon(ctx, this.weaponImages, player.x, player.y, angle, this.selectedWeapon);
+      const aimDist = Math.hypot(aim.x - dx, aim.y - dy);
+      const angle = aimDist > 0.5 ? Math.atan2(aim.y - dy, aim.x - dx) : 0;
+      const ready = this.isReady(this.selectedWeapon, now);
 
       if (mouse.inside && currentPhase === GamePhase.HUNTING) {
-        this.drawAimAssist(ctx, player.x, player.y - HOLD_OFFSET_Y, aim, angle);
+        const muzzle = drones.getMuzzle(dx, dy, angle, this.selectedWeapon);
+        this.drawAimAssist(ctx, dx, dy, muzzle.x, muzzle.y, aim, angle, ready);
       }
+
+      drawHunterDrone(ctx, this.droneImages, this.weaponImages, dx, dy, baseY, angle, this.selectedWeapon, ready, recoil);
     }
 
     this.state.otherPlayers.forEach((op, id) => {
       if (op.role !== PlayerRole.HUNTER || op.health <= 0) return;
-      const aim = effects.hunterAim.get(id) ?? { angle: 0, weapon: WeaponType.PISTOL };
-      drawHeldWeapon(ctx, this.weaponImages, op.x, op.y, aim.angle, aim.weapon);
+      const aim = effects.hunterAim.get(id) ?? { angle: 0, weapon: WeaponType.PISTOL, readyAt: 0 };
+      const drone = drones.get(id);
+      const dx = drone ? drone.x : op.x - 28;
+      const dy = drone ? drone.drawY : op.y - 34;
+      const baseY = drone ? drone.y : dy;
+      const recoil = drone ? drone.recoil : 0;
+      const ready = now >= aim.readyAt;
+      drawHunterDrone(ctx, this.droneImages, this.weaponImages, dx, dy, baseY, aim.angle, aim.weapon, ready, recoil);
     });
   }
 
-  /** Zone d'explosion de la grenade, ou arc de frappe du pied de biche */
-  private drawAimAssist(ctx: CanvasRenderingContext2D, ox: number, oy: number, aim: { x: number; y: number }, angle: number): void {
+  /** Prévisualisations de tir et portées depuis le drone / sa bouche d'arme */
+  private drawAimAssist(
+    ctx: CanvasRenderingContext2D,
+    dx: number,
+    dy: number,
+    muzzleX: number,
+    muzzleY: number,
+    aim: { x: number; y: number },
+    angle: number,
+    ready: boolean
+  ): void {
+    const serverOx = this.state.player.x;
+    const serverOy = this.state.player.y - HOLD_OFFSET_Y;
+    const cursorDistFromOrigin = Math.hypot(aim.x - serverOx, aim.y - serverOy);
+    const dirX = cursorDistFromOrigin > 0 ? (aim.x - serverOx) / cursorDistFromOrigin : Math.cos(angle);
+    const dirY = cursorDistFromOrigin > 0 ? (aim.y - serverOy) / cursorDistFromOrigin : Math.sin(angle);
+
     ctx.save();
-    if (this.selectedWeapon === WeaponType.GRENADE) {
-      const def = WEAPONS[WeaponType.GRENADE];
-      const dist = Math.min(def.range, Math.hypot(aim.x - ox, aim.y - oy));
-      const lx = ox + Math.cos(angle) * dist;
-      const ly = oy + Math.sin(angle) * dist;
+    if (this.selectedWeapon === WeaponType.PISTOL) {
+      const def = WEAPONS[WeaponType.PISTOL];
+      const clampedDist = Math.min(def.range, cursorDistFromOrigin);
+      const endX = serverOx + dirX * clampedDist;
+      const endY = serverOy + dirY * clampedDist;
+
       ctx.setLineDash([4, 4]);
-      ctx.strokeStyle = this.isReady(WeaponType.GRENADE) ? 'rgba(251, 191, 36, 0.8)' : 'rgba(148, 163, 184, 0.5)';
+      ctx.strokeStyle = ready ? 'rgba(251, 191, 36, 0.55)' : 'rgba(148, 163, 184, 0.35)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(muzzleX, muzzleY);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+    } else if (this.selectedWeapon === WeaponType.GRENADE) {
+      const def = WEAPONS[WeaponType.GRENADE];
+      const travel = Math.min(def.range, cursorDistFromOrigin);
+      const lx = serverOx + dirX * travel;
+      const ly = serverOy + dirY * travel;
+
+      ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = ready ? 'rgba(251, 191, 36, 0.8)' : 'rgba(148, 163, 184, 0.45)';
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.arc(lx, ly, def.blastRadius ?? 80, 0, Math.PI * 2);
       ctx.stroke();
       ctx.beginPath();
-      ctx.moveTo(ox, oy);
+      ctx.moveTo(muzzleX, muzzleY);
       ctx.lineTo(lx, ly);
       ctx.stroke();
     } else if (this.selectedWeapon === WeaponType.CROWBAR) {
       const def = WEAPONS[WeaponType.CROWBAR];
-      const half = ((def.arcDegrees ?? 90) * Math.PI) / 360;
-      ctx.fillStyle = 'rgba(251, 191, 36, 0.12)';
+      const half = ((def.arcDegrees ?? 100) * Math.PI) / 360;
+      ctx.fillStyle = ready ? 'rgba(239, 68, 68, 0.14)' : 'rgba(148, 163, 184, 0.1)';
+      ctx.strokeStyle = ready ? 'rgba(239, 68, 68, 0.45)' : 'rgba(148, 163, 184, 0.3)';
+      ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(ox, oy);
-      ctx.arc(ox, oy, def.range, angle - half, angle + half);
+      ctx.moveTo(dx, dy);
+      ctx.arc(dx, dy, def.range, angle - half, angle + half);
       ctx.closePath();
       ctx.fill();
+      ctx.beginPath();
+      ctx.arc(dx, dy, def.range, angle - half, angle + half);
+      ctx.stroke();
     }
     ctx.restore();
   }

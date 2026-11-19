@@ -32,10 +32,15 @@ function getInternalSecret(): string {
     return process.env.INTERNAL_API_SECRET?.trim() || '';
 }
 
-async function postInternal(path: string, body: unknown, label: string): Promise<boolean> {
+async function postInternal(
+    path: string,
+    body: unknown,
+    label: string,
+    logSuccess = false
+): Promise<boolean> {
     const secret = getInternalSecret();
     if (!secret) {
-        console.warn(`[InternalAPI] ${label} ignoré : INTERNAL_API_SECRET non configuré.`);
+        console.error(`[InternalAPI] ${label} ignoré : INTERNAL_API_SECRET non configuré dans .env.`);
         return false;
     }
 
@@ -50,18 +55,25 @@ async function postInternal(path: string, body: unknown, label: string): Promise
             body: JSON.stringify(body),
         });
 
+        const responseText = await response.text().catch(() => '');
+
         if (!response.ok) {
-            const errText = await response.text().catch(() => '');
-            console.warn(
-                `[InternalAPI] Échec ${label} (${response.status}) : ${errText.slice(0, 200)}`
+            console.error(
+                `[InternalAPI] Échec ${label} (HTTP ${response.status} ${response.statusText}) sur ${url} : ${responseText.slice(0, 500)}`
             );
             return false;
         }
+
+        if (logSuccess) {
+            console.log(
+                `[InternalAPI] Succès ${label} (HTTP ${response.status}) sur ${url} : ${responseText.slice(0, 300)}`
+            );
+        }
         return true;
     } catch (error) {
-        console.warn(
+        console.error(
             `[InternalAPI] Erreur réseau sur ${label} (${url}) :`,
-            (error as Error).message
+            error instanceof Error ? error.message : String(error)
         );
         return false;
     }
@@ -83,5 +95,5 @@ export async function sendServerLog(payload: ServerLogPayload): Promise<boolean>
 }
 
 export async function sendMatchReport(payload: MatchReportPayload): Promise<boolean> {
-    return postInternal('/matches/report', payload, 'match-report');
+    return postInternal('/matches/report', payload, 'match-report', true);
 }

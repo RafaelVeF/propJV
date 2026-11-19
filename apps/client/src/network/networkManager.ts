@@ -90,9 +90,7 @@ class NetworkManager {
       !('token' in (payload as Record<string, unknown>))
     ) {
       const token = getToken();
-      if (token) {
-        enrichedPayload = { ...(payload as Record<string, unknown>), token } as T;
-      }
+      enrichedPayload = { ...(payload as Record<string, unknown>), token: token ?? null } as T;
     }
 
     const message: NetworkMessage<T> = {
