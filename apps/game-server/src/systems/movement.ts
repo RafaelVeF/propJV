@@ -1,21 +1,44 @@
 import { Player } from '@prop-hunt/shared';
 import { GAME_CONFIG } from '../config/game.js';
 import { isValidMovement } from './collision.js';
-import { type Rectangle, type Circle } from '@prop-hunt/shared';
+import { type Rectangle } from '@prop-hunt/shared';
+
+export interface SpeedAnomalyInfo {
+    playerId: string;
+    expectedMax: number;
+    measured: number;
+    action: string;
+}
 
 export function updatePlayerPosition(
     player: Player,
     vx: number,
     vy: number,
     deltaTime: number,
-    obstacles: Rectangle[] = []
+    obstacles: Rectangle[] = [],
+    onSpeedAnomaly?: (info: SpeedAnomalyInfo) => void
 ): void {
+    // Vérification d'anomalie de vitesse (vecteur d'entrée anormalement grand)
+    const rawVx = Number.isFinite(vx) ? vx : 0;
+    const rawVy = Number.isFinite(vy) ? vy : 0;
+    const rawMagnitude = Math.hypot(rawVx, rawVy);
 
-    // Normalisation de la vitesse pour éviter que le joueur aille plus vite en diagonale
-    let normalizedVx = vx;
-    let normalizedVy = vy;
+    // Un client légitime envoie vx, vy dans [-1, 1] (norme max ~1.414 en diagonale)
+    let normalizedVx = rawVx;
+    let normalizedVy = rawVy;
 
-    if (normalizedVx !== 0 && normalizedVy !== 0) {
+    if (rawMagnitude > 1.5) {
+        const expectedMax = GAME_CONFIG.PLAYER_SPEED;
+        const measured = Math.round(rawMagnitude * GAME_CONFIG.PLAYER_SPEED);
+        onSpeedAnomaly?.({
+            playerId: player.id,
+            expectedMax,
+            measured,
+            action: 'VELOCITY_CLAMPED',
+        });
+        normalizedVx = rawVx / rawMagnitude;
+        normalizedVy = rawVy / rawMagnitude;
+    } else if (normalizedVx !== 0 && normalizedVy !== 0) {
         normalizedVx *= Math.SQRT1_2;
         normalizedVy *= Math.SQRT1_2;
     }
