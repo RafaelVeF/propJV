@@ -574,3 +574,43 @@ export interface AuthResponsePayload {
 }
 
 export * from './chat.js';
+// Amis & Relations sociales
+
+export type FriendRelationshipStatus = 'PENDING' | 'ACCEPTED' | 'BLOCKED';
+
+export interface FriendEntry {
+  relationshipId: number;
+  userId: number;
+  username: string;
+  lastConnection?: string | Date | null;
+  since?: string | Date;
+}
+
+export interface FriendRequestEntry {
+  relationshipId: number;
+  userId: number;
+  username: string;
+  direction: 'INCOMING' | 'OUTGOING';
+  createdAt?: string | Date;
+}
+
+export interface FriendsOverviewResponse {
+  success: boolean;
+  friends: FriendEntry[];
+  incomingRequests: FriendRequestEntry[];
+  outgoingRequests: FriendRequestEntry[];
+  blockedUsers?: FriendEntry[];
+  message?: string;
+}
+
+export interface SendFriendRequestPayload {
+  username: string;
+}
+
+export interface FriendActionResponse {
+  success: boolean;
+  message: string;
+  relationshipId?: number;
+  status?: FriendRelationshipStatus;
+  errors?: unknown[];
+}
