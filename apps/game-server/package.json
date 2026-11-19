@@ -15,9 +15,12 @@
   "type": "module",
   "dependencies": {
     "@prop-hunt/shared": "workspace:*",
+    "dotenv": "^18.0.10",
+    "jsonwebtoken": "^9.0.3",
     "ws": "^8.21.3"
   },
   "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26.6.2",
     "@types/ws": "^8.18.1",
     "tsx": "^4.23.15",

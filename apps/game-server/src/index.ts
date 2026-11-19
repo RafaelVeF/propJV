@@ -1,6 +1,11 @@
 import { WebSocketServer, WebSocket } from 'ws';
+import type { IncomingMessage } from 'http';
+import { randomBytes, randomUUID } from 'node:crypto';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'node:url';
+import dotenv from 'dotenv';
+import jwt from 'jsonwebtoken';
 import {
     MessageType,
     PlayerRole,
@@ -40,18 +45,90 @@ import {
     computeGrenadeLanding,
     resolveExplosion
 } from './systems/combat.js';
+import {
+    MatchTelemetryTracker,
+    type TelemetryInitPlayer,
+    type WinningTeam
+} from './systems/telemetryTracker.js';
+import {
+    sendServerHeartbeat,
+    sendServerLog,
+    sendMatchReport
+} from './services/internalApiClient.js';
 
-const wss = new WebSocketServer({ port: 8080 }); // Serveur WebSocket sur le port 8080
-console.log('[GameServer] Serveur WebSocket démarré sur le port 8080');
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.resolve(__dirname, '../.env') });
+dotenv.config();
+
+if (!process.env.JWT_SECRET?.trim()) {
+    console.warn('[GameServer] ATTENTION : JWT_SECRET manquant dans .env — les joueurs connectés seront traités comme invités !');
+}
+if (!process.env.INTERNAL_API_SECRET?.trim()) {
+    console.warn('[GameServer] ATTENTION : INTERNAL_API_SECRET manquant dans .env — les rapports de fin de partie ne seront pas envoyés à api-master !');
+}
+
+const SERVER_PORT = Number(process.env.PORT) || 8080;
+const SERVER_ID = process.env.SERVER_ID?.trim() || 'srv-local-01';
+const SERVER_NAME = process.env.SERVER_NAME?.trim() || 'Serveur Local #1 - FR';
+const SERVER_HOST = process.env.SERVER_HOST?.trim() || 'localhost';
+const CURRENT_MAP = 'map_01_32p';
+const MAX_PLAYERS = 32;
+
+const wss = new WebSocketServer({ port: SERVER_PORT });
+console.log(`[GameServer] Serveur WebSocket (${SERVER_ID}) démarré sur le port ${SERVER_PORT}`);
 
 // Suivi des clients connectés (ID attribué dès la connexion, mais sans salon par défaut)
-const clients = new Map<WebSocket, string>();      // ws -> playerId
-const clientRooms = new Map<WebSocket, string>();  // ws -> roomKey (uniquement si dans un salon)
-const clientNames = new Map<string, string>();     // playerId -> name
+const clients = new Map<WebSocket, string>();            // ws -> playerId
+const clientRooms = new Map<WebSocket, string>();        // ws -> roomKey (uniquement si dans un salon)
+const clientNames = new Map<string, string>();           // playerId -> name
+const clientUserIds = new Map<string, number | null>();  // playerId -> userId SQL (null si invité)
+const lastSpeedAnomalyLog = new Map<string, number>();   // playerId -> timestamp dernier log WARN
+
+function verifyJwtToken(token?: string | null): { userId: number | null; username?: string } {
+    const cleanToken = token?.trim();
+    if (!cleanToken) {
+        return { userId: null };
+    }
+    const secret = process.env.JWT_SECRET?.trim();
+    if (!secret) {
+        console.warn('[GameServer] Impossible de vérifier le JWT : JWT_SECRET non configuré.');
+        return { userId: null };
+    }
+    try {
+        const decoded = jwt.verify(cleanToken, secret) as { userId?: unknown; username?: unknown };
+        const parsedId = Number(decoded?.userId);
+        const userId = Number.isInteger(parsedId) && parsedId > 0 ? parsedId : null;
+        const username = typeof decoded?.username === 'string' && decoded.username.trim()
+            ? decoded.username.trim()
+            : undefined;
+        return { userId, username };
+    } catch (error) {
+        console.warn(
+            '[GameServer] Échec vérification JWT :',
+            error instanceof Error ? error.message : String(error)
+        );
+        return { userId: null };
+    }
+}
+
+function getNearestSeekerDistance(room: GameRoom, origin: { x: number; y: number }): number | null {
+    let minDist: number | null = null;
+    room.players.forEach((p) => {
+        if (p.role === PlayerRole.HUNTER && isAlive(p)) {
+            const d = Math.hypot(p.x - origin.x, p.y - origin.y);
+            if (minDist === null || d < minDist) {
+                minDist = d;
+            }
+        }
+    });
+    return minDist !== null ? Math.round(minDist) : null;
+}
 
 interface GameRoom {
     key: string;
     roundManager: RoundManager;
+    telemetryTracker: MatchTelemetryTracker;
     players: Map<string, Player>;
     playerInputs: Map<string, { vx: number; vy: number }>;
     playerRegenTimers: Map<string, number>;
@@ -164,6 +241,12 @@ function applyDamage(room: GameRoom, targetId: string, damage: number, attackerI
     room.playerRegenTimers.delete(targetId);
     const isKilled = target.health <= 0;
 
+    // Télémétrie : enregistrement de l'impact et des dégâts
+    const attacker = attackerId ? room.players.get(attackerId) : undefined;
+    const hitDist = attacker ? Math.round(Math.hypot(attacker.x - target.x, attacker.y - target.y)) : null;
+    const isPropHit = target.role === PlayerRole.PROP && isKilled;
+    room.telemetryTracker.recordHit(attackerId, targetId, damage, isPropHit, hitDist);
+
     console.log(`[GameServer][${room.key}] ${target.name} a subi ${damage} dégâts${weapon ? ` (${WEAPONS[weapon].displayName})` : ''} (HP: ${target.health}/${target.maxHealth || 100})`);
 
     broadcastToRoom(room.key, {
@@ -192,6 +275,10 @@ function killPlayer(room: GameRoom, victimId: string, killerId?: string, weapon?
 
     const propDisplayName = 'currentProp' in victim ? victim.currentProp?.displayName : undefined;
     const killer = killerId && killerId !== victimId ? room.players.get(killerId) : undefined;
+    const elimDist = killer ? Math.round(Math.hypot(killer.x - victim.x, killer.y - victim.y)) : null;
+
+    // Télémétrie : enregistrement de l'élimination et du temps de survie figé
+    room.telemetryTracker.recordElimination(killer?.id, victimId, elimDist);
 
     const spectator: SpectatorPlayer = {
         id: victim.id,
@@ -249,6 +336,7 @@ function handleHunterAttack(room: GameRoom, hunterId: string, payload: HunterSho
         return;
     }
     arsenal.consume(weapon, now);
+    room.telemetryTracker.recordShot(hunterId);
 
     const aim = { x: payload.targetX, y: payload.targetY };
     const players = room.players.values();
@@ -320,7 +408,8 @@ function updateGrenades(room: GameRoom, now: number) {
 function generateRoomKey(prefix: string = 'LOCAL'): string {
     let key = '';
     do {
-        key = `${prefix}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+        const code = randomBytes(2).toString('hex').toUpperCase();
+        key = `${prefix}-${code}`;
     } while (rooms.has(key));
     return key;
 }
@@ -331,6 +420,7 @@ function createRoom(isFreeplay: boolean = false): GameRoom {
     const roomInputs = new Map<string, { vx: number; vy: number }>();
     const roomRegenTimers = new Map<string, number>();
     const roomArsenals = new Map<string, HunterArsenal>();
+    const telemetryTracker = new MatchTelemetryTracker();
 
     const roundManager = new RoundManager({
         onLobbyStateChanged: (lobbyState) => {
@@ -355,6 +445,8 @@ function createRoom(isFreeplay: boolean = false): GameRoom {
             console.log(`[GameServer][${roomKey}] Démarrage de la manche #${roundManager.getRoundNumber()} !`);
             roomArsenals.clear();
             room.pendingGrenades = [];
+            const trackedInitPlayers: TelemetryInitPlayer[] = [];
+
             assignments.forEach((role, assignedPlayerId) => {
                 const previous = roomPlayers.get(assignedPlayerId);
                 if (previous && (role === PlayerRole.HUNTER || role === PlayerRole.PROP)) {
@@ -366,7 +458,15 @@ function createRoom(isFreeplay: boolean = false): GameRoom {
                     if (role === PlayerRole.HUNTER) {
                         roomArsenals.set(assignedPlayerId, new HunterArsenal());
                     }
-                    console.log(`  - ${p.name} : ${role} (Spawn: ${p.x}, ${p.y})`);
+                    trackedInitPlayers.push({
+                        playerId: assignedPlayerId,
+                        userId: clientUserIds.get(assignedPlayerId) ?? null,
+                        username: p.name,
+                        role: role === PlayerRole.HUNTER ? 'SEEKER' : 'HIDER',
+                        initialProp: role === PlayerRole.PROP && 'currentProp' in p ? p.currentProp?.internalName ?? null : null,
+                        seekerClass: role === PlayerRole.HUNTER ? 'seeker_recruit' : null,
+                    });
+                    console.log(`  - ${p.name} (userId=${clientUserIds.get(assignedPlayerId) ?? 'guest'}) : ${role} (Spawn: ${p.x}, ${p.y})`);
                 }
 
                 clients.forEach((clientPlayerId, clientWs) => {
@@ -382,7 +482,7 @@ function createRoom(isFreeplay: boolean = false): GameRoom {
                                 role: role,
                                 hidingDuration: roundManager.config.hidingDuration,
                                 roundDuration: roundManager.config.huntingDuration + roundManager.config.hidingDuration,
-                                mapId: 'map_01_32p'
+                                mapId: CURRENT_MAP
                             }
                         } satisfies NetworkMessage));
                     }
@@ -392,6 +492,8 @@ function createRoom(isFreeplay: boolean = false): GameRoom {
                     sendWeaponState(room, assignedPlayerId);
                 }
             });
+
+            telemetryTracker.startMatch(CURRENT_MAP, trackedInitPlayers);
         },
         onTimerTick: (phase, timeRemaining) => {
             broadcastToRoom(roomKey, {
@@ -407,6 +509,7 @@ function createRoom(isFreeplay: boolean = false): GameRoom {
                 // Retour au salon : tout le monde ressuscite sous forme humaine
                 roomArsenals.clear();
                 room.pendingGrenades = [];
+                telemetryTracker.reset();
                 room.godPlayers.clear();
                 room.playerSpeeds.clear();
                 roomPlayers.forEach((p, id) => {
@@ -425,6 +528,21 @@ function createRoom(isFreeplay: boolean = false): GameRoom {
                 type: MessageType.ROUND_END,
                 payload: results
             });
+
+            const winningTeam: WinningTeam =
+                results.winner === PlayerRole.HUNTER
+                    ? 'SEEKER'
+                    : results.winner === PlayerRole.PROP
+                    ? 'HIDER'
+                    : 'DRAW';
+
+            const report = telemetryTracker.finalizeMatch(winningTeam, SERVER_ID);
+            if (report) {
+                console.log(
+                    `[Telemetry Check][${roomKey}] Payload prêt à l'envoi :\n${JSON.stringify(report, null, 2)}`
+                );
+                void sendMatchReport(report);
+            }
         }
     }, {
         minPlayers: 2,
@@ -437,6 +555,7 @@ function createRoom(isFreeplay: boolean = false): GameRoom {
     const room: GameRoom = {
         key: roomKey,
         roundManager,
+        telemetryTracker,
         players: roomPlayers,
         playerInputs: roomInputs,
         playerRegenTimers: roomRegenTimers,
@@ -589,13 +708,27 @@ try {
     console.error('[GameServer] Erreur lors du chargement des collisions statiques :', err);
 }
 
-wss.on('connection', (ws) => {
-    const playerId = Math.random().toString(36).substring(2, 15);
-    const defaultName = `Player_${playerId.substring(0, 4)}`;
-    console.log(`[GameServer] Nouveau client connecté (ID: ${playerId}, en attente de salon)`);
+wss.on('connection', (ws, req: IncomingMessage) => {
+    const playerId = randomUUID();
+    let initialToken: string | null = null;
+    if (req.url) {
+        try {
+            const parsedUrl = new URL(req.url, 'http://localhost');
+            initialToken = parsedUrl.searchParams.get('token');
+        } catch {
+            initialToken = null;
+        }
+    }
+
+    const authInfo = verifyJwtToken(initialToken);
+    const defaultName = authInfo.username || `Player_${playerId.substring(0, 4)}`;
+    console.log(
+        `[GameServer] Nouveau client connecté (ID: ${playerId}, userId: ${authInfo.userId ?? 'invité'}, en attente de salon)`
+    );
 
     clients.set(ws, playerId);
     clientNames.set(playerId, defaultName);
+    clientUserIds.set(playerId, authInfo.userId);
 
     const defaultProp = DEFAULT_PROPS[0];
     const welcomePlayer: Player = {
@@ -624,14 +757,28 @@ wss.on('connection', (ws) => {
 
             // --- GESTION DES SALONS (Hors partie) ---
             if (message.type === MessageType.CREATE_ROOM) {
-                const payload = (message.payload || {}) as CreateRoomPayload;
+                const payload = (message.payload || {}) as CreateRoomPayload & { token?: string | null };
+                if ('token' in payload) {
+                    const refreshedAuth = verifyJwtToken(payload.token);
+                    clientUserIds.set(playerId, refreshedAuth.userId);
+                    if (refreshedAuth.username && !payload.playerName) {
+                        clientNames.set(playerId, refreshedAuth.username);
+                    }
+                }
                 const room = createRoom(Boolean(payload.isFreeplay));
                 joinRoom(ws, playerId, room, payload.playerName);
                 return;
             }
 
             if (message.type === MessageType.JOIN_ROOM) {
-                const payload = (message.payload || {}) as JoinRoomPayload;
+                const payload = (message.payload || {}) as JoinRoomPayload & { token?: string | null };
+                if ('token' in payload) {
+                    const refreshedAuth = verifyJwtToken(payload.token);
+                    clientUserIds.set(playerId, refreshedAuth.userId);
+                    if (refreshedAuth.username && !payload.playerName) {
+                        clientNames.set(playerId, refreshedAuth.username);
+                    }
+                }
                 const requestedKey = (payload.roomKey || '').trim().toUpperCase();
                 const targetRoom = rooms.get(requestedKey);
                 if (!targetRoom) {
@@ -682,6 +829,9 @@ wss.on('connection', (ws) => {
 
                     const payload = message.payload as PlayerMovePayload;
                     room.playerInputs.set(playerId, { vx: payload.vx, vy: payload.vy });
+                    if (payload.vx !== 0 || payload.vy !== 0) {
+                        room.telemetryTracker.recordActivity(playerId);
+                    }
                     break;
                 }
 
@@ -705,6 +855,13 @@ wss.on('connection', (ws) => {
                                 playerToTransform.health = targetProp.health;
                             }
                             room.players.set(playerId, playerToTransform);
+
+                            const nearestSeekerDist = getNearestSeekerDistance(room, playerToTransform);
+                            room.telemetryTracker.recordTransform(
+                                playerId,
+                                targetProp.internalName,
+                                nearestSeekerDist
+                            );
 
                             console.log(`[GameServer][${room.key}] ${playerToTransform.name} transformé en ${targetProp.displayName}`);
 
@@ -740,6 +897,12 @@ wss.on('connection', (ws) => {
                     const payload = message.payload as PropWhistlePayload;
                     const whistler = room.players.get(playerId);
                     if (!whistler || !isAlive(whistler)) break; // Les morts ne sifflent pas
+                    const nearestSeekerDist = getNearestSeekerDistance(room, whistler);
+                    room.telemetryTracker.recordTaunt(
+                        playerId,
+                        payload.soundKey || 'taunt_whistle',
+                        nearestSeekerDist
+                    );
                     broadcastToRoom(room.key, {
                         type: MessageType.PROP_WHISTLE,
                         payload: { playerId, soundKey: payload.soundKey }
@@ -815,6 +978,8 @@ wss.on('connection', (ws) => {
         leaveCurrentRoom(ws, playerId);
         clients.delete(ws);
         clientNames.delete(playerId);
+        clientUserIds.delete(playerId);
+        lastSpeedAnomalyLog.delete(playerId);
     });
 });
 
@@ -842,7 +1007,36 @@ const gameLoop = new GameLoop((deltaTime: number) => {
                 } else {
                     const speedMult = room.playerSpeeds.get(id) ?? 1;
                     const ignoreObstacles = room.godPlayers.has(id);
-                    updatePlayerPosition(player, input.vx, input.vy, deltaTime, staticObstacles, speedMult, ignoreObstacles);
+                    updatePlayerPosition(
+                        player,
+                        input.vx,
+                        input.vy,
+                        deltaTime,
+                        staticObstacles,
+                        speedMult,
+                        ignoreObstacles,
+                        (anomaly) => {
+                            const lastLogged = lastSpeedAnomalyLog.get(id) ?? 0;
+                            if (now - lastLogged >= 10_000) {
+                                lastSpeedAnomalyLog.set(id, now);
+                                console.warn(
+                                    `[GameServer][${room.key}] SPEED_ANOMALY détectée pour ${player.name} (${anomaly.measured} > ${anomaly.expectedMax})`
+                                );
+                                void sendServerLog({
+                                    serverId: SERVER_ID,
+                                    level: 'WARN',
+                                    event: 'SPEED_ANOMALY',
+                                    userId: clientUserIds.get(id) ?? null,
+                                    details: {
+                                        roomKey: room.key,
+                                        expectedMax: anomaly.expectedMax,
+                                        measured: anomaly.measured,
+                                        action: anomaly.action,
+                                    },
+                                });
+                            }
+                        }
+                    );
                 }
             }
 
@@ -871,3 +1065,42 @@ const gameLoop = new GameLoop((deltaTime: number) => {
 });
 
 gameLoop.start();
+
+// Collecte continue : Heartbeat toutes les 8 secondes + log de démarrage
+function emitHeartbeat(): void {
+    let anyInGame = false;
+    rooms.forEach((room) => {
+        const phase = room.roundManager.getPhase();
+        if (phase === GamePhase.HIDING || phase === GamePhase.HUNTING) {
+            anyInGame = true;
+        }
+    });
+
+    const playersCount = clients.size;
+    const status =
+        playersCount >= MAX_PLAYERS ? 'FULL' : anyInGame ? 'IN_GAME' : 'WAITING';
+
+    void sendServerHeartbeat({
+        serverId: SERVER_ID,
+        name: SERVER_NAME,
+        host: SERVER_HOST,
+        port: SERVER_PORT,
+        map: CURRENT_MAP,
+        status,
+        playersCount,
+        maxPlayers: MAX_PLAYERS,
+    });
+}
+
+void sendServerLog({
+    serverId: SERVER_ID,
+    level: 'INFO',
+    event: 'SERVER_STARTED',
+    details: {
+        port: SERVER_PORT,
+        tickRate: 20,
+        map: CURRENT_MAP,
+    },
+});
+emitHeartbeat();
+setInterval(emitHeartbeat, 8000);
