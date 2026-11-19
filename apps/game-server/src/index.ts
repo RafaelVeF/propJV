@@ -36,6 +36,8 @@ import { GameLoop } from './GameLoop.js';
 import { handleChatMessage } from './systems/chat.js';
 import { updatePlayerPosition } from './systems/movement.js';
 import { parseTiledCollisions } from './utils/mapLoader.js';
+import { resolvePlayerName } from './utils/playerIdentity.js';
+import { fetchAuthenticatedPlayerIdentity } from './services/playerIdentityService.js';
 import { GAME_CONFIG } from './config/game.js';
 import { RoundManager } from './RoundManager.js';
 import {
@@ -110,6 +112,26 @@ function verifyJwtToken(token?: string | null): { userId: number | null; usernam
         );
         return { userId: null };
     }
+}
+
+async function resolvePlayerAuth(token?: string | null): Promise<{ userId: number | null; username?: string }> {
+    const signedIdentity = verifyJwtToken(token);
+    if (!token?.trim()) return signedIdentity;
+
+    const apiOrigin = process.env.API_ORIGIN?.trim()
+        || process.env.API_MASTER_URL?.trim()
+        || 'http://localhost:3000';
+    const databaseIdentity = await fetchAuthenticatedPlayerIdentity(token, apiOrigin);
+    if (databaseIdentity) return databaseIdentity;
+
+    // Keep valid local JWT support when api-master is temporarily unavailable.
+    return signedIdentity;
+}
+
+async function refreshClientIdentity(playerId: string, token?: string | null): Promise<void> {
+    const auth = await resolvePlayerAuth(token);
+    clientUserIds.set(playerId, auth.userId);
+    clientNames.set(playerId, auth.username || `Player_${playerId.substring(0, 4)}`);
 }
 
 function getNearestSeekerDistance(room: GameRoom, origin: { x: number; y: number }): number | null {
@@ -655,7 +677,12 @@ function endRoomMatch(room: GameRoom): boolean {
 function joinRoom(ws: WebSocket, playerId: string, room: GameRoom, customName?: string): void {
     leaveCurrentRoom(ws, playerId);
 
-    const playerName = customName?.trim() || clientNames.get(playerId) || `Player_${playerId.substring(0, 4)}`;
+    const playerName = resolvePlayerName({
+        userId: clientUserIds.get(playerId),
+        authenticatedName: clientNames.get(playerId),
+        customName,
+        playerId
+    });
     clientNames.set(playerId, playerName);
 
     const defaultProp = DEFAULT_PROPS[0];
@@ -751,20 +778,14 @@ wss.on('connection', (ws, req: IncomingMessage) => {
         payload: { player: welcomePlayer }
     } satisfies NetworkMessage));
 
-    ws.on('message', (data) => {
+    ws.on('message', async (data) => {
         try {
             const message: NetworkMessage = JSON.parse(data.toString());
 
             // --- GESTION DES SALONS (Hors partie) ---
             if (message.type === MessageType.CREATE_ROOM) {
                 const payload = (message.payload || {}) as CreateRoomPayload & { token?: string | null };
-                if ('token' in payload) {
-                    const refreshedAuth = verifyJwtToken(payload.token);
-                    clientUserIds.set(playerId, refreshedAuth.userId);
-                    if (refreshedAuth.username && !payload.playerName) {
-                        clientNames.set(playerId, refreshedAuth.username);
-                    }
-                }
+                await refreshClientIdentity(playerId, payload.token);
                 const room = createRoom(Boolean(payload.isFreeplay));
                 joinRoom(ws, playerId, room, payload.playerName);
                 return;
@@ -772,13 +793,7 @@ wss.on('connection', (ws, req: IncomingMessage) => {
 
             if (message.type === MessageType.JOIN_ROOM) {
                 const payload = (message.payload || {}) as JoinRoomPayload & { token?: string | null };
-                if ('token' in payload) {
-                    const refreshedAuth = verifyJwtToken(payload.token);
-                    clientUserIds.set(playerId, refreshedAuth.userId);
-                    if (refreshedAuth.username && !payload.playerName) {
-                        clientNames.set(playerId, refreshedAuth.username);
-                    }
-                }
+                await refreshClientIdentity(playerId, payload.token);
                 const requestedKey = (payload.roomKey || '').trim().toUpperCase();
                 const targetRoom = rooms.get(requestedKey);
                 if (!targetRoom) {
