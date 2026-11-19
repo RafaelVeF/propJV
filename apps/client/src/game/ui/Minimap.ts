@@ -236,3 +236,102 @@ export function renderFullMap(
   ctx.stroke();
 }
 
+import type { GameState } from '../state';
+import type { MapRenderer } from '../map/mapRenderer';
+
+/**
+ * Contrôleur UI de la minimap circulaire et du plan complet modal.
+ */
+export class MinimapController {
+  private readonly minimapWrapper = document.getElementById('minimap-wrapper');
+  private readonly minimapCanvas = document.getElementById('minimap-canvas') as HTMLCanvasElement | null;
+  private readonly fullMapOverlay = document.getElementById('fullmap-overlay');
+  private readonly fullMapCanvas = document.getElementById('fullmap-canvas') as HTMLCanvasElement | null;
+  private readonly btnCloseFullMap = document.getElementById('btn-close-fullmap');
+
+  private readonly minimapCtx = this.minimapCanvas?.getContext('2d') ?? null;
+  private readonly fullMapCtx = this.fullMapCanvas?.getContext('2d') ?? null;
+
+  private mapSnapshot: HTMLCanvasElement | null = null;
+  private isHovered = false;
+
+  constructor(
+    private readonly state: GameState,
+    private readonly map: MapRenderer
+  ) {
+    if (this.minimapWrapper) {
+      this.minimapWrapper.addEventListener('mouseenter', () => {
+        this.isHovered = true;
+        this.minimapWrapper!.style.transform = 'scale(1.22)';
+        this.minimapWrapper!.style.boxShadow = '0 12px 30px rgba(0,0,0,0.85)';
+      });
+      this.minimapWrapper.addEventListener('mouseleave', () => {
+        this.isHovered = false;
+        this.minimapWrapper!.style.transform = 'scale(1)';
+        this.minimapWrapper!.style.boxShadow = '0 10px 28px rgba(0, 0, 0, 0.75), 0 0 18px rgba(56, 189, 248, 0.2)';
+      });
+      this.minimapWrapper.addEventListener('click', () => {
+        this.setFullMapOpen(true);
+      });
+    }
+
+    this.btnCloseFullMap?.addEventListener('click', () => this.setFullMapOpen(false));
+    this.fullMapOverlay?.addEventListener('click', (e) => {
+      if (e.target === this.fullMapOverlay) this.setFullMapOpen(false);
+    });
+  }
+
+  public setFullMapOpen(open: boolean): void {
+    this.state.isFullMapOpen = open;
+    if (this.fullMapOverlay) {
+      this.fullMapOverlay.style.display = open ? 'flex' : 'none';
+    }
+  }
+
+  public render(): void {
+    if (!this.minimapCtx || !this.minimapCanvas) return;
+
+    if (!this.mapSnapshot) {
+      this.mapSnapshot = buildMapSnapshot(this.map.getMapData(), this.map.getTilesetImage());
+    }
+
+    const { width: mapWidthPx, height: mapHeightPx } = this.map.getMapDimensions();
+    const { player, otherPlayers, localPlayerRole, spectator, isFullMapOpen } = this.state;
+
+    const allies: MinimapPlayerMarker[] = [];
+    otherPlayers.forEach(op => {
+      if (op.health <= 0 || op.role === PlayerRole.SPECTATOR) return;
+      if (spectator.active || op.role === localPlayerRole) {
+        allies.push({ x: op.x, y: op.y, name: op.name, role: op.role });
+      }
+    });
+
+    renderMinimap(
+      this.minimapCtx,
+      this.minimapCanvas.width,
+      this.mapSnapshot,
+      mapWidthPx,
+      mapHeightPx,
+      player.x,
+      player.y,
+      localPlayerRole,
+      allies,
+      this.isHovered
+    );
+
+    if (isFullMapOpen && this.fullMapCtx && this.fullMapCanvas) {
+      renderFullMap(
+        this.fullMapCtx,
+        this.fullMapCanvas,
+        this.mapSnapshot,
+        mapWidthPx,
+        mapHeightPx,
+        player.x,
+        player.y,
+        localPlayerRole,
+        allies
+      );
+    }
+  }
+}
+
