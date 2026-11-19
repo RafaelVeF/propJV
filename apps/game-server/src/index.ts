@@ -1,5 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import type { IncomingMessage } from 'http';
+import { randomBytes, randomUUID } from 'node:crypto';
 import fs from 'fs';
 import path from 'path';
 import dotenv from 'dotenv';
@@ -382,7 +383,8 @@ function updateGrenades(room: GameRoom, now: number) {
 function generateRoomKey(prefix: string = 'LOCAL'): string {
     let key = '';
     do {
-        key = `${prefix}-${Math.random().toString(36).substring(2, 6).toUpperCase()}`;
+        const code = randomBytes(2).toString('hex').toUpperCase();
+        key = `${prefix}-${code}`;
     } while (rooms.has(key));
     return key;
 }
@@ -620,7 +622,7 @@ try {
 }
 
 wss.on('connection', (ws, req: IncomingMessage) => {
-    const playerId = Math.random().toString(36).substring(2, 15);
+    const playerId = randomUUID();
     let initialToken: string | null = null;
     if (req.url) {
         try {
