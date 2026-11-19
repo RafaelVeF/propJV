@@ -6,6 +6,7 @@ import {
   WeaponType,
   getPlayerHurtbox,
   type GrenadeExplodedPayload,
+  type HunterEmotePayload,
   type LobbyStatePayload,
   type Player,
   type PlayerDiedPayload,
@@ -21,6 +22,7 @@ import { networkManager } from '../../network/networkManager';
 import { getPlayerRenderInfo, type GameState } from '../state';
 import type { CombatEffects } from '../combat/combatEffects';
 import type { WeaponController } from '../combat/weaponController';
+import type { HunterAnimator } from '../render/hunterAnimation';
 import type { SpectatorController } from '../spectator/spectatorController';
 import type { RoundHud } from '../ui/roundHud';
 
@@ -28,6 +30,7 @@ export interface GameNetworkDeps {
   state: GameState;
   weapons: WeaponController;
   effects: CombatEffects;
+  hunterAnimator: HunterAnimator;
   spectator: SpectatorController;
   roundHud: RoundHud;
   /** Rafraîchit le bandeau de statut (connexion + touches) */
@@ -38,7 +41,7 @@ export interface GameNetworkDeps {
 
 /** Abonne l'écran de jeu à tous les messages du serveur */
 export function registerGameNetworkHandlers(deps: GameNetworkDeps): void {
-  const { state, weapons, effects, spectator, roundHud, updateStatus, returnToLobby } = deps;
+  const { state, weapons, effects, hunterAnimator, spectator, roundHud, updateStatus, returnToLobby } = deps;
   const { player, otherPlayers } = state;
 
   networkManager.onOpen(updateStatus);
@@ -211,6 +214,12 @@ export function registerGameNetworkHandlers(deps: GameNetworkDeps): void {
     const hit = payload.hitPlayerIds.length > 0;
     if (hit && payload.hunterId === networkManager.localPlayerId) effects.hitMarkerAt = Date.now();
     effects.addShot({ ...payload, hit });
+  });
+
+  networkManager.on<HunterEmotePayload>(MessageType.HUNTER_EMOTE, (payload) => {
+    if (payload.playerId && payload.playerId !== networkManager.localPlayerId) {
+      hunterAnimator.playEmote(payload.playerId, payload.emoteId);
+    }
   });
 
   networkManager.on<GrenadeExplodedPayload>(MessageType.GRENADE_EXPLODED, (payload) => {

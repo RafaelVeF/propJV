@@ -1,4 +1,4 @@
-import { DEFAULT_PROPS, WEAPON_ORDER, WEAPONS, type WeaponType } from '@prop-hunt/shared';
+import { DEFAULT_HUNTER_EMOTES, DEFAULT_PROPS, WEAPON_ORDER, WEAPONS, type WeaponType } from '@prop-hunt/shared';
 
 function loadImage(src: string): HTMLImageElement {
   const img = new Image();
@@ -62,6 +62,17 @@ export function loadHunterSprites(): HunterSprites {
     move_w: loadImage('/assets/characters/Hunter/MoveHuntLeft.png'),
     move_e: loadImage('/assets/characters/Hunter/MoveHuntRight.png')
   };
+}
+
+/** Précharge les sprite sheets d'emotes des Chasseurs, indexées par assetPath */
+export function loadEmoteImages(): Map<string, HTMLImageElement> {
+  const emoteImages = new Map<string, HTMLImageElement>();
+  DEFAULT_HUNTER_EMOTES.forEach(e => {
+    if (e.assetPath && !emoteImages.has(e.assetPath)) {
+      emoteImages.set(e.assetPath, loadImage(e.assetPath));
+    }
+  });
+  return emoteImages;
 }
 
 /** Une image est utilisable si elle est chargée et valide */

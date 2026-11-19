@@ -1,9 +1,10 @@
 import { switchView } from './viewManager';
 import { networkManager } from '../network/networkManager';
+import { EmoteWheel } from '../game/ui/EmoteWheel';
 import { TransformationWheel } from '../game/ui/TransformationWheel';
-import { DEFAULT_PROPS, MessageType, type PropDefinition } from '@prop-hunt/shared';
+import { DEFAULT_HUNTER_EMOTES, DEFAULT_PROPS, MessageType, type PropDefinition } from '@prop-hunt/shared';
 import { createGameState, VISION_RADIUS, type GameState } from '../game/state';
-import { loadHunterSprites, loadPropImages, loadWeaponImages } from '../game/assets';
+import { loadEmoteImages, loadHunterSprites, loadPropImages, loadWeaponImages } from '../game/assets';
 import { MapRenderer } from '../game/map/mapRenderer';
 import { collectCharacters, drawCharacter } from '../game/render/characterRenderer';
 import { HunterAnimator } from '../game/render/hunterAnimation';
@@ -64,32 +65,46 @@ export function initGame(): void {
     const propImages = loadPropImages();
     const weaponImages = loadWeaponImages();
     const hunterSprites = loadHunterSprites();
+    const emoteImages = loadEmoteImages();
     const hunterAnimator = new HunterAnimator();
     const map = new MapRenderer();
     map.load();
 
     // --- Modules ---
     const transformationWheel = createTransformationWheel(state, propImages);
+    const emoteWheel = new EmoteWheel({
+        emotesList: DEFAULT_HUNTER_EMOTES,
+        emoteImages,
+        onSelectEmote: (emote) => {
+            if (!networkManager.localPlayerId) return;
+            hunterAnimator.playEmote(networkManager.localPlayerId, emote.id);
+            networkManager.send(MessageType.HUNTER_EMOTE, {
+                playerId: networkManager.localPlayerId,
+                emoteId: emote.id
+            });
+        }
+    });
     const effects = new CombatEffects();
     const weapons = new WeaponController(state, canvas, document.getElementById('weapon-hud'), weaponImages);
     const roundHud = new RoundHud();
     const updateStatus = () => updateStatusBar(wsStatus, state);
     const spectator = new SpectatorController(state, () => {
-        // Entrée / sortie du mode spectateur : on ferme la roue et on met à jour l'interface
+        // Entrée / sortie du mode spectateur : on ferme les roues et on met à jour l'interface
         if (state.spectator.active && transformationWheel.getIsOpen()) transformationWheel.toggle();
+        if (state.spectator.active && emoteWheel.getIsOpen()) emoteWheel.close();
         weapons.updateHud();
         updateStatus();
     });
 
     registerGameNetworkHandlers({
-        state, weapons, effects, spectator, roundHud, updateStatus,
+        state, weapons, effects, hunterAnimator, spectator, roundHud, updateStatus,
         returnToLobby: (onlyIfInGame) => {
             if (!viewLobby) return;
             if (onlyIfInGame && !viewGame.classList.contains('active')) return;
             switchView(viewGame, viewLobby);
         }
     });
-    registerGameInput({ state, canvas, viewGame, transformationWheel, weapons, spectator });
+    registerGameInput({ state, canvas, viewGame, transformationWheel, emoteWheel, weapons, spectator });
 
     // --- Boucle de jeu ---
     let lastVx = 0;
@@ -98,8 +113,10 @@ export function initGame(): void {
     /** Entrées, envoi de l'intention de mouvement et interpolation des positions */
     const update = () => {
         const { player } = state;
-        // Mouvement gelé pendant que la roue est ouverte
-        let { vx, vy } = transformationWheel.getIsOpen() ? { vx: 0, vy: 0 } : readMovementInput(state);
+        // Mouvement gelé pendant qu'une roue est ouverte
+        let { vx, vy } = (transformationWheel.getIsOpen() || emoteWheel.getIsOpen())
+            ? { vx: 0, vy: 0 }
+            : readMovementInput(state);
 
         if (spectator.isActive) {
             // En spectateur, ZQSD pilote la caméra libre et n'est plus envoyé au serveur
@@ -144,7 +161,7 @@ export function initGame(): void {
         map.drawGround(ctx);
         // 2. Personnages triés par profondeur
         const characters = collectCharacters(state, hunterAnimator);
-        characters.forEach(c => drawCharacter(ctx, c, propImages, state.showHitbox, hunterSprites));
+        characters.forEach(c => drawCharacter(ctx, c, propImages, state.showHitbox, hunterSprites, emoteImages));
         // 3. Armes en main, aides à la visée et effets de combat
         weapons.drawHeldWeapons(ctx, effects);
         effects.draw(ctx);
@@ -154,11 +171,15 @@ export function initGame(): void {
         ctx.restore();
 
         // 5. Interface dessinée sur le canvas (coordonnées écran)
-        if (!transformationWheel.getIsOpen()) drawCrosshair(ctx, state, weapons, effects);
+        const wheelOpen = transformationWheel.getIsOpen() || emoteWheel.getIsOpen();
+        if (!wheelOpen) drawCrosshair(ctx, state, weapons, effects);
         weapons.updateHud();
+        if (wheelOpen) canvas.style.cursor = 'default';
         if (transformationWheel.getIsOpen()) {
             transformationWheel.setCurrentEquippedPropId(state.player.currentProp.id);
             transformationWheel.render(ctx, canvas.width, canvas.height);
+        } else if (emoteWheel.getIsOpen()) {
+            emoteWheel.render(ctx, canvas.width, canvas.height);
         }
     };
 

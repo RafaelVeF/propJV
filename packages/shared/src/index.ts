@@ -29,6 +29,7 @@ export enum MessageType {
   PLAYER_DIED = 'PLAYER_DIED',
   PROP_LOCK = 'PROP_LOCK',
   PROP_WHISTLE = 'PROP_WHISTLE',
+  HUNTER_EMOTE = 'HUNTER_EMOTE',
 
   // État général
   GAME_START = 'GAME_START',
@@ -609,4 +610,63 @@ export interface FriendActionResponse {
   relationshipId?: number;
   status?: FriendRelationshipStatus;
   errors?: unknown[];
+}
+
+// Emotes des Chasseurs
+
+export interface HunterEmoteDefinition {
+  id: string;
+  name: string;
+  assetPath: string;
+  cols: number;
+  rows: number;
+  frameWidth: number;
+  frameHeight: number;
+  frameCount: number;
+  previewFrame: number;
+  fps?: number;
+}
+
+export const DEFAULT_HUNTER_EMOTES: HunterEmoteDefinition[] = [
+  {
+    id: 'amazed',
+    name: 'Étonné',
+    assetPath: '/assets/emotes/EmoteAmazed.png',
+    cols: 3,
+    rows: 3,
+    frameWidth: 64,
+    frameHeight: 64,
+    frameCount: 7,
+    previewFrame: 4,
+    fps: 8
+  },
+  {
+    id: 'dance',
+    name: 'Danse',
+    assetPath: '/assets/emotes/EmoteDance.png',
+    cols: 4,
+    rows: 4,
+    frameWidth: 64,
+    frameHeight: 64,
+    frameCount: 15,
+    previewFrame: 10,
+    fps: 10
+  },
+  {
+    id: 'love',
+    name: 'Amour',
+    assetPath: '/assets/emotes/EmoteLove.png',
+    cols: 3,
+    rows: 5,
+    frameWidth: 84,
+    frameHeight: 64,
+    frameCount: 15,
+    previewFrame: 14,
+    fps: 10
+  }
+];
+
+export interface HunterEmotePayload {
+  playerId: string;
+  emoteId: string;
 }

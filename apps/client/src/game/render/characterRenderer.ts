@@ -88,7 +88,8 @@ export function drawCharacter(
   character: RenderableCharacter,
   propImages: Map<string, HTMLImageElement>,
   showHitbox: boolean,
-  hunterSprites?: HunterSprites
+  hunterSprites?: HunterSprites,
+  emoteImages?: Map<string, HTMLImageElement>
 ): void {
   const {
     x: posX, y: posY, prop, variantIndex, health, maxHealth,
@@ -123,7 +124,7 @@ export function drawCharacter(
 
   // B. Rendu du Chasseur animé ou du Prop (Texture PNG ou forme de repli)
   const propImg = assetPath ? propImages.get(assetPath) : null;
-  const drewHunter = Boolean(hunterAnim && hunterSprites && drawHunterSprite(ctx, hunterSprites, hunterAnim, posX, posY, radius));
+  const drewHunter = Boolean(hunterAnim && hunterSprites && drawHunterSprite(ctx, hunterSprites, hunterAnim, posX, posY, radius, Date.now(), emoteImages));
   if (drewHunter) {
     // Sprite Chasseur animé dessiné
   } else if (propImg && propImg.complete && propImg.naturalWidth > 0) {

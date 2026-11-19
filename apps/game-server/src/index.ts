@@ -10,6 +10,8 @@ import {
     type TransformPropPayload,
     type PropLockPayload,
     type PropWhistlePayload,
+    type HunterEmotePayload,
+    DEFAULT_HUNTER_EMOTES,
     type HunterShootPayload,
     type CreateRoomPayload,
     type JoinRoomPayload,
@@ -690,6 +692,18 @@ wss.on('connection', (ws) => {
                     broadcastToRoom(room.key, {
                         type: MessageType.PROP_WHISTLE,
                         payload: { playerId, soundKey: payload.soundKey }
+                    });
+                    break;
+                }
+
+                case MessageType.HUNTER_EMOTE: {
+                    const payload = message.payload as Partial<HunterEmotePayload>;
+                    const performer = room.players.get(playerId);
+                    if (!performer || !isAlive(performer) || performer.role !== PlayerRole.HUNTER) break;
+                    if (!payload?.emoteId || !DEFAULT_HUNTER_EMOTES.some(e => e.id === payload.emoteId)) break;
+                    broadcastToRoom(room.key, {
+                        type: MessageType.HUNTER_EMOTE,
+                        payload: { playerId, emoteId: payload.emoteId } satisfies HunterEmotePayload
                     });
                     break;
                 }

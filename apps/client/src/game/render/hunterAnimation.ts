@@ -1,4 +1,4 @@
-import { PlayerRole } from '@prop-hunt/shared';
+import { DEFAULT_HUNTER_EMOTES, PlayerRole, type HunterEmoteDefinition } from '@prop-hunt/shared';
 import { networkManager } from '../../network/networkManager';
 import { isImageReady, type HunterSpriteKey, type HunterSprites } from '../assets';
 import type { GameState } from '../state';
@@ -13,12 +13,18 @@ export const HUNTER_DRAW_SIZE = 54;
 export const HUNTER_BODY_WIDTH = 28;
 export const HUNTER_BODY_HEIGHT = 48;
 
+export interface ActiveHunterEmote {
+  def: HunterEmoteDefinition;
+  startedAt: number;
+}
+
 export interface HunterAnimState {
   currentKey: HunterSpriteKey;
   animStartedAt: number;
   lastDirX: number;
   lastDirY: number;
   lastHorizontal: 'left' | 'right';
+  activeEmote?: ActiveHunterEmote;
 }
 
 const DIRECTION_MOVE_KEYS: Record<string, HunterSpriteKey> = {
@@ -55,6 +61,25 @@ export class HunterAnimator {
 
   public get(playerId: string): HunterAnimState | undefined {
     return this.states.get(playerId);
+  }
+
+  /** Joue une emote une seule fois (une boucle) sur le chasseur ciblé */
+  public playEmote(playerId: string, emoteId: string, now = Date.now()): void {
+    const def = DEFAULT_HUNTER_EMOTES.find(e => e.id === emoteId);
+    if (!def) return;
+
+    let anim = this.states.get(playerId);
+    if (!anim) {
+      anim = {
+        currentKey: 'idle_left',
+        animStartedAt: now,
+        lastDirX: -1,
+        lastDirY: 1,
+        lastHorizontal: 'left'
+      };
+      this.states.set(playerId, anim);
+    }
+    anim.activeEmote = { def, startedAt: now };
   }
 
   public sync(
@@ -109,6 +134,8 @@ export class HunterAnimator {
     let nextKey: HunterSpriteKey;
 
     if (isMoving) {
+      // Un déplacement interrompt l'emote en cours pour revenir immédiatement à la marche
+      anim.activeEmote = undefined;
       const { dirX, dirY } = quantizeDirection8(dx, dy);
       if (dirX !== 0 || dirY !== 0) {
         anim.lastDirX = dirX;
@@ -118,6 +145,14 @@ export class HunterAnimator {
       }
       nextKey = DIRECTION_MOVE_KEYS[`${anim.lastDirX},${anim.lastDirY}`] ?? 'move_s';
     } else {
+      // Expiration de l'emote après une seule boucle complète
+      if (anim.activeEmote) {
+        const fps = anim.activeEmote.def.fps ?? HUNTER_FPS;
+        const totalMs = anim.activeEmote.def.frameCount * (1000 / fps);
+        if (now - anim.activeEmote.startedAt >= totalMs) {
+          anim.activeEmote = undefined;
+        }
+      }
       // Au repos : dos si le dernier déplacement était montant (NW, N, NE), sinon face gauche/droite
       if (anim.lastDirY < 0) {
         nextKey = 'idle_north';
@@ -138,7 +173,7 @@ export class HunterAnimator {
 }
 
 /**
- * Dessine la frame courante (grille 3x3 de 64x64, 8 frames à 8 FPS) du sprite Chasseur.
+ * Dessine la frame courante du sprite Chasseur (ou de son emote ponctuelle).
  * Retourne true si le sprite a été dessiné, false si l'image n'est pas encore prête.
  */
 export function drawHunterSprite(
@@ -148,8 +183,49 @@ export function drawHunterSprite(
   posX: number,
   posY: number,
   radius: number,
-  now = Date.now()
+  now = Date.now(),
+  emoteImages?: Map<string, HTMLImageElement>
 ): boolean {
+  // 1. Emote en cours : une seule boucle, puis retour à l'idle
+  if (anim.activeEmote && emoteImages) {
+    const { def, startedAt } = anim.activeEmote;
+    const emoteSheet = emoteImages.get(def.assetPath);
+    const frameMs = 1000 / (def.fps ?? HUNTER_FPS);
+    const frameIndex = Math.floor(Math.max(0, now - startedAt) / frameMs);
+
+    if (frameIndex >= def.frameCount) {
+      anim.activeEmote = undefined;
+    } else if (isImageReady(emoteSheet)) {
+      const col = frameIndex % def.cols;
+      const row = Math.floor(frameIndex / def.cols);
+      const sx = col * def.frameWidth;
+      const sy = row * def.frameHeight;
+
+      const scale = HUNTER_DRAW_SIZE / def.frameHeight;
+      const drawW = def.frameWidth * scale;
+      const drawH = def.frameHeight * scale;
+      const drawX = posX - drawW / 2;
+      const drawY = posY + radius - drawH + 1;
+
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(
+        emoteSheet,
+        sx,
+        sy,
+        def.frameWidth,
+        def.frameHeight,
+        drawX,
+        drawY,
+        drawW,
+        drawH
+      );
+      ctx.restore();
+      return true;
+    }
+  }
+
+  // 2. Animation normale (Idle ou Marche 8 directions)
   const sheet = sprites[anim.currentKey];
   if (!isImageReady(sheet)) return false;
 
