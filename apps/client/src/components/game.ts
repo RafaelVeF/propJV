@@ -3,9 +3,10 @@ import { networkManager } from '../network/networkManager';
 import { TransformationWheel } from '../game/ui/TransformationWheel';
 import { DEFAULT_PROPS, MessageType, type PropDefinition } from '@prop-hunt/shared';
 import { createGameState, VISION_RADIUS, type GameState } from '../game/state';
-import { loadPropImages, loadWeaponImages } from '../game/assets';
+import { loadHunterSprites, loadPropImages, loadWeaponImages } from '../game/assets';
 import { MapRenderer } from '../game/map/mapRenderer';
 import { collectCharacters, drawCharacter } from '../game/render/characterRenderer';
+import { HunterAnimator } from '../game/render/hunterAnimation';
 import { CombatEffects } from '../game/combat/combatEffects';
 import { WeaponController } from '../game/combat/weaponController';
 import { drawCrosshair } from '../game/combat/crosshair';
@@ -62,6 +63,8 @@ export function initGame(): void {
     const state = createGameState();
     const propImages = loadPropImages();
     const weaponImages = loadWeaponImages();
+    const hunterSprites = loadHunterSprites();
+    const hunterAnimator = new HunterAnimator();
     const map = new MapRenderer();
     map.load();
 
@@ -118,12 +121,17 @@ export function initGame(): void {
 
         // Interpolation visuelle (Lerp) pour la fluidité d'affichage (même à 20 ticks/sec !)
         const lerpFactor = 0.3;
+        const remoteVelocities = new Map<string, { dx: number; dy: number }>();
         player.x += (player.targetX - player.x) * lerpFactor;
         player.y += (player.targetY - player.y) * lerpFactor;
-        state.otherPlayers.forEach((op) => {
-            op.x += (op.targetX - op.x) * lerpFactor;
-            op.y += (op.targetY - op.y) * lerpFactor;
+        state.otherPlayers.forEach((op, id) => {
+            const dx = op.targetX - op.x;
+            const dy = op.targetY - op.y;
+            op.x += dx * lerpFactor;
+            op.y += dy * lerpFactor;
+            remoteVelocities.set(id, { dx, dy });
         });
+        hunterAnimator.sync(state, vx, vy, remoteVelocities);
     };
 
     /** Rendu d'une image complète */
@@ -135,8 +143,8 @@ export function initGame(): void {
         // 1. Sol et murs
         map.drawGround(ctx);
         // 2. Personnages triés par profondeur
-        const characters = collectCharacters(state);
-        characters.forEach(c => drawCharacter(ctx, c, propImages, state.showHitbox));
+        const characters = collectCharacters(state, hunterAnimator);
+        characters.forEach(c => drawCharacter(ctx, c, propImages, state.showHitbox, hunterSprites));
         // 3. Armes en main, aides à la visée et effets de combat
         weapons.drawHeldWeapons(ctx, effects);
         effects.draw(ctx);

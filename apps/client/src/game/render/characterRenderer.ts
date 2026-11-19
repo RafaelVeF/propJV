@@ -1,5 +1,14 @@
 import { GAMEPLAY_CONFIG, PlayerRole, DEFAULT_PROPS, type PropDefinition } from '@prop-hunt/shared';
+import { networkManager } from '../../network/networkManager';
+import type { HunterSprites } from '../assets';
 import type { GameState } from '../state';
+import {
+  drawHunterSprite,
+  HUNTER_BODY_HEIGHT,
+  HUNTER_BODY_WIDTH,
+  type HunterAnimState,
+  type HunterAnimator
+} from './hunterAnimation';
 
 /** Tout ce qu'il faut pour dessiner un personnage (joueur local ou distant) */
 export interface RenderableCharacter {
@@ -13,6 +22,7 @@ export interface RenderableCharacter {
   bodyColor: string;
   glowColor: string;
   label: string;
+  hunterAnim?: HunterAnimState;
 }
 
 /**
@@ -20,12 +30,15 @@ export interface RenderableCharacter {
  * Règle d'or 2D top-down : plus Y est petit (plus haut / plus au fond), plus l'entité est dessinée tôt.
  * Plus Y est grand (plus bas / au premier plan), plus l'entité est dessinée tard (devant les autres).
  */
-export function collectCharacters(state: GameState): RenderableCharacter[] {
+export function collectCharacters(state: GameState, hunterAnimator?: HunterAnimator): RenderableCharacter[] {
   const { player, spectator } = state;
   const characters: RenderableCharacter[] = [];
 
   // Le joueur local n'est plus dessiné une fois mort
   if (!spectator.active) {
+    const localAnim = (state.localPlayerRole === PlayerRole.HUNTER && networkManager.localPlayerId)
+      ? hunterAnimator?.get(networkManager.localPlayerId)
+      : undefined;
     characters.push({
       x: player.x,
       y: player.y,
@@ -36,7 +49,8 @@ export function collectCharacters(state: GameState): RenderableCharacter[] {
       lastHitTimestamp: player.lastHitTimestamp,
       bodyColor: '#ef4444',
       glowColor: '#dc2626',
-      label: state.localPlayerRole === PlayerRole.HUNTER ? 'Moi : Chasseur' : `Moi : ${player.currentProp.displayName}`
+      label: state.localPlayerRole === PlayerRole.HUNTER ? 'Moi : Chasseur' : `Moi : ${player.currentProp.displayName}`,
+      hunterAnim: localAnim
     });
   }
 
@@ -44,6 +58,7 @@ export function collectCharacters(state: GameState): RenderableCharacter[] {
     if (op.role === PlayerRole.SPECTATOR) return; // Les morts sont invisibles
     const isSpectated = spectator.active && !spectator.freeCam && id === spectator.targetId;
     const propToDraw = op.currentProp || DEFAULT_PROPS[0];
+    const remoteAnim = op.role === PlayerRole.HUNTER ? hunterAnimator?.get(id) : undefined;
     characters.push({
       x: op.x,
       y: op.y,
@@ -54,7 +69,8 @@ export function collectCharacters(state: GameState): RenderableCharacter[] {
       lastHitTimestamp: op.lastHitTimestamp,
       bodyColor: op.role === PlayerRole.HUNTER ? '#f97316' : '#a855f7',
       glowColor: op.role === PlayerRole.HUNTER ? '#ea580c' : '#7c3aed',
-      label: `${isSpectated ? '👁 ' : ''}${op.name || 'Joueur'} : ${op.role === PlayerRole.HUNTER ? 'Chasseur' : propToDraw.displayName}`
+      label: `${isSpectated ? '👁 ' : ''}${op.name || 'Joueur'} : ${op.role === PlayerRole.HUNTER ? 'Chasseur' : propToDraw.displayName}`,
+      hunterAnim: remoteAnim
     });
   });
 
@@ -71,11 +87,12 @@ export function drawCharacter(
   ctx: CanvasRenderingContext2D,
   character: RenderableCharacter,
   propImages: Map<string, HTMLImageElement>,
-  showHitbox: boolean
+  showHitbox: boolean,
+  hunterSprites?: HunterSprites
 ): void {
   const {
     x: posX, y: posY, prop, variantIndex, health, maxHealth,
-    lastHitTimestamp, bodyColor, glowColor, label
+    lastHitTimestamp, bodyColor, glowColor, label, hunterAnim
   } = character;
 
   const variants = prop.variants || [];
@@ -86,8 +103,8 @@ export function drawCharacter(
     orientationName: 'Défaut'
   };
 
-  const bodyW = variant.width || prop.width || 32;
-  const bodyH = variant.height || prop.height || 32;
+  const bodyW = hunterAnim ? HUNTER_BODY_WIDTH : (variant.width || prop.width || 32);
+  const bodyH = hunterAnim ? HUNTER_BODY_HEIGHT : (variant.height || prop.height || 32);
   const radius = prop.hitboxRadius || 10;
   const assetPath = variant.assetPath || prop.assetPath;
 
@@ -104,9 +121,12 @@ export function drawCharacter(
   ctx.fill();
   ctx.restore();
 
-  // B. Rendu du Prop (Texture PNG de la variante active ou forme géométrique de repli)
+  // B. Rendu du Chasseur animé ou du Prop (Texture PNG ou forme de repli)
   const propImg = assetPath ? propImages.get(assetPath) : null;
-  if (propImg && propImg.complete && propImg.naturalWidth > 0) {
+  const drewHunter = Boolean(hunterAnim && hunterSprites && drawHunterSprite(ctx, hunterSprites, hunterAnim, posX, posY, radius));
+  if (drewHunter) {
+    // Sprite Chasseur animé dessiné
+  } else if (propImg && propImg.complete && propImg.naturalWidth > 0) {
     ctx.save();
     ctx.imageSmoothingEnabled = false; // Rendu pixel art net
     ctx.drawImage(propImg, bodyX, bodyY, bodyW, bodyH);
