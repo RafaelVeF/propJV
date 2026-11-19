@@ -1934,6 +1934,13 @@ body {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 0.5rem;
+}
+
+.ach-top-badges-group {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
 }
 
 .ach-category-tag {
@@ -1944,21 +1951,64 @@ body {
   color: var(--color-text-muted);
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  padding: 2px 6px;
+  padding: 2px 7px;
   border-radius: 5px;
+}
+
+/* Badge de pourcentage dédié */
+.ach-percent-badge {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #94a3b8;
+  display: inline-flex;
+  align-items: center;
+  transition: all var(--transition);
+}
+
+.ach-percent-badge.completed {
+  background: rgba(16, 185, 129, 0.18);
+  border-color: #10b981;
+  color: #34d399;
+  text-shadow: 0 0 6px rgba(52, 211, 153, 0.5);
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.25);
 }
 
 .ach-status-badge {
   font-family: var(--font-main);
   font-size: 0.68rem;
   font-weight: 700;
-  padding: 2px 7px;
+  padding: 2px 8px;
   border-radius: 10px;
   letter-spacing: 0.4px;
   display: inline-flex;
   align-items: center;
-  gap: 0.25rem;
+  gap: 0.3rem;
   text-transform: uppercase;
+}
+
+/* Badge complété */
+.ach-status-badge.completed {
+  color: #6ee7b7;
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.25), rgba(5, 150, 105, 0.35));
+  border: 1.5px solid #10b981;
+  text-shadow: 0 0 8px rgba(16, 185, 129, 0.6);
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
+}
+
+.badge-star-icon {
+  color: #fbbf24;
+  font-size: 0.85rem;
+}
+
+.badge-check-icon {
+  color: #10b981;
+  font-weight: 800;
 }
 
 .ach-status-badge.unlocked {
@@ -1968,9 +2018,50 @@ body {
 }
 
 .ach-status-badge.locked {
-  color: #a1a1aa;
+  color: #94a3b8;
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.ach-status-badge.claimable {
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.2);
+  border: 1px solid rgba(245, 158, 11, 0.6);
+  animation: pulse-glow 1.5s infinite alternate;
+}
+
+.badge-dot.pulse {
+  background: #fbbf24;
+  box-shadow: 0 0 8px #fbbf24;
+}
+
+/* Carte de succès globale */
+.achievement-card-wide.completed {
+  background: linear-gradient(155deg, rgba(16, 185, 129, 0.08), rgba(15, 17, 24, 0.95));
+  border: 1.5px solid rgba(16, 185, 129, 0.5);
+  box-shadow: 0 4px 18px rgba(16, 185, 129, 0.12);
+}
+
+.achievement-card-wide.completed:hover {
+  border-color: #34d399;
+  box-shadow: 0 6px 22px rgba(16, 185, 129, 0.28);
+  transform: translateY(-2px);
+}
+
+.achievement-card-wide.completed .ach-card-title {
+  color: #a7f3d0;
+  text-shadow: 0 0 10px rgba(167, 243, 208, 0.35);
+}
+
+.ach-card-completed-glow {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 60px;
+  background: radial-gradient(circle at 50% 0%, rgba(16, 185, 129, 0.15) 0%, transparent 70%);
+  pointer-events: none;
+  border-radius: var(--radius) var(--radius) 0 0;
 }
 
 .ach-card-center {
@@ -1978,19 +2069,38 @@ body {
   flex-direction: column;
   align-items: center;
   text-align: center;
-  gap: 0.25rem;
-  padding: 0.35rem 0;
+  gap: 0.35rem;
+  padding: 0.4rem 0;
 }
 
 .ach-icon-circle {
-  width: 48px;
-  height: 48px;
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 1.6rem;
-  margin-bottom: 0.1rem;
+  margin-bottom: 0.15rem;
+  position: relative;
+  transition: all var(--transition);
+}
+
+.ach-custom-icon {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.5));
+  transition: transform var(--transition);
+}
+
+.achievement-card-wide:hover .ach-custom-icon {
+  transform: scale(1.12);
+}
+
+.achievement-card-wide.completed .ach-custom-icon,
+.achievement-card-wide.claimable .ach-custom-icon {
+  filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.6));
 }
 
 .ach-icon-circle.glow-gold {
@@ -2007,7 +2117,7 @@ body {
 
 .ach-card-title {
   font-family: var(--font-display);
-  font-size: 1.2rem;
+  font-size: 1.15rem;
   letter-spacing: 0.6px;
   color: #ffffff;
 }
@@ -2018,9 +2128,88 @@ body {
 }
 
 .ach-card-desc {
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   color: var(--color-text-muted);
   line-height: 1.35;
+}
+
+/* Progression dans la carte de succès */
+.ach-card-progress-wrapper {
+  margin: 0.5rem 0 0.3rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.ach-card-progress-labels {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+.ach-prog-val {
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.ach-prog-num {
+  color: #f1f5f9;
+  font-weight: 700;
+}
+
+.ach-prog-pct-text {
+  font-family: var(--font-display);
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #cbd5e1;
+}
+
+.achievement-card-wide.completed .ach-prog-pct-text {
+  color: #34d399;
+}
+
+.ach-card-progress-bar-bg {
+  width: 100%;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 5px;
+  overflow: hidden;
+  position: relative;
+}
+
+.ach-card-progress-bar-bg.completed {
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.ach-card-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #6366f1, #a855f7);
+  border-radius: 4px;
+  position: relative;
+  transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ach-card-progress-fill.completed {
+  background: linear-gradient(90deg, #10b981, #34d399, #fbbf24);
+  box-shadow: 0 0 10px rgba(16, 185, 129, 0.6);
+}
+
+.ach-progress-shimmer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.35) 50%, transparent 100%);
+  animation: ach-shimmer 2.2s infinite ease-in-out;
+}
+
+@keyframes ach-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
 
 .ach-card-footer {
@@ -2028,7 +2217,7 @@ body {
   justify-content: space-between;
   align-items: center;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
-  padding-top: 0.45rem;
+  padding-top: 0.5rem;
   margin-top: 0.35rem;
 }
 
@@ -2040,6 +2229,40 @@ body {
   display: flex;
   align-items: center;
   gap: 0.3rem;
+}
+
+.ach-check-mark {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #10b981;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.ach-lock-mark {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+/* Chips d'en-tête de la bannière */
+.banner-stat-chips {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.banner-percent-chip {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #fbbf24;
+  background: rgba(251, 191, 36, 0.15);
+  border: 1px solid #fbbf24;
+  padding: 2px 8px;
+  border-radius: 6px;
+  box-shadow: 0 0 8px rgba(251, 191, 36, 0.3);
 }
 
 .ach-check-mark {

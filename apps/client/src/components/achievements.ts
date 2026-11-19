@@ -306,21 +306,37 @@ function showAchievementToast(msg: string): void {
 function renderCard(ach: AchievementItem, isAuthenticated: boolean): string {
   const isClaimable = isAuthenticated && ach.isUnlocked && !ach.isClaimed;
   const isClaimed = isAuthenticated && ach.isUnlocked && ach.isClaimed;
+  const isCompleted = ach.isUnlocked;
 
   let cardClasses = 'achievement-card-wide';
   if (isClaimable) cardClasses += ' claimable glow-pulse';
-  else if (isClaimed) cardClasses += ' unlocked';
+  else if (isClaimed) cardClasses += ' completed unlocked';
+  else if (isCompleted) cardClasses += ' completed';
   else cardClasses += ' locked';
 
+  // Badge de statut (en haut à droite)
   let statusBadgeHtml = '';
   if (isClaimable) {
-    statusBadgeHtml = `<span class="ach-status-badge claimable"><span class="badge-dot pulse"></span>RÉCOMPENSE DISPO</span>`;
-  } else if (isClaimed) {
-    statusBadgeHtml = `<span class="ach-status-badge unlocked"><span class="badge-dot"></span>DÉBLOQUÉ</span>`;
+    statusBadgeHtml = `
+      <span class="ach-status-badge claimable" title="Récompense prête à être récupérée">
+        <span class="badge-dot pulse"></span>RÉCOMPENSE DISPO
+      </span>
+    `;
+  } else if (isCompleted) {
+    statusBadgeHtml = `
+      <span class="ach-status-badge completed" title="Défi validé à 100% !">
+        <span class="badge-star-icon">★</span>COMPLÉTÉ
+      </span>
+    `;
   } else {
-    statusBadgeHtml = `<span class="ach-status-badge locked"><span class="lock-icon">🔒</span>VERROUILLÉ</span>`;
+    statusBadgeHtml = `
+      <span class="ach-status-badge locked">
+        <span class="lock-icon">🔒</span>EN COURS
+      </span>
+    `;
   }
 
+  // Action / Statut dans le pied de carte
   let actionFooterHtml = '';
   if (isClaimable) {
     actionFooterHtml = `
@@ -329,33 +345,59 @@ function renderCard(ach: AchievementItem, isAuthenticated: boolean): string {
       </button>
     `;
   } else if (isClaimed) {
-    actionFooterHtml = `<span class="ach-check-mark">✓ Récupéré</span>`;
+    actionFooterHtml = `<span class="ach-check-mark"><span class="badge-check-icon">✓</span> Récompense Récupérée</span>`;
+  } else if (isCompleted) {
+    actionFooterHtml = `<span class="ach-check-mark"><span class="badge-star-icon">★</span> Validé</span>`;
   } else {
-    actionFooterHtml = `<span class="ach-lock-mark">🔒 En cours (${ach.progressPercent}%)</span>`;
+    actionFooterHtml = `<span class="ach-lock-mark">🔒 En attente</span>`;
   }
+
+  // Badge pourcentage dédié
+  const percentBadgeHtml = `
+    <span class="ach-percent-badge ${isCompleted ? 'completed' : ''}" title="${ach.progressPercent}% accompli">
+      ${ach.progressPercent}%
+    </span>
+  `;
+
+  // Icône personnalisée SVG (avec fallback sur l'émoji d'origine si l'image est indisponible)
+  const customIconUrl = `/assets/achievements/${ach.internalName}.svg`;
 
   return `
     <div class="${cardClasses}" data-achievement-id="${ach.id}" data-category="${ach.category}">
+      ${isCompleted ? '<div class="ach-card-completed-glow" aria-hidden="true"></div>' : ''}
       <div class="ach-card-top">
         <span class="ach-category-tag">${getCategoryLabel(ach.category)}</span>
-        ${statusBadgeHtml}
+        <div class="ach-top-badges-group">
+          ${percentBadgeHtml}
+          ${statusBadgeHtml}
+        </div>
       </div>
 
       <div class="ach-card-center">
-        <div class="ach-icon-circle ${ach.isUnlocked ? 'glow-gold' : 'dimmed'}">
-          <span class="ach-emoji">${ach.icon}</span>
+        <div class="ach-icon-circle ${isCompleted ? 'glow-gold' : 'dimmed'}">
+          <img
+            src="${customIconUrl}"
+            alt="${ach.displayName}"
+            class="ach-custom-icon"
+            onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='inline-block';"
+          />
+          <span class="ach-emoji fallback-emoji" style="display: none;">${ach.icon}</span>
         </div>
         <h4 class="ach-card-title">${ach.displayName}</h4>
         <p class="ach-card-desc">${ach.description}</p>
       </div>
 
       <div class="ach-card-progress-wrapper">
-        <div class="ach-card-progress-bar-bg">
-          <div class="ach-card-progress-fill" style="width: ${ach.progressPercent}%;"></div>
-        </div>
         <div class="ach-card-progress-labels">
-          <span class="ach-prog-val">${ach.progress} / ${ach.targetValue}</span>
-          <span class="ach-prog-pct">${ach.progressPercent}%</span>
+          <span class="ach-prog-val">
+            Progression : <strong class="ach-prog-num">${ach.progress}</strong> / ${ach.targetValue}
+          </span>
+          <span class="ach-prog-pct-text">${ach.progressPercent}%</span>
+        </div>
+        <div class="ach-card-progress-bar-bg ${isCompleted ? 'completed' : ''}">
+          <div class="ach-card-progress-fill ${isCompleted ? 'completed' : ''}" style="width: ${ach.progressPercent}%;">
+            ${isCompleted ? '<div class="ach-progress-shimmer"></div>' : ''}
+          </div>
         </div>
       </div>
 
@@ -423,7 +465,11 @@ function updateAchievementsView(): void {
   const effCoins = isAuthenticated ? totalCoinsEarned : 0;
 
   if (counterElem) {
-    counterElem.textContent = `${effUnlocked} / ${effTotal} Débloqués (${effPercent}%)`;
+    counterElem.textContent = `${effUnlocked} / ${effTotal} Débloqués`;
+  }
+  const percentChip = document.getElementById('ach-banner-percent-chip');
+  if (percentChip) {
+    percentChip.textContent = `${effPercent}%`;
   }
   if (barElem) {
     barElem.style.width = `${effPercent}%`;
@@ -534,7 +580,10 @@ export function renderAchievements(): string {
           <div class="banner-progress-content">
             <div class="banner-progress-header">
               <span class="banner-progress-title">PROGRESSION DES DÉFIS</span>
-              <span class="banner-progress-counter" id="ach-banner-counter">0 / 16 Débloqués (0%)</span>
+              <div class="banner-stat-chips">
+                <span class="banner-percent-chip" id="ach-banner-percent-chip">0%</span>
+                <span class="banner-progress-counter" id="ach-banner-counter">0 / 16 Débloqués</span>
+              </div>
             </div>
             <div class="banner-progress-track">
               <div class="banner-progress-bar" id="ach-banner-bar" style="width: 0%;"></div>
