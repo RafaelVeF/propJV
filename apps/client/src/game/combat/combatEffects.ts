@@ -21,20 +21,22 @@ export class CombatEffects {
   readonly explosions: Explosion[] = [];
   readonly damageNumbers: DamageNumber[] = [];
   readonly deathEffects: DeathEffect[] = [];
-  /** Dernière arme / direction connue de chaque chasseur (pour dessiner l'arme dans sa main) */
-  readonly hunterAim = new Map<string, { angle: number; weapon: WeaponType }>();
+  /** Dernière arme / direction connue de chaque chasseur (pour orienter le canon du drone) */
+  readonly hunterAim = new Map<string, { angle: number; weapon: WeaponType; readyAt: number }>();
   /** Heure de la dernière touche confirmée par le serveur pour le joueur local (hit marker) */
   hitMarkerAt = 0;
 
-  /** Une attaque a été validée par le serveur : on lance l'effet correspondant */
+  /** Une attaque a été validée par le serveur : on lance l'effet correspondant depuis la bouche du drone */
   public addShot(shot: {
     hunterId: string; weapon: WeaponType;
     originX: number; originY: number; impactX: number; impactY: number;
+    angle?: number;
     hit: boolean; grenadeId?: string; fuseMs?: number;
   }): void {
     const now = Date.now();
-    const angle = Math.atan2(shot.impactY - shot.originY, shot.impactX - shot.originX);
-    this.hunterAim.set(shot.hunterId, { angle, weapon: shot.weapon });
+    const angle = shot.angle ?? Math.atan2(shot.impactY - shot.originY, shot.impactX - shot.originX);
+    const readyAt = now + WEAPONS[shot.weapon].cooldownMs;
+    this.hunterAim.set(shot.hunterId, { angle, weapon: shot.weapon, readyAt });
 
     if (shot.weapon === WeaponType.PISTOL) {
       this.tracers.push({ x1: shot.originX, y1: shot.originY, x2: shot.impactX, y2: shot.impactY, hit: shot.hit, at: now });
@@ -105,23 +107,38 @@ export class CombatEffects {
       ctx.restore();
     }
 
-    // C. Coups de pied de biche
+    // C. Onde rouge en arc de cercle qui se propage (Canon à ondes / KAK)
     for (let i = swings.length - 1; i >= 0; i--) {
       const sw = swings[i];
-      const life = (now - sw.at) / 220;
+      const life = (now - sw.at) / 260;
       if (life >= 1) { swings.splice(i, 1); continue; }
       const def = WEAPONS[WeaponType.CROWBAR];
-      const half = ((def.arcDegrees ?? 90) * Math.PI) / 360;
-      // L'arc balaie de gauche à droite pendant l'animation
+      const maxR = def.range;
+      const half = ((def.arcDegrees ?? 100) * Math.PI) / 360;
       const start = sw.angle - half;
-      const end = start + 2 * half * Math.min(1, life * 1.6);
+      const end = sw.angle + half;
+
       ctx.save();
-      ctx.globalAlpha = 0.8 * (1 - life);
-      ctx.strokeStyle = sw.hit ? '#ef4444' : '#e5e7eb';
-      ctx.lineWidth = 3;
+      const coneR = 10 + (maxR - 10) * Math.min(1, life * 1.15);
+      ctx.fillStyle = `rgba(239, 68, 68, ${0.16 * (1 - life)})`;
       ctx.beginPath();
-      ctx.arc(sw.x, sw.y, def.range * 0.8, start, end);
-      ctx.stroke();
+      ctx.moveTo(sw.x, sw.y);
+      ctx.arc(sw.x, sw.y, coneR, start, end);
+      ctx.closePath();
+      ctx.fill();
+
+      const waveOffsets = [0, 0.22, 0.44];
+      waveOffsets.forEach((off, idx) => {
+        if (life <= off) return;
+        const p = Math.min(1, (life - off) / (1 - off));
+        const r = 8 + (maxR - 8) * p;
+        ctx.globalAlpha = (1 - p) * (idx === 0 ? 0.95 : 0.7);
+        ctx.strokeStyle = idx === 0 ? '#ef4444' : '#fca5a5';
+        ctx.lineWidth = idx === 0 ? 3.2 : 2;
+        ctx.beginPath();
+        ctx.arc(sw.x, sw.y, r, start, end);
+        ctx.stroke();
+      });
       ctx.restore();
     }
 

@@ -44,6 +44,24 @@ export class MapRenderer {
     return Boolean(this.mapData && this.tilesetImg.complete);
   }
 
+  public getMapData(): any {
+    return this.mapData;
+  }
+
+  public getTilesetImage(): HTMLImageElement {
+    return this.tilesetImg;
+  }
+
+  public getMapDimensions(): { width: number; height: number } {
+    if (this.mapData?.width && this.mapData?.tilewidth && this.mapData?.height && this.mapData?.tileheight) {
+      return {
+        width: this.mapData.width * this.mapData.tilewidth,
+        height: this.mapData.height * this.mapData.tileheight
+      };
+    }
+    return { width: 800, height: 800 };
+  }
+
   /** Dessine une tuile du tileset (tileId au format Tiled, commençant à 1) à l'index i du calque */
   private drawTile(ctx: CanvasRenderingContext2D, tileId: number, i: number, layerWidth: number) {
     const tileW = this.mapData.tilewidth;

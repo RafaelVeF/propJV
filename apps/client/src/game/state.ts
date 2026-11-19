@@ -49,11 +49,14 @@ export interface SpectatorState {
  */
 export interface GameState {
   player: LocalPlayerState;
+  localPlayerName: string;
   otherPlayers: Map<string, RemotePlayerState>;
   localPlayerRole: PlayerRole;
   currentPhase: GamePhase;
-  /** Affichage des hitbox de debug (touche H) */
+  /** Affichage des hitbox de debug (commandé par /hitbox) */
   showHitbox: boolean;
+  isPauseMenuOpen: boolean;
+  isFullMapOpen: boolean;
   spectator: SpectatorState;
   /** Point regardé par la caméra (coordonnées monde) */
   camera: { x: number; y: number };
@@ -83,10 +86,13 @@ export function createGameState(): GameState {
 
   return {
     player,
+    localPlayerName: '',
     otherPlayers: new Map(),
     localPlayerRole: PlayerRole.PROP,
     currentPhase: GamePhase.LOBBY,
-    showHitbox: true,
+    showHitbox: false,
+    isPauseMenuOpen: false,
+    isFullMapOpen: false,
     spectator: { active: false, targetId: null, freeCam: false, zoom: 1 },
     camera: { x: player.x, y: player.y },
     view: { camX: 0, camY: 0, zoom: 1 },
