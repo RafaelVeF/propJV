@@ -4455,4 +4455,167 @@ body {
   }
 }
 
+/* ==========================================================================
+   Système d'amis
+   ========================================================================== */
+#view-friends.modal-view {
+  width: min(94vw, 680px);
+}
 
+#view-friends [hidden] {
+  display: none !important;
+}
+
+.friends-container {
+  gap: 0.75rem;
+  max-width: 600px;
+}
+
+#view-friends .player-item {
+  gap: 0.85rem;
+}
+
+#view-friends .player-status {
+  font-size: 0.9rem;
+  white-space: nowrap;
+  width: fit-content;
+}
+
+#view-friends .request-actions {
+  flex-shrink: 0;
+}
+
+.friends-panels-wrapper {
+  position: relative;
+  width: 100%;
+  min-height: 260px;
+}
+
+.friends-content-area {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+  transition: filter 0.25s ease, opacity 0.25s ease;
+}
+
+.friends-content-area.is-locked {
+  filter: blur(6px);
+  opacity: 0.45;
+  pointer-events: none;
+  user-select: none;
+}
+
+.friends-guest-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(10, 11, 20, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-radius: 12px;
+}
+
+.friends-guest-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.9rem;
+  max-width: 340px;
+  padding: 1.5rem 1.25rem;
+  background: rgba(15, 23, 42, 0.88);
+  border: 1px solid rgba(168, 85, 247, 0.55);
+  border-radius: 14px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
+  text-align: center;
+}
+
+.friends-lock-icon {
+  color: #c084fc;
+}
+
+.friends-guest-text {
+  color: #e2e8f0;
+  font-size: 1rem;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.friends-guest-login-btn {
+  width: auto !important;
+  padding: 0.65rem 1.6rem !important;
+}
+
+.friends-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+#view-friends .players-list h3 {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  line-height: 1;
+}
+
+.friends-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  height: 1.45rem;
+  padding: 0 0.45rem;
+  font-size: 0.85rem;
+  line-height: 1;
+  border-radius: 999px;
+  background: rgba(168, 85, 247, 0.2);
+  border: 1px solid rgba(168, 85, 247, 0.45);
+  color: #e9d5ff;
+}
+
+.friends-empty-state {
+  color: #94a3b8;
+  font-size: 0.95rem;
+  font-style: italic;
+  text-align: center;
+  padding: 0.6rem 0;
+  margin: 0;
+}
+
+.friend-info {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  flex: 1;
+  min-width: 0;
+}
+
+#view-friends .player-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.friend-muted-btn {
+  width: auto !important;
+  padding: 0.35rem 0.75rem !important;
+  font-size: 0.95rem !important;
+  border-radius: 6px !important;
+  margin: 0 !important;
+  background: rgba(148, 163, 184, 0.12) !important;
+  border: 1px solid rgba(148, 163, 184, 0.35) !important;
+  color: #cbd5e1 !important;
+}
+
+.friend-muted-btn:hover {
+  background: rgba(148, 163, 184, 0.25) !important;
+  border-color: #e2e8f0 !important;
+  color: #ffffff !important;
+}

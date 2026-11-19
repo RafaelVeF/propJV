@@ -3,8 +3,8 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import { GAME_NAME } from '@prop-hunt/shared';
 import authRoutes from './routes/auth.js';
+import friendsRoutes from './routes/friends.js';
 import statsRoutes from './routes/stats.js';
-import { requireAuth } from './middlewares/requireAuth.js';
 import { pool } from './db.js';
 import { initMongo } from './mongo.js';
 
@@ -24,18 +24,22 @@ app.use(express.json());
 app.use('/auth', authRoutes);
 app.use('/api/auth', authRoutes);
 
+// Activation des routes d'amis (/friends et /api/friends pour compatibilité)
+app.use('/friends', friendsRoutes);
+app.use('/api/friends', friendsRoutes);
+
 // Activation des routes de statistiques
 app.use('/api/stats', statsRoutes);
 
 // Test des connexions aux bases de données au démarrage
 pool.getConnection()
-    .then(connection => {
-        console.log("[TiDB] Connecté avec succès à TiDB !");
-        connection.release();
-    })
-    .catch(err => {
-        console.error("[TiDB] Erreur de connexion à TiDB :", err.message);
-    });
+  .then(connection => {
+    console.log("[TiDB] Connecté avec succès à TiDB !");
+    connection.release();
+  })
+  .catch(err => {
+    console.error("[TiDB] Erreur de connexion à TiDB :", err.message);
+  });
 
 void initMongo();
 

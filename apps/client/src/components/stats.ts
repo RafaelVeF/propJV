@@ -356,7 +356,7 @@ export function renderStats(): string {
                     <strong class="stats-kpi-value purple-text" id="stat-hider-wins">0</strong>
                   </div>
                   <div class="stats-flat-row">
-                    <span class="stats-row-label">Temps de survie moyen (Télémétrie)</span>
+                    <span class="stats-row-label">Temps de survie moyen</span>
                     <strong class="stats-row-val cyan-text" id="stat-hider-survival">—</strong>
                   </div>
                   <div class="stats-flat-row">
@@ -420,7 +420,7 @@ export function renderStats(): string {
                 <!-- Jauge circulaire épurée de Précision des tirs -->
                 <div class="stats-role-showcase-col">
                   <div class="stats-showcase-header">
-                    <span class="stats-section-caption">PRÉCISION DES TIRS (TÉLÉMÉTRIE)</span>
+                    <span class="stats-section-caption">PRÉCISION DES TIRS</span>
                     <strong class="stats-showcase-title blue-text" id="stat-seeker-accuracy-label">—</strong>
                   </div>
 
@@ -607,7 +607,7 @@ export function renderStats(): string {
               <!-- Colonne gauche : Télémétrie globale -->
               <div class="stats-admin-telemetry-col">
                 <div class="stats-lb-col-header">
-                  <h3 class="stats-section-title cyan-text">MÉTRIQUES D'ÉQUILIBRAGE (TÉLÉMÉTRIE)</h3>
+                  <h3 class="stats-section-title cyan-text">MÉTRIQUES D'ÉQUILIBRAGE</h3>
                   <span class="stats-recent-meta">MONGODB</span>
                 </div>
                 <div class="stats-admin-meta-list">
