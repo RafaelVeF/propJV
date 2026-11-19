@@ -4,7 +4,9 @@ import dotenv from 'dotenv';
 import { GAME_NAME } from '@prop-hunt/shared';
 import authRoutes from './routes/auth.js';
 import friendsRoutes from './routes/friends.js';
-import { pool } from './db.js'; 
+import statsRoutes from './routes/stats.js';
+import { pool } from './db.js';
+import { initMongo } from './mongo.js';
 
 dotenv.config();
 
@@ -26,15 +28,20 @@ app.use('/api/auth', authRoutes);
 app.use('/friends', friendsRoutes);
 app.use('/api/friends', friendsRoutes);
 
-// Test de la connexion au démarrage
+// Activation des routes de statistiques
+app.use('/api/stats', statsRoutes);
+
+// Test des connexions aux bases de données au démarrage
 pool.getConnection()
-    .then(connection => {
-        console.log("Connecté avec succès à TiDB !");
-        connection.release();
-    })
-    .catch(err => {
-        console.error("Erreur de connexion à TiDB :", err.message);
-    });
+  .then(connection => {
+    console.log("[TiDB] Connecté avec succès à TiDB !");
+    connection.release();
+  })
+  .catch(err => {
+    console.error("[TiDB] Erreur de connexion à TiDB :", err.message);
+  });
+
+void initMongo();
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', app: GAME_NAME, service: 'api-master' });

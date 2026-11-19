@@ -1,4 +1,5 @@
 import { switchView } from './viewManager';
+import { fetchCurrentUser, getSession, onAuthChange } from '../services/authService';
 
 export interface SeekerClassData {
   id: string;
@@ -87,11 +88,11 @@ interface ProfileState {
 }
 
 const state: ProfileState = {
-  username: 'Seekertest',
-  coins: 250,
-  score: 4200,
-  seekerWins: 26,
-  hiderWins: 4,
+  username: 'Invité',
+  coins: 0,
+  score: 0,
+  seekerWins: 0,
+  hiderWins: 0,
   activeTab: 'taunts',
   tauntSlots: ['chicken', null, null, null, null], // Slot 1 = Cot-cot, 2 à 5 = Vide
   selectedSlotIndex: null,
@@ -157,9 +158,11 @@ function renderWheelSlotsHtml(): string {
 
       if (taunt) {
         return `
-          <div class="wheel-slot-capsule slot-filled ${isSelected ? 'is-target' : ''}" 
+          <div class="wheel-slot-capsule slot-filled is-draggable ${isSelected ? 'is-target' : ''}" 
                data-slot-index="${index}" 
-               title="Slot ${slotNum} : ${taunt.name} (Cliquez pour cibler ou vider)">
+               data-taunt-id="${taunt.id}"
+               draggable="true"
+               title="Slot ${slotNum} : ${taunt.name} (Glissez pour réorganiser ou cliquez)">
             <span class="capsule-num">#${slotNum}</span>
             <span class="capsule-icon">${taunt.icon}</span>
             <span class="capsule-name">${taunt.name}</span>
@@ -171,7 +174,7 @@ function renderWheelSlotsHtml(): string {
       return `
         <div class="wheel-slot-capsule slot-empty ${isSelected ? 'is-target' : ''}" 
              data-slot-index="${index}" 
-             title="Slot ${slotNum} : Vide (Cliquez pour y équiper un taunt)">
+             title="Slot ${slotNum} : Vide (Glissez un taunt ici)">
           <span class="capsule-num">#${slotNum}</span>
           <span class="capsule-icon empty-icon">➕</span>
           <span class="capsule-name empty-name">Vide</span>
@@ -189,6 +192,7 @@ function renderTauntsShowcaseHtml(): string {
     const isPlaying = state.currentlyPlayingId === taunt.id;
     const slotIndex = state.tauntSlots.indexOf(taunt.id);
     const isEquipped = slotIndex !== -1;
+    const isDraggable = taunt.isOwned;
 
     let statusBadgeHtml = '';
     let actionBtnHtml = '';
@@ -222,16 +226,21 @@ function renderTauntsShowcaseHtml(): string {
     }
 
     return `
-      <div class="taunt-showcase-tile ${!taunt.isOwned ? 'tile-locked' : ''} ${isEquipped ? 'tile-equipped' : ''}" 
-           data-taunt-id="${taunt.id}">
+      <div class="taunt-showcase-tile ${!taunt.isOwned ? 'tile-locked' : ''} ${isEquipped ? 'tile-equipped' : ''} ${isDraggable ? 'is-draggable' : ''}" 
+           data-taunt-id="${taunt.id}"
+           ${isDraggable ? 'draggable="true"' : ''}
+           title="${isDraggable ? 'Prenez et glissez vers la roue pour équiper' : ''}">
         <div class="tile-top-bar">
           ${statusBadgeHtml}
-          <button class="tile-audio-btn ${isPlaying ? 'playing' : ''}" 
-                  data-taunt-id="${taunt.id}" 
-                  data-audio-path="${taunt.audioPath}" 
-                  title="Écouter l'extrait audio">
-            ${isPlaying ? '🔊' : '▶'}
-          </button>
+          <div class="tile-top-right">
+            ${isDraggable ? '<span class="drag-handle-hint" title="Glisser vers un slot">⠿</span>' : ''}
+            <button class="tile-audio-btn ${isPlaying ? 'playing' : ''}" 
+                    data-taunt-id="${taunt.id}" 
+                    data-audio-path="${taunt.audioPath}" 
+                    title="Écouter l'extrait audio">
+              ${isPlaying ? '🔊' : '▶'}
+            </button>
+          </div>
         </div>
 
         <div class="tile-center">
@@ -341,9 +350,9 @@ export function renderProfile(): string {
             <div class="profile-user-info">
               <div class="profile-username-tag">
                 <span class="profile-username" id="profile-display-username">${state.username}</span>
-                <span class="profile-badge-online">En ligne</span>
+                <span class="profile-badge-online" id="profile-session-status">Invité</span>
               </div>
-              <span class="profile-rank-tag">Joueur Vétéran • Rang Or</span>
+              <span class="profile-rank-tag" id="profile-rank-tag">Joueur</span>
             </div>
           </div>
 
@@ -351,15 +360,15 @@ export function renderProfile(): string {
           <div class="profile-stats-row">
             <div class="profile-stat-box">
               <span class="stat-box-label">SCORE GLOBAL</span>
-              <span class="stat-box-value text-cyan">${state.score}</span>
+              <span class="stat-box-value text-cyan" id="profile-score">${state.score}</span>
             </div>
             <div class="profile-stat-box">
               <span class="stat-box-label">VICTOIRES SEEKER</span>
-              <span class="stat-box-value text-purple">${state.seekerWins} victoires</span>
+              <span class="stat-box-value text-purple" id="profile-seeker-wins">${state.seekerWins} victoires</span>
             </div>
             <div class="profile-stat-box">
               <span class="stat-box-label">VICTOIRES HIDER</span>
-              <span class="stat-box-value text-purple">${state.hiderWins} victoires</span>
+              <span class="stat-box-value text-purple" id="profile-hider-wins">${state.hiderWins} victoires</span>
             </div>
           </div>
 
@@ -395,8 +404,8 @@ export function renderProfile(): string {
                 <span class="hud-helper-text">
                   ${
                     state.selectedSlotIndex !== null
-                      ? `<strong class="gold-highlight">Slot #${state.selectedSlotIndex + 1} sélectionné</strong> — Cliquez sur « Équiper » pour l'assigner`
-                      : 'Cliquez sur un emplacement pour le cibler, ou directement sur « Équiper » pour remplir le prochain slot'
+                      ? `<strong class="gold-highlight">Slot #${state.selectedSlotIndex + 1} sélectionné</strong> — Cliquez sur « Équiper » ou glissez-déposez directement`
+                      : 'Glissez un taunt sur un emplacement pour l\'équiper, ou réorganisez vos slots par glisser-déposer'
                   }
                 </span>
               </div>
@@ -417,7 +426,7 @@ export function renderProfile(): string {
             <div class="showcase-section-header">
               <div class="heading-group">
                 <h3 class="section-heading">COLLECTION DE TAUNTS</h3>
-                <span class="section-subtext">Pré-écoutez les voix et assignez-les à vos emplacements de roue</span>
+                <span class="section-subtext">Glissez vos répliques vers la roue ci-dessus ou cliquez sur « Équiper »</span>
               </div>
               <span class="section-counter">${ownedTauntsCount} possédés sur ${TAUNTS_COLLECTION.length}</span>
             </div>
@@ -446,6 +455,20 @@ export function renderProfile(): string {
         </div>
 
       </div>
+
+      <!-- Clone d'aperçu dynamique du Drag & Drop (style capture avec rotation & contour cyan) -->
+      <div id="taunt-drag-ghost" class="taunt-drag-ghost">
+        <div class="ghost-top">
+          <span class="ghost-badge">TAUNT</span>
+        </div>
+        <div class="ghost-body">
+          <span class="ghost-icon" id="ghost-icon">🐔</span>
+          <span class="ghost-name" id="ghost-name">Cot-cot</span>
+        </div>
+        <div class="ghost-footer">
+          <span>Déposer sur la roue</span>
+        </div>
+      </div>
     </div>
   `;
 }
@@ -457,6 +480,32 @@ export function initProfile(): void {
   const viewMain = document.getElementById('view-main');
   const viewProfile = document.getElementById('view-profile');
   const btnBackTop = document.getElementById('btn-back-main-from-profile-top');
+
+  const syncPlayerProfile = () => {
+    const user = getSession()?.user;
+    state.username = user?.username ?? 'Invité';
+    state.coins = user?.currencyBalance ?? 0;
+    state.score = user?.stats?.totalScore ?? 0;
+    state.seekerWins = user?.stats?.seekerWins ?? 0;
+    state.hiderWins = user?.stats?.hiderWins ?? 0;
+    const setText = (id: string, value: string) => {
+      const element = document.getElementById(id);
+      if (element) element.textContent = value;
+    };
+    setText('profile-display-username', state.username);
+    setText('profile-session-status', user ? 'Connecté' : 'Invité');
+    setText('profile-score', String(state.score));
+    setText('profile-seeker-wins', `${state.seekerWins} victoires`);
+    setText('profile-hider-wins', `${state.hiderWins} victoires`);
+    setText('profile-rank-tag', user ? `Joueur • ${user.adminFlag ? 'Administrateur' : 'Membre'}` : 'Invité');
+    const balance = document.querySelector('#profile-coins-display .balance-amount');
+    if (balance) balance.textContent = String(state.coins);
+  };
+  syncPlayerProfile();
+  onAuthChange((_session, reason) => {
+    syncPlayerProfile();
+    if (reason === 'login') void fetchCurrentUser().catch((error) => console.warn('Actualisation du profil impossible :', error));
+  });
 
   if (btnBackTop) {
     btnBackTop.addEventListener('click', () => switchView(viewProfile, viewMain));
@@ -567,6 +616,153 @@ export function initProfile(): void {
 
   if (!viewProfile) return;
 
+  // ----------------------------------------------------
+  // GESTION DU DRAG & DROP DES TAUNTS DANS LA ROUE
+  // ----------------------------------------------------
+  let activeDragSource: {
+    tauntId: string;
+    sourceSlotIndex: number | null;
+    element: HTMLElement;
+  } | null = null;
+
+  viewProfile.addEventListener('dragstart', (e: DragEvent) => {
+    const target = e.target as HTMLElement;
+    const tile = target.closest('.taunt-showcase-tile.is-draggable') as HTMLElement | null;
+    const slot = target.closest('.wheel-slot-capsule.slot-filled.is-draggable') as HTMLElement | null;
+
+    const dragElement = tile || slot;
+    if (!dragElement) return;
+
+    const tauntId = dragElement.getAttribute('data-taunt-id');
+    if (!tauntId) return;
+
+    const taunt = TAUNTS_COLLECTION.find((t) => t.id === tauntId);
+    if (!taunt) return;
+
+    const sourceSlotRaw = slot ? slot.getAttribute('data-slot-index') : null;
+    const sourceSlotIndex = sourceSlotRaw !== null ? Number(sourceSlotRaw) : null;
+
+    activeDragSource = {
+      tauntId,
+      sourceSlotIndex: sourceSlotIndex !== null && !Number.isNaN(sourceSlotIndex) ? sourceSlotIndex : null,
+      element: dragElement,
+    };
+
+    // Aperçu visuel flottant avec bordure cyan et rotation (style Notion/Linear)
+    const ghostEl = document.getElementById('taunt-drag-ghost');
+    if (ghostEl) {
+      const ghostIcon = document.getElementById('ghost-icon');
+      const ghostName = document.getElementById('ghost-name');
+      if (ghostIcon) ghostIcon.textContent = taunt.icon;
+      if (ghostName) ghostName.textContent = taunt.name;
+
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', tauntId);
+        try {
+          e.dataTransfer.setDragImage(ghostEl, 90, 50);
+        } catch {
+          // Tolérance selon navigateurs
+        }
+      }
+    }
+
+    // Effet visuel immédiat sur l'élément d'origine et la grille
+    requestAnimationFrame(() => {
+      dragElement.classList.add('is-dragging-source');
+      const grid = document.getElementById('wheel-capsules-container');
+      if (grid) grid.classList.add('is-drag-active');
+    });
+  });
+
+  viewProfile.addEventListener('dragend', () => {
+    if (activeDragSource?.element) {
+      activeDragSource.element.classList.remove('is-dragging-source');
+    }
+    const grid = document.getElementById('wheel-capsules-container');
+    if (grid) grid.classList.remove('is-drag-active');
+
+    const hoveredSlots = viewProfile.querySelectorAll('.wheel-slot-capsule.drag-hover-target');
+    hoveredSlots.forEach((s) => s.classList.remove('drag-hover-target'));
+
+    activeDragSource = null;
+  });
+
+  viewProfile.addEventListener('dragover', (e: DragEvent) => {
+    const target = e.target as HTMLElement;
+    const slot = target.closest('.wheel-slot-capsule');
+    const showcase = target.closest('.taunts-showcase-section');
+
+    if (slot || (showcase && activeDragSource?.sourceSlotIndex !== null)) {
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+    }
+  });
+
+  viewProfile.addEventListener('dragenter', (e: DragEvent) => {
+    const target = e.target as HTMLElement;
+    const slot = target.closest('.wheel-slot-capsule');
+    if (slot) {
+      slot.classList.add('drag-hover-target');
+    }
+  });
+
+  viewProfile.addEventListener('dragleave', (e: DragEvent) => {
+    const target = e.target as HTMLElement;
+    const slot = target.closest('.wheel-slot-capsule');
+    if (slot && !slot.contains(e.relatedTarget as Node)) {
+      slot.classList.remove('drag-hover-target');
+    }
+  });
+
+  viewProfile.addEventListener('drop', (e: DragEvent) => {
+    const target = e.target as HTMLElement;
+    const slot = target.closest('.wheel-slot-capsule') as HTMLElement | null;
+    const showcase = target.closest('.taunts-showcase-section') as HTMLElement | null;
+
+    if (!activeDragSource) return;
+
+    // Cas 1 : Déposé sur un slot de la roue
+    if (slot) {
+      e.preventDefault();
+      slot.classList.remove('drag-hover-target');
+
+      const targetSlotIdx = Number(slot.getAttribute('data-slot-index'));
+      if (Number.isNaN(targetSlotIdx)) return;
+
+      const { tauntId, sourceSlotIndex } = activeDragSource;
+
+      if (sourceSlotIndex !== null) {
+        // Swap / Réorganisation entre slots
+        if (sourceSlotIndex !== targetSlotIdx) {
+          const currentOccupant = state.tauntSlots[targetSlotIdx];
+          state.tauntSlots[targetSlotIdx] = tauntId;
+          state.tauntSlots[sourceSlotIndex] = currentOccupant;
+          updateProfileUI();
+        }
+      } else {
+        // Équipement depuis la vitrine vers ce slot
+        state.tauntSlots = state.tauntSlots.map((s, idx) =>
+          idx === targetSlotIdx ? tauntId : s === tauntId ? null : s
+        );
+        updateProfileUI();
+      }
+      return;
+    }
+
+    // Cas 2 : Un taunt de slot déposé vers la collection pour être déséquipé
+    if (showcase && activeDragSource.sourceSlotIndex !== null) {
+      e.preventDefault();
+      const { sourceSlotIndex } = activeDragSource;
+      state.tauntSlots[sourceSlotIndex] = null;
+      updateProfileUI();
+      return;
+    }
+  });
+
+  // ----------------------------------------------------
+  // GESTION DES CLICS STANDARDS DU PROFIL
+  // ----------------------------------------------------
   viewProfile.addEventListener('click', (e) => {
     const target = e.target as HTMLElement;
 
@@ -593,11 +789,8 @@ export function initProfile(): void {
     if (clearBtn) {
       const slotIdx = Number(clearBtn.getAttribute('data-slot-index'));
       if (!Number.isNaN(slotIdx)) {
-        const clearedTauntId = state.tauntSlots[slotIdx];
-        const clearedTaunt = TAUNTS_COLLECTION.find((t) => t.id === clearedTauntId);
         state.tauntSlots[slotIdx] = null;
         if (state.selectedSlotIndex === slotIdx) state.selectedSlotIndex = null;
-        showToast(`Slot #${slotIdx + 1} (${clearedTaunt?.name || 'Taunt'}) vidé.`);
         updateProfileUI();
       }
       return;
@@ -634,10 +827,8 @@ export function initProfile(): void {
     const unequipBtn = target.closest('.btn-unequip-taunt');
     if (unequipBtn) {
       const tauntId = unequipBtn.getAttribute('data-taunt-id');
-      const taunt = TAUNTS_COLLECTION.find((t) => t.id === tauntId);
       if (tauntId) {
         state.tauntSlots = state.tauntSlots.map((s) => (s === tauntId ? null : s));
-        showToast(`« ${taunt?.name || 'Taunt'} » retiré de la roue.`);
         updateProfileUI();
       }
       return;
@@ -647,23 +838,19 @@ export function initProfile(): void {
     const equipBtn = target.closest('.btn-equip-taunt');
     if (equipBtn) {
       const tauntId = equipBtn.getAttribute('data-taunt-id');
-      const taunt = TAUNTS_COLLECTION.find((t) => t.id === tauntId);
-      if (taunt) {
+      if (tauntId) {
         if (state.selectedSlotIndex !== null) {
           const targetSlot = state.selectedSlotIndex;
           state.tauntSlots = state.tauntSlots.map((s, idx) =>
             idx === targetSlot ? tauntId : s === tauntId ? null : s
           );
           state.selectedSlotIndex = null;
-          showToast(`« ${taunt.name} » placé sur le Slot #${targetSlot + 1} !`);
         } else {
           const firstEmptySlot = state.tauntSlots.indexOf(null);
           if (firstEmptySlot !== -1) {
             state.tauntSlots[firstEmptySlot] = tauntId;
-            showToast(`« ${taunt.name} » équipé sur le Slot #${firstEmptySlot + 1} !`);
           } else {
             state.tauntSlots[0] = tauntId;
-            showToast(`Roue pleine : « ${taunt.name} » assigné sur le Slot #1 !`);
           }
         }
         updateProfileUI();
