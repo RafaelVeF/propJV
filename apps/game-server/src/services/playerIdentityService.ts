@@ -18,7 +18,10 @@ export async function fetchAuthenticatedPlayerIdentity(
     fetcher: typeof fetch = fetch
 ): Promise<AuthenticatedPlayerIdentity | null> {
     const cleanToken = token.trim();
-    const cleanOrigin = apiOrigin.trim().replace(/\/+$/, '');
+    let cleanOrigin = apiOrigin.trim();
+    while (cleanOrigin.endsWith('/')) {
+        cleanOrigin = cleanOrigin.slice(0, -1);
+    }
     if (!cleanToken || !cleanOrigin) return null;
 
     try {
