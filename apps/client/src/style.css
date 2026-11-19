@@ -1226,6 +1226,146 @@ body {
   box-shadow: 0 0 20px rgba(56, 189, 248, 0.45);
 }
 
+/* --- Drag & Drop interactif pour les slots et taunts --- */
+.wheel-slot-capsule.is-draggable {
+  cursor: grab;
+}
+
+.wheel-slot-capsule.is-draggable:active {
+  cursor: grabbing;
+}
+
+.taunt-showcase-tile.is-draggable {
+  cursor: grab;
+}
+
+.taunt-showcase-tile.is-draggable:active {
+  cursor: grabbing;
+}
+
+/* Élément source grisé pendant le déplacement */
+.wheel-slot-capsule.is-dragging-source,
+.taunt-showcase-tile.is-dragging-source {
+  opacity: 0.25 !important;
+  border-style: dashed !important;
+  transform: scale(0.96) !important;
+  filter: grayscale(0.6);
+  box-shadow: none !important;
+}
+
+/* Grille des slots en mode réception active */
+.wheel-capsules-grid.is-drag-active .wheel-slot-capsule {
+  border-color: rgba(56, 189, 248, 0.4);
+  transition: all 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.wheel-capsules-grid.is-drag-active .wheel-slot-capsule.slot-empty {
+  border-color: rgba(56, 189, 248, 0.5);
+  background: rgba(56, 189, 248, 0.05);
+}
+
+/* Slot récepteur survolé lors du drag (effet lumineux cyan) */
+.wheel-slot-capsule.drag-hover-target {
+  border: 2px solid #38bdf8 !important;
+  background: rgba(56, 189, 248, 0.25) !important;
+  box-shadow: 0 0 26px rgba(56, 189, 248, 0.8), inset 0 0 16px rgba(56, 189, 248, 0.3) !important;
+  transform: scale(1.08) translateY(-3px) !important;
+  z-index: 30 !important;
+}
+
+/* Poignée / indicateur de prise sur la tuile */
+.tile-top-right {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.drag-handle-hint {
+  font-size: 1.05rem;
+  color: var(--color-text-muted);
+  opacity: 0.45;
+  cursor: grab;
+  user-select: none;
+  line-height: 1;
+  transition: opacity 0.2s ease, color 0.2s ease, transform 0.2s ease;
+}
+
+.taunt-showcase-tile:hover .drag-handle-hint {
+  opacity: 1;
+  color: #38bdf8;
+  transform: scale(1.15);
+}
+
+/* CLONE FLOTTANT / PREVIEW DRAG (Identique à la capture Notion/Linear) */
+#taunt-drag-ghost {
+  position: fixed;
+  top: -9999px;
+  left: -9999px;
+  width: 185px;
+  min-height: 105px;
+  border: 2px solid #38bdf8;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.96);
+  box-shadow: 0 20px 40px -4px rgba(0, 0, 0, 0.85), 0 0 25px rgba(56, 189, 248, 0.55);
+  transform: rotate(2.8deg) scale(1.04);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 0.7rem 0.85rem;
+  color: #ffffff;
+  font-family: var(--font-display);
+  z-index: 99999;
+  pointer-events: none;
+  box-sizing: border-box;
+  backdrop-filter: blur(10px);
+}
+
+#taunt-drag-ghost .ghost-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+#taunt-drag-ghost .ghost-badge {
+  font-family: var(--font-main);
+  font-size: 0.65rem;
+  font-weight: 800;
+  background: #38bdf8;
+  color: #0b0f19;
+  padding: 2px 7px;
+  border-radius: 6px;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+}
+
+#taunt-drag-ghost .ghost-body {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin: 0.4rem 0;
+}
+
+#taunt-drag-ghost .ghost-icon {
+  font-size: 2.2rem;
+  line-height: 1;
+  filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.6));
+}
+
+#taunt-drag-ghost .ghost-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: 0.4px;
+}
+
+#taunt-drag-ghost .ghost-footer {
+  font-size: 0.68rem;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
 .wheel-slot-capsule.is-target {
   z-index: 5;
   border: 2px solid #fbbf24 !important;
