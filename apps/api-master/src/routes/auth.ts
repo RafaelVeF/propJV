@@ -159,6 +159,15 @@ router.post('/login', loginLimiter, async (req: Request, res: Response): Promise
         const match = await bcrypt.compare(password, user.password_hash);
 
         if (match) {
+            try {
+                await pool.query(
+                    'UPDATE users SET last_connection = CURRENT_TIMESTAMP WHERE user_id = ?',
+                    [user.user_id]
+                );
+            } catch (updateErr) {
+                console.warn("Impossible de mettre à jour last_connection :", updateErr);
+            }
+
             const token = jwt.sign(
                 { userId: user.user_id, username: user.username },
                 process.env.JWT_SECRET as string,
