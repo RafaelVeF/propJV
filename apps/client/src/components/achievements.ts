@@ -667,8 +667,8 @@ export function initAchievements(): void {
       if (claimBtn) {
         const achIdStr = claimBtn.getAttribute('data-claim-id');
         if (!achIdStr) return;
-        const achId = parseInt(achIdStr, 10);
-        if (isNaN(achId)) return;
+        const achId = Number.parseInt(achIdStr, 10);
+        if (Number.isNaN(achId)) return;
 
         claimBtn.disabled = true;
         claimBtn.textContent = 'RÉCLAMATION...';

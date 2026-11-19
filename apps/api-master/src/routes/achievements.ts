@@ -116,7 +116,7 @@ async function fetchAllAchievementsWithTranslations(): Promise<AchievementRow[]>
 router.get('/', requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const userId = Number((req.user as any)?.userId);
-    if (!userId || isNaN(userId)) {
+    if (!userId || Number.isNaN(userId)) {
       res.status(401).json({ success: false, message: 'Utilisateur non authentifié.' });
       return;
     }
@@ -214,14 +214,14 @@ router.post('/:id/claim', requireAuth, async (req: AuthRequest, res: Response): 
   try {
     const userId = Number((req.user as any)?.userId);
     const rawId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-    const achievementId = parseInt(String(rawId), 10);
+    const achievementId = Number.parseInt(String(rawId), 10);
 
-    if (!userId || isNaN(userId)) {
+    if (!userId || Number.isNaN(userId)) {
       res.status(401).json({ success: false, message: 'Utilisateur non authentifié.' });
       return;
     }
 
-    if (isNaN(achievementId) || achievementId <= 0) {
+    if (Number.isNaN(achievementId) || achievementId <= 0) {
       res.status(400).json({ success: false, message: 'Identifiant de succès invalide.' });
       return;
     }
