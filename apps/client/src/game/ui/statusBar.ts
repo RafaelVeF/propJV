@@ -12,11 +12,11 @@ export function updateStatusBar(statusEl: HTMLElement | null, state: GameState):
   }
 
   if (state.spectator.active) {
-    statusEl.innerText = 'WS: Connecté | Mode spectateur | H: Hitbox';
+    statusEl.innerText = 'WS: Connecté | Mode spectateur';
   } else if (state.localPlayerRole === PlayerRole.HUNTER) {
-    statusEl.innerText = 'WS: Connecté | Clic: Attaquer | 1/2/3 ou Molette: Arme | R: Recharger | E: Emotes | H: Hitbox';
+    statusEl.innerText = 'WS: Connecté | Clic: Attaquer | 1/2/3 ou Molette: Arme | R: Recharger | E: Emotes';
   } else {
-    statusEl.innerText = 'WS: Connecté | E: Changer Prop | R: Tourner Prop | K: Dégâts (-15) | H: Hitbox';
+    statusEl.innerText = 'WS: Connecté | E: Changer Prop | R: Tourner Prop | K: Dégâts (-15)';
   }
   statusEl.style.color = '#4ade80';
 }

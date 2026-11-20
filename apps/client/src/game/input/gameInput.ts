@@ -1,6 +1,10 @@
 import { MessageType, PlayerRole } from '@prop-hunt/shared';
+import { musicManager } from '../../audio/MusicManager';
 import { networkManager } from '../../network/networkManager';
 import type { EmoteWheel } from '../ui/EmoteWheel';
+import type { ChatManager } from '../ui/ChatManager';
+import type { HudController } from '../ui/hudController';
+import type { MinimapController } from '../ui/Minimap';
 import type { TransformationWheel } from '../ui/TransformationWheel';
 import type { GameState } from '../state';
 import { WeaponController } from '../combat/weaponController';
@@ -14,6 +18,9 @@ export interface GameInputDeps {
   emoteWheel: EmoteWheel;
   weapons: WeaponController;
   spectator: SpectatorController;
+  chat: ChatManager;
+  hud: HudController;
+  minimap: MinimapController;
 }
 
 /**
@@ -22,11 +29,21 @@ export interface GameInputDeps {
  * c'est la boucle de jeu qui les lit et envoie l'intention de mouvement au serveur.
  */
 export function registerGameInput(deps: GameInputDeps): void {
-  const { state, canvas, viewGame, transformationWheel, emoteWheel, weapons, spectator } = deps;
+  const { state, canvas, viewGame, transformationWheel, emoteWheel, weapons, spectator, chat, hud, minimap } = deps;
   const { keys, mouse, player } = state;
 
   window.addEventListener('keydown', (e) => {
-    // 1. Si une roue (transformation ou emotes) est ouverte, elle capture les touches en priorité
+    // 0. Si le chat est ouvert, il capture toute la saisie clavier
+    if (chat.getIsOpen()) {
+      return;
+    }
+
+    if (e.key === 'Escape' && state.isFullMapOpen) {
+      minimap.setFullMapOpen(false);
+      return;
+    }
+
+    // 1. Si la roue de transformation est ouverte, elle capture les touches en priorité
     if (transformationWheel.getIsOpen()) {
       const handled = transformationWheel.handleKeyDown(e);
       if (handled) {
@@ -42,11 +59,24 @@ export function registerGameInput(deps: GameInputDeps): void {
       }
     }
 
+    if (e.key === 'Escape' && viewGame.classList.contains('active')) {
+      hud.setPauseMenuOpen(!state.isPauseMenuOpen);
+      return;
+    }
+
     const key = e.key.toLowerCase();
+
+    if (key === 't' && viewGame.classList.contains('active') && !state.isPauseMenuOpen && !state.isFullMapOpen) {
+      e.preventDefault();
+      Object.keys(keys).forEach(k => { keys[k] = false; });
+      chat.open();
+      return;
+    }
+
     keys[key] = true;
-    if (key === 'h') {
-      state.showHitbox = !state.showHitbox;
-      console.log(`[DEBUG] Affichage des hitboxes : ${state.showHitbox ? 'ACTIVÉ' : 'DÉSACTIVÉ'}`);
+
+    if (key === 'm' && viewGame.classList.contains('active')) {
+      musicManager.toggleMute();
     }
 
     // 2. Mode spectateur : on ne contrôle plus que la caméra

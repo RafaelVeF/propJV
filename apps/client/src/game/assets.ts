@@ -23,7 +23,7 @@ export function loadPropImages(): Map<string, HTMLImageElement> {
   return propImages;
 }
 
-/** Précharge les sprites des armes qui en ont un (la grenade est dessinée en code) */
+/** Précharge les sprites des armes (rifle, wave_gun, launcher) */
 export function loadWeaponImages(): Map<WeaponType, HTMLImageElement> {
   const weaponImages = new Map<WeaponType, HTMLImageElement>();
   WEAPON_ORDER.forEach(type => {
@@ -66,6 +66,17 @@ export function loadEmoteImages(): Map<string, HTMLImageElement> {
     }
   });
   return emoteImages;
+export interface DroneImages {
+  ready: HTMLImageElement;
+  reloading: HTMLImageElement;
+}
+
+/** Précharge les sprites des drones accompagnants (prêt / en rechargement) */
+export function loadDroneImages(): DroneImages {
+  return {
+    ready: loadImage('/assets/drones/drone_ready.png'),
+    reloading: loadImage('/assets/drones/drone_reloading.png')
+  };
 }
 
 /** Une image est utilisable si elle est chargée et valide */

@@ -25,11 +25,7 @@ export class RoundHud {
     this.hideRoundEnd();
 
     if (this.roleBadge) {
-      const isHunter = payload.role === PlayerRole.HUNTER;
-      this.roleBadge.textContent = isHunter ? 'RÔLE : CHASSEUR' : 'RÔLE : PROP';
-      this.roleBadge.style.background = isHunter ? 'rgba(239, 68, 68, 0.25)' : 'rgba(168, 85, 247, 0.25)';
-      this.roleBadge.style.color = isHunter ? '#f87171' : '#c084fc';
-      this.roleBadge.style.borderColor = isHunter ? 'rgba(239, 68, 68, 0.5)' : 'rgba(168, 85, 247, 0.5)';
+      this.roleBadge.textContent = payload.role === PlayerRole.HUNTER ? 'CHASSEUR' : 'PROP';
     }
 
     if (this.hunterBlindfold && this.hunterCountdown) {
@@ -40,6 +36,13 @@ export class RoundHud {
         this.hunterBlindfold.style.display = 'none';
       }
     }
+  }
+
+  /** Synchronise l'écran d'aveuglement lors d'un changement de rôle en cours de phase HIDING (/swap) */
+  public syncBlindfold(phase: GamePhase, role: PlayerRole): void {
+    if (!this.hunterBlindfold) return;
+    this.hunterBlindfold.style.display =
+      (phase === GamePhase.HIDING && role === PlayerRole.HUNTER) ? 'flex' : 'none';
   }
 
   public showTimer(phase: GamePhase, timeRemaining: number, localRole: PlayerRole): void {
@@ -123,8 +126,7 @@ export class RoundHud {
     }
     if (this.timer) this.timer.textContent = '∞';
     if (this.roleBadge) {
-      this.roleBadge.textContent = 'RÔLE : PROP (LIBRE)';
-      this.roleBadge.style.color = '#c084fc';
+      this.roleBadge.textContent = 'PROP (LIBRE)';
     }
   }
 
