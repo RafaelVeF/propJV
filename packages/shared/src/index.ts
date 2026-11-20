@@ -581,7 +581,10 @@ export interface AuthResponsePayload {
 }
 
 export * from './chat.js';
-// Amis & Relations sociales
+
+// =========================================================================
+// AMIS & RELATIONS SOCIALES
+// =========================================================================
 
 export type FriendRelationshipStatus = 'PENDING' | 'ACCEPTED' | 'BLOCKED';
 
@@ -622,7 +625,9 @@ export interface FriendActionResponse {
   errors?: unknown[];
 }
 
-// Emotes des Chasseurs
+// =========================================================================
+// EMOTES DES CHASSEURS
+// =========================================================================
 
 export interface HunterEmoteDefinition {
   id: string;
@@ -669,4 +674,43 @@ export const DEFAULT_HUNTER_EMOTES: HunterEmoteDefinition[] = [
 export interface HunterEmotePayload {
   playerId: string;
   emoteId: string;
+}
+
+// =========================================================================
+// SUCCÈS (ACHIEVEMENTS)
+// =========================================================================
+
+export type AchievementCategory = 'all' | 'general' | 'hunter' | 'prop' | 'fun';
+
+export interface AchievementItem {
+  id: number;
+  internalName: string;
+  displayName: string;
+  description: string;
+  reward: number;
+  targetValue: number;
+  progress: number;
+  progressPercent: number;
+  isUnlocked: boolean;
+  unlockedAt: string | null;
+  isClaimed: boolean;
+  category: AchievementCategory;
+  icon: string;
+}
+
+export interface AchievementsOverviewResponse {
+  success: boolean;
+  achievements: AchievementItem[];
+  unclaimedCount: number;
+  totalUnlocked: number;
+  totalAchievements: number;
+  userCurrencyBalance?: number;
+}
+
+export interface ClaimAchievementResponse {
+  success: boolean;
+  message?: string;
+  achievementId: number;
+  rewardClaimed: number;
+  newCurrencyBalance: number;
 }

@@ -16,6 +16,7 @@ import {
     type PropLockPayload,
     type PropWhistlePayload,
     type HunterEmotePayload,
+    type HunterEmoteDefinition,
     DEFAULT_HUNTER_EMOTES,
     type HunterShootPayload,
     type CreateRoomPayload,
@@ -65,11 +66,16 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 dotenv.config();
 
+// Chargement de secours des variables d'environnement depuis apps/api-master/.env si absent
+if (!process.env.JWT_SECRET?.trim() || !process.env.INTERNAL_API_SECRET?.trim()) {
+    dotenv.config({ path: path.resolve(__dirname, '../../api-master/.env') });
+}
+
 if (!process.env.JWT_SECRET?.trim()) {
-    console.warn('[GameServer] ATTENTION : JWT_SECRET manquant dans .env — les joueurs connectés seront traités comme invités !');
+    console.warn('[GameServer] ATTENTION : JWT_SECRET manquant — utilisation de la clé de développement.');
 }
 if (!process.env.INTERNAL_API_SECRET?.trim()) {
-    console.warn('[GameServer] ATTENTION : INTERNAL_API_SECRET manquant dans .env — les rapports de fin de partie ne seront pas envoyés à api-master !');
+    console.warn('[GameServer] ATTENTION : INTERNAL_API_SECRET manquant — utilisation du secret de développement.');
 }
 
 const SERVER_PORT = Number(process.env.PORT) || 8080;
@@ -94,11 +100,7 @@ function verifyJwtToken(token?: string | null): { userId: number | null; usernam
     if (!cleanToken) {
         return { userId: null };
     }
-    const secret = process.env.JWT_SECRET?.trim();
-    if (!secret) {
-        console.warn('[GameServer] Impossible de vérifier le JWT : JWT_SECRET non configuré.');
-        return { userId: null };
-    }
+    const secret = process.env.JWT_SECRET?.trim() || 'eb87932377e0db151189a28bdf5284890d49de40afe8bbd87f1a2337e0390c320cbe92f272552ad41892181b7ded78f59ccda4b00c6ffb7edc3b11a421d6dd02';
     try {
         const decoded = jwt.verify(cleanToken, secret) as { userId?: unknown; username?: unknown };
         const parsedId = Number(decoded?.userId);
@@ -151,6 +153,7 @@ function getNearestSeekerDistance(room: GameRoom, origin: { x: number; y: number
 
 interface GameRoom {
     key: string;
+    isFreeplay: boolean;
     roundManager: RoundManager;
     telemetryTracker: MatchTelemetryTracker;
     players: Map<string, Player>;
@@ -562,6 +565,7 @@ function createRoom(isFreeplay: boolean = false): GameRoom {
 
             const report = telemetryTracker.finalizeMatch(winningTeam, SERVER_ID);
             if (report) {
+                report.isFreeplay = isFreeplay;
                 console.log(
                     `[Telemetry Check][${roomKey}] Payload prêt à l'envoi :\n${JSON.stringify(report, null, 2)}`
                 );
@@ -578,6 +582,7 @@ function createRoom(isFreeplay: boolean = false): GameRoom {
 
     const room: GameRoom = {
         key: roomKey,
+        isFreeplay,
         roundManager,
         telemetryTracker,
         players: roomPlayers,
@@ -600,6 +605,17 @@ function leaveCurrentRoom(ws: WebSocket, playerId: string): void {
     clientRooms.delete(ws);
     const room = rooms.get(roomKey);
     if (!room) return;
+
+    // Si la room est en mode Freeplay et que la télémétrie est active, finaliser et envoyer les stats du joueur
+    if ((room.isFreeplay || roomKey.startsWith('FREEPLAY')) && room.telemetryTracker.isActive()) {
+        const report = room.telemetryTracker.finalizeMatch('DRAW', SERVER_ID);
+        if (report) {
+            report.isFreeplay = true;
+            console.log(`[GameServer][${roomKey}] Mode Freeplay terminé : envoi du rapport d'activité (${report.players.length} joueur(s)).`);
+            void sendMatchReport(report);
+        }
+        room.telemetryTracker.reset();
+    }
 
     room.roundManager.removePlayer(playerId);
     room.players.delete(playerId);
@@ -715,6 +731,24 @@ function joinRoom(ws: WebSocket, playerId: string, room: GameRoom, customName?: 
     // Ajoute au RoundManager (ce qui déclenche onLobbyStateChanged vers tout le salon)
     room.roundManager.addPlayer(playerId, playerName);
     console.log(`[GameServer][${room.key}] ${playerName} a rejoint le salon (${room.players.size} joueur(s))`);
+
+    // En mode Freeplay, on initialise immédiatement le suivi télémétrique pour comptabiliser les actions du joueur
+    if (room.isFreeplay || room.key.startsWith('FREEPLAY')) {
+        const playerInit: TelemetryInitPlayer = {
+            playerId,
+            userId: clientUserIds.get(playerId) ?? null,
+            username: playerName,
+            role: 'HIDER',
+            initialProp: defaultProp.internalName,
+            seekerClass: null
+        };
+        if (!room.telemetryTracker.isActive()) {
+            room.telemetryTracker.startMatch(CURRENT_MAP, [playerInit]);
+        } else {
+            room.telemetryTracker.registerPlayer(playerInit);
+        }
+        console.log(`[GameServer][${room.key}] Suivi télémétrie Freeplay initialisé pour ${playerName} (userId=${clientUserIds.get(playerId) ?? 'invité'}).`);
+    }
 }
 
 let staticObstacles: Rectangle[] = [];
@@ -931,7 +965,7 @@ wss.on('connection', (ws, req: IncomingMessage) => {
                     const payload = message.payload as Partial<HunterEmotePayload>;
                     const performer = room.players.get(playerId);
                     if (!performer || !isAlive(performer) || performer.role !== PlayerRole.HUNTER) break;
-                    if (!payload?.emoteId || !DEFAULT_HUNTER_EMOTES.some(e => e.id === payload.emoteId)) break;
+                    if (!payload?.emoteId || !DEFAULT_HUNTER_EMOTES.some((e: HunterEmoteDefinition) => e.id === payload.emoteId)) break;
                     broadcastToRoom(room.key, {
                         type: MessageType.HUNTER_EMOTE,
                         payload: { playerId, emoteId: payload.emoteId } satisfies HunterEmotePayload
