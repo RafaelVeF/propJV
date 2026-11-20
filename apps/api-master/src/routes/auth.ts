@@ -159,6 +159,15 @@ router.post('/login', loginLimiter, async (req: Request, res: Response): Promise
         const match = await bcrypt.compare(password, user.password_hash);
 
         if (match) {
+            try {
+                await pool.query(
+                    'UPDATE users SET last_connection = CURRENT_TIMESTAMP WHERE user_id = ?',
+                    [user.user_id]
+                );
+            } catch (updateErr) {
+                console.warn("Impossible de mettre à jour last_connection :", updateErr);
+            }
+
             const token = jwt.sign(
                 { userId: user.user_id, username: user.username },
                 process.env.JWT_SECRET as string,
@@ -200,8 +209,11 @@ router.get('/me', requireAuth, async (req: AuthRequest, res: Response): Promise<
             return;
         }
 
-        const [rows] = await pool.query<UserRow[]>(
-            'SELECT user_id, username, email, currency_balance, admin_flag, settings, creation_date FROM users WHERE user_id = ?',
+        const [rows] = await pool.query<(UserRow & { total_score: number; hider_wins: number; seeker_wins: number; matches_played: number })[]>(
+            `SELECT u.user_id, u.username, u.email, u.currency_balance, u.admin_flag, u.settings, u.creation_date,
+                    COALESCE(s.total_score, 0) AS total_score, COALESCE(s.hider_wins, 0) AS hider_wins,
+                    COALESCE(s.seeker_wins, 0) AS seeker_wins, COALESCE(s.matches_played, 0) AS matches_played
+             FROM users u LEFT JOIN users_stats s ON s.user_id = u.user_id WHERE u.user_id = ?`,
             [payload.userId]
         );
 
@@ -220,7 +232,13 @@ router.get('/me', requireAuth, async (req: AuthRequest, res: Response): Promise<
                 currencyBalance: user.currency_balance ?? 0,
                 adminFlag: Boolean(user.admin_flag),
                 settings: user.settings,
-                creationDate: user.creation_date
+                creationDate: user.creation_date,
+                stats: {
+                    totalScore: user.total_score,
+                    hiderWins: user.hider_wins,
+                    seekerWins: user.seeker_wins,
+                    matchesPlayed: user.matches_played
+                }
             }
         });
     } catch (error) {

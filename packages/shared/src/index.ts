@@ -29,6 +29,8 @@ export enum MessageType {
   PLAYER_DIED = 'PLAYER_DIED',
   PROP_LOCK = 'PROP_LOCK',
   PROP_WHISTLE = 'PROP_WHISTLE',
+  CHAT_MESSAGE = 'CHAT_MESSAGE',
+  HITBOX_TOGGLE = 'HITBOX_TOGGLE',
 
   // État général
   GAME_START = 'GAME_START',
@@ -283,35 +285,36 @@ export interface WeaponDefinition {
 export const WEAPONS: Record<WeaponType, WeaponDefinition> = {
   [WeaponType.PISTOL]: {
     type: WeaponType.PISTOL,
-    displayName: 'Pistolet',
+    displayName: 'Fusil',
     slot: 1,
     damage: 20,
     range: 400,
     cooldownMs: 350,
     magazineSize: 6,
     reloadMs: 1800,
-    iconPath: '/assets/weapons/pistol.png'
+    iconPath: '/assets/weapons/rifle.png'
   },
   [WeaponType.CROWBAR]: {
     type: WeaponType.CROWBAR,
-    displayName: 'Pied de biche',
+    displayName: 'Canon à ondes',
     slot: 2,
     damage: 40,
-    range: 48,
+    range: 80,
     cooldownMs: 700,
     arcDegrees: 100,
-    iconPath: '/assets/weapons/crowbar.png'
+    iconPath: '/assets/weapons/wave_gun.png'
   },
   [WeaponType.GRENADE]: {
     type: WeaponType.GRENADE,
-    displayName: 'Grenade',
+    displayName: 'Lanceur',
     slot: 3,
     damage: 70,
     range: 260,
     cooldownMs: 25000,
     blastRadius: 80,
     fuseMs: 1200,
-    edgeDamageRatio: 0.35
+    edgeDamageRatio: 0.35,
+    iconPath: '/assets/weapons/launcher.png'
   }
 };
 
@@ -548,6 +551,12 @@ export interface AuthUser {
   currencyBalance?: number;
   adminFlag?: boolean;
   creationDate?: string | Date;
+  stats?: {
+    totalScore: number;
+    hiderWins: number;
+    seekerWins: number;
+    matchesPlayed: number;
+  };
 }
 
 export interface RegisterRequestPayload {
@@ -567,6 +576,51 @@ export interface AuthResponsePayload {
   token?: string;
   userId?: number;
   user?: AuthUser;
+  errors?: unknown[];
+}
+
+export * from './chat.js';
+
+// =========================================================================
+// AMIS & RELATIONS SOCIALES
+// =========================================================================
+
+export type FriendRelationshipStatus = 'PENDING' | 'ACCEPTED' | 'BLOCKED';
+
+export interface FriendEntry {
+  relationshipId: number;
+  userId: number;
+  username: string;
+  lastConnection?: string | Date | null;
+  since?: string | Date;
+}
+
+export interface FriendRequestEntry {
+  relationshipId: number;
+  userId: number;
+  username: string;
+  direction: 'INCOMING' | 'OUTGOING';
+  createdAt?: string | Date;
+}
+
+export interface FriendsOverviewResponse {
+  success: boolean;
+  friends: FriendEntry[];
+  incomingRequests: FriendRequestEntry[];
+  outgoingRequests: FriendRequestEntry[];
+  blockedUsers?: FriendEntry[];
+  message?: string;
+}
+
+export interface SendFriendRequestPayload {
+  username: string;
+}
+
+export interface FriendActionResponse {
+  success: boolean;
+  message: string;
+  relationshipId?: number;
+  status?: FriendRelationshipStatus;
   errors?: unknown[];
 }
 

@@ -6,6 +6,8 @@ import {
   WeaponType,
   getPlayerHurtbox,
   type GrenadeExplodedPayload,
+  type HitboxTogglePayload,
+  type KickedPayload,
   type LobbyStatePayload,
   type Player,
   type PlayerDiedPayload,
@@ -15,39 +17,65 @@ import {
   type RoundStartPayload,
   type RoundTimerTickPayload,
   type ShotFiredPayload,
-  type WeaponStatePayload
+  type WeaponStatePayload,
+  type ChatMessagePayload
 } from '@prop-hunt/shared';
 import { networkManager } from '../../network/networkManager';
 import { getPlayerRenderInfo, type GameState } from '../state';
 import type { CombatEffects } from '../combat/combatEffects';
+import type { DroneController } from '../combat/droneController';
 import type { WeaponController } from '../combat/weaponController';
 import type { SpectatorController } from '../spectator/spectatorController';
+import type { ChatManager } from '../ui/ChatManager';
 import type { RoundHud } from '../ui/roundHud';
+import type { VisualEffectsManager } from '../ui/VisualEffects';
 
 export interface GameNetworkDeps {
   state: GameState;
   weapons: WeaponController;
   effects: CombatEffects;
+  drones: DroneController;
+  vfx: VisualEffectsManager;
+  chat: ChatManager;
   spectator: SpectatorController;
   roundHud: RoundHud;
   /** Rafraîchit le bandeau de statut (connexion + touches) */
   updateStatus: () => void;
   /** Revient à l'écran du salon. onlyIfInGame : uniquement si l'écran de jeu est affiché */
   returnToLobby: (onlyIfInGame: boolean) => void;
+  /** Nettoie l'écran de jeu et ramène au menu principal si expulsé (/kick) */
+  onKicked: (reason?: string) => void;
 }
 
 /** Abonne l'écran de jeu à tous les messages du serveur */
 export function registerGameNetworkHandlers(deps: GameNetworkDeps): void {
-  const { state, weapons, effects, spectator, roundHud, updateStatus, returnToLobby } = deps;
+  const { state, weapons, effects, drones, vfx, chat, spectator, roundHud, updateStatus, returnToLobby, onKicked } = deps;
   const { player, otherPlayers } = state;
 
   networkManager.onOpen(updateStatus);
   networkManager.onClose(updateStatus);
   updateStatus();
 
+  // --- CHAT & ADMINISTRATION ---
+
+  networkManager.on<ChatMessagePayload>(MessageType.CHAT_MESSAGE, (payload) => {
+    chat.addMessage(payload);
+  });
+
+  networkManager.on<HitboxTogglePayload>(MessageType.HITBOX_TOGGLE, (payload) => {
+    state.showHitbox = payload?.enabled !== undefined ? payload.enabled : !state.showHitbox;
+  });
+
+  networkManager.on<KickedPayload>(MessageType.KICKED, (payload) => {
+    onKicked(payload?.reason);
+  });
+
   // --- JOUEURS ---
 
   networkManager.on(MessageType.WELCOME, (payload) => {
+    if (payload.player?.name) {
+      state.localPlayerName = payload.player.name;
+    }
     if (payload.player.currentProp) {
       player.currentProp = payload.player.currentProp;
     }
@@ -82,6 +110,7 @@ export function registerGameNetworkHandlers(deps: GameNetworkDeps): void {
   networkManager.on(MessageType.PLAYER_LEFT, (payload) => {
     otherPlayers.delete(payload.playerId);
     effects.hunterAim.delete(payload.playerId);
+    drones.delete(payload.playerId);
     console.log('[WS] Joueur déconnecté :', payload.playerId);
     if (spectator.isActive && payload.playerId === state.spectator.targetId) spectator.cycleTarget(1);
   });
@@ -102,6 +131,7 @@ export function registerGameNetworkHandlers(deps: GameNetworkDeps): void {
       if (player.health > newProp.health) {
         player.health = newProp.health;
       }
+      vfx.spawnTransformPoof(player.x, player.y);
       console.log(`[PROP] Transformation réussie en : ${newProp.displayName} (orientation: ${player.variantIndex}) (${player.health}/${player.maxHealth} HP)`);
     } else if (otherPlayers.has(payload.playerId)) {
       const op = otherPlayers.get(payload.playerId)!;
@@ -113,6 +143,7 @@ export function registerGameNetworkHandlers(deps: GameNetworkDeps): void {
       if (op.health > newProp.health) {
         op.health = newProp.health;
       }
+      vfx.spawnTransformPoof(op.x, op.y);
     }
   });
 
@@ -120,12 +151,13 @@ export function registerGameNetworkHandlers(deps: GameNetworkDeps): void {
     const targetId = payload.targetPlayerId || payload.playerId;
     const hitTime = payload.lastHitTimestamp || Date.now();
     const victim = targetId ? getPlayerRenderInfo(state, targetId, networkManager.localPlayerId) : null;
-    if (victim) {
+    if (victim && payload.damage > 0) {
       const box = getPlayerHurtbox(victim.x, victim.y, victim.prop, victim.variantIndex);
       effects.addDamageNumber(victim.x, box.y - 4, payload.damage, targetId === networkManager.localPlayerId ? '#f87171' : '#fde68a');
     }
     if (targetId === networkManager.localPlayerId) {
       player.lastHitTimestamp = hitTime;
+      if (payload.damage > 0) vfx.triggerDamageFlash();
       if (payload.health !== undefined) {
         player.health = payload.health;
       } else {
@@ -151,6 +183,7 @@ export function registerGameNetworkHandlers(deps: GameNetworkDeps): void {
       if (p.id === networkManager.localPlayerId) {
         player.targetX = p.x;
         player.targetY = p.y;
+        if (p.name) state.localPlayerName = p.name;
         if (p.health !== undefined) player.health = p.health;
         if ('maxHealth' in p && p.maxHealth !== undefined) player.maxHealth = p.maxHealth;
         if ('lastHitTimestamp' in p && p.lastHitTimestamp !== undefined) player.lastHitTimestamp = p.lastHitTimestamp;
@@ -160,9 +193,19 @@ export function registerGameNetworkHandlers(deps: GameNetworkDeps): void {
         if ('variantIndex' in p && p.variantIndex !== undefined) {
           player.variantIndex = p.variantIndex;
         }
-        // Filet de sécurité si le message PLAYER_DIED a été manqué
+        // Synchronisation spectateur & changement de rôle (/swap)
         if (p.role === PlayerRole.SPECTATOR && !spectator.isActive && state.currentPhase !== GamePhase.LOBBY) {
           spectator.enter();
+        } else if (p.role !== PlayerRole.SPECTATOR) {
+          if (spectator.isActive) {
+            spectator.exit();
+          }
+          if (p.role !== state.localPlayerRole) {
+            state.localPlayerRole = p.role;
+            weapons.updateHud();
+            updateStatus();
+            roundHud.syncBlindfold(state.currentPhase, state.localPlayerRole);
+          }
         }
       } else {
         const propDef = ('currentProp' in p && p.currentProp) ? p.currentProp : DEFAULT_PROPS[0];
@@ -210,7 +253,17 @@ export function registerGameNetworkHandlers(deps: GameNetworkDeps): void {
   networkManager.on<ShotFiredPayload>(MessageType.HUNTER_SHOOT, (payload) => {
     const hit = payload.hitPlayerIds.length > 0;
     if (hit && payload.hunterId === networkManager.localPlayerId) effects.hitMarkerAt = Date.now();
-    effects.addShot({ ...payload, hit });
+    const dronePos = drones.getOrigin(payload.hunterId, payload.originX, payload.originY);
+    const angle = Math.atan2(payload.impactY - dronePos.y, payload.impactX - dronePos.x);
+    drones.triggerRecoil(payload.hunterId);
+    const muzzle = drones.getMuzzle(dronePos.x, dronePos.y, angle, payload.weapon);
+    effects.addShot({
+      ...payload,
+      originX: muzzle.x,
+      originY: muzzle.y,
+      angle,
+      hit
+    });
   });
 
   networkManager.on<GrenadeExplodedPayload>(MessageType.GRENADE_EXPLODED, (payload) => {
@@ -223,6 +276,7 @@ export function registerGameNetworkHandlers(deps: GameNetworkDeps): void {
 
   networkManager.on<PlayerDiedPayload>(MessageType.PLAYER_DIED, (payload) => {
     effects.spawnDeathEffect(payload.x, payload.y, payload.playerName);
+    drones.delete(payload.playerId);
     console.log(`[MORT] ${payload.playerName} est mort${payload.killerName ? ` (tué par ${payload.killerName})` : ''}`);
     if (payload.playerId === networkManager.localPlayerId) {
       spectator.enter(payload);
@@ -245,6 +299,7 @@ export function registerGameNetworkHandlers(deps: GameNetworkDeps): void {
     weapons.resetView();
     weapons.select(WeaponType.PISTOL);
     effects.resetRound();
+    drones.clear();
     updateStatus();
     roundHud.showRoundStart(payload);
   });

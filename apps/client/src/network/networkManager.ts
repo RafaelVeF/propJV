@@ -1,4 +1,5 @@
 import { MessageType, type NetworkMessage } from '@prop-hunt/shared';
+import { getToken } from '../services/authService';
 
 export type NetworkMessageHandler<T = any> = (payload: T, message: NetworkMessage<T>) => void;
 
@@ -21,7 +22,13 @@ class NetworkManager {
     }
 
     try {
-      this.socket = new WebSocket(url);
+      const token = getToken();
+      let connectUrl = url;
+      if (token) {
+        const separator = connectUrl.includes('?') ? '&' : '?';
+        connectUrl = `${connectUrl}${separator}token=${encodeURIComponent(token)}`;
+      }
+      this.socket = new WebSocket(connectUrl);
 
       this.socket.onopen = () => {
         console.log('[NetworkManager] Connecté au serveur de jeu WebSocket');
@@ -75,9 +82,20 @@ class NetworkManager {
       return;
     }
 
+    let enrichedPayload = payload;
+    if (
+      (type === MessageType.CREATE_ROOM || type === MessageType.JOIN_ROOM) &&
+      payload &&
+      typeof payload === 'object' &&
+      !('token' in (payload as Record<string, unknown>))
+    ) {
+      const token = getToken();
+      enrichedPayload = { ...(payload as Record<string, unknown>), token: token ?? null } as T;
+    }
+
     const message: NetworkMessage<T> = {
       type,
-      payload,
+      payload: enrichedPayload,
       timestamp: Date.now()
     };
 
