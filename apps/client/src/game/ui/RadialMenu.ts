@@ -8,6 +8,7 @@ export interface RadialMenuConfig<T> {
     id: string | number;
     name: string;
     iconPath?: string;
+    sourceRect?: { sx: number; sy: number; sw: number; sh: number };
     statText?: string;
     actionHint?: string;
   };
@@ -395,7 +396,12 @@ export class RadialMenu<T> {
     x: number,
     y: number,
     size: number,
-    display: { id: string | number; name: string; iconPath?: string } | null,
+    display: {
+      id: string | number;
+      name: string;
+      iconPath?: string;
+      sourceRect?: { sx: number; sy: number; sw: number; sh: number };
+    } | null,
     isSelected: boolean,
     isEquipped: boolean
   ): void {
@@ -426,17 +432,24 @@ export class RadialMenu<T> {
         ctx.stroke();
       }
 
-      // Icône / texture
+      // Icône / texture (sprite complet ou case découpée d'un spritesheet)
       const img = display.iconPath && this.config.imagesMap ? this.config.imagesMap.get(display.iconPath) : null;
       if (img && img.complete && img.naturalWidth > 0) {
         const padding = isSelected ? 8 : 6;
         const maxDraw = size - padding * 2;
-        const scale = Math.min(maxDraw / img.naturalWidth, maxDraw / img.naturalHeight, 1.8);
-        const drawW = img.naturalWidth * scale;
-        const drawH = img.naturalHeight * scale;
+        const sr = display.sourceRect;
+        const srcW = sr ? sr.sw : img.naturalWidth;
+        const srcH = sr ? sr.sh : img.naturalHeight;
+        const scale = Math.min(maxDraw / srcW, maxDraw / srcH, 1.8);
+        const drawW = srcW * scale;
+        const drawH = srcH * scale;
 
         ctx.imageSmoothingEnabled = false;
-        ctx.drawImage(img, x - drawW / 2, y - drawH / 2, drawW, drawH);
+        if (sr) {
+          ctx.drawImage(img, sr.sx, sr.sy, sr.sw, sr.sh, x - drawW / 2, y - drawH / 2, drawW, drawH);
+        } else {
+          ctx.drawImage(img, x - drawW / 2, y - drawH / 2, drawW, drawH);
+        }
       } else {
         // Fallback textuel élégant
         ctx.font = 'bold 9px sans-serif';
