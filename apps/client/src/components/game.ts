@@ -1,11 +1,14 @@
-import { DEFAULT_PROPS, MessageType, type PropDefinition } from '@prop-hunt/shared';
-import { musicManager } from '../audio/MusicManager';
-import { networkManager } from '../network/networkManager';
 import { switchView } from './viewManager';
+import { networkManager } from '../network/networkManager';
+import { EmoteWheel } from '../game/ui/EmoteWheel';
+import { TransformationWheel } from '../game/ui/TransformationWheel';
+import { DEFAULT_HUNTER_EMOTES, DEFAULT_PROPS, MessageType, type PropDefinition } from '@prop-hunt/shared';
 import { createGameState, VISION_RADIUS, type GameState } from '../game/state';
-import { loadDroneImages, loadMineGroundImage, loadPropImages, loadWeaponImages } from '../game/assets';
+import { loadDroneImages, loadMineGroundImage, loadEmoteImages, loadHunterSprites, loadPropImages, loadWeaponImages } from '../game/assets';
+import { musicManager } from '../audio/MusicManager';
 import { MapRenderer } from '../game/map/mapRenderer';
 import { collectCharacters, drawCharacter } from '../game/render/characterRenderer';
+import { HunterAnimator } from '../game/render/hunterAnimation';
 import { CombatEffects } from '../game/combat/combatEffects';
 import { DroneController } from '../game/combat/droneController';
 import { WeaponController } from '../game/combat/weaponController';
@@ -17,7 +20,6 @@ import { MinimapController } from '../game/ui/Minimap';
 import { RoundHud } from '../game/ui/roundHud';
 import { updateStatusBar } from '../game/ui/statusBar';
 import { renderGameView } from '../game/ui/gameTemplate';
-import { TransformationWheel } from '../game/ui/TransformationWheel';
 import { VisualEffectsManager } from '../game/ui/VisualEffects';
 import { registerGameNetworkHandlers } from '../game/network/gameNetwork';
 import { readMovementInput, registerGameInput } from '../game/input/gameInput';
@@ -62,7 +64,7 @@ export function initGame(): void {
   const resize = () => {
     canvas.width = window.innerWidth;
     canvas.height = window.innerHeight;
-    ctx.imageSmoothingEnabled = false;
+    ctx.imageSmoothingEnabled = false; // Pixel art net
   };
   window.addEventListener('resize', resize);
   resize();
@@ -73,6 +75,9 @@ export function initGame(): void {
   const weaponImages = loadWeaponImages();
   const mineGroundImage = loadMineGroundImage();
   const droneImages = loadDroneImages();
+  const hunterSprites = loadHunterSprites();
+  const emoteImages = loadEmoteImages();
+  const hunterAnimator = new HunterAnimator();
   const map = new MapRenderer();
   map.load();
 
@@ -81,6 +86,18 @@ export function initGame(): void {
   const drones = new DroneController();
   const vfx = new VisualEffectsManager();
   const transformationWheel = createTransformationWheel(state, propImages, vfx);
+  const emoteWheel = new EmoteWheel({
+    emotesList: DEFAULT_HUNTER_EMOTES,
+    emoteImages,
+    onSelectEmote: (emote) => {
+      if (!networkManager.localPlayerId) return;
+      hunterAnimator.playEmote(networkManager.localPlayerId, emote.id);
+      networkManager.send(MessageType.HUNTER_EMOTE, {
+        playerId: networkManager.localPlayerId,
+        emoteId: emote.id
+      });
+    }
+  });
   const weapons = new WeaponController(state, canvas, document.getElementById('weapon-hud'), weaponImages, droneImages);
   const roundHud = new RoundHud();
   const minimap = new MinimapController(state, map);
@@ -104,6 +121,7 @@ export function initGame(): void {
     state.showHitbox = false;
     minimap.setFullMapOpen(false);
     drones.clear();
+    emoteWheel.close();
     chat.close();
     chat.clearMessages();
     musicManager.stop();
@@ -120,6 +138,7 @@ export function initGame(): void {
   const updateStatus = () => updateStatusBar(wsStatus, state);
   const spectator = new SpectatorController(state, () => {
     if (state.spectator.active && transformationWheel.getIsOpen()) transformationWheel.toggle();
+    if (state.spectator.active && emoteWheel.getIsOpen()) emoteWheel.close();
     weapons.updateHud();
     updateStatus();
   });
@@ -131,6 +150,7 @@ export function initGame(): void {
     drones,
     vfx,
     chat,
+    hunterAnimator,
     spectator,
     roundHud,
     updateStatus,
@@ -139,6 +159,7 @@ export function initGame(): void {
       if (onlyIfInGame && !viewGame.classList.contains('active')) return;
       hud.setPauseMenuOpen(false);
       minimap.setFullMapOpen(false);
+      emoteWheel.close();
       chat.close();
       switchView(viewGame, viewLobby);
     },
@@ -159,6 +180,7 @@ export function initGame(): void {
     canvas,
     viewGame,
     transformationWheel,
+    emoteWheel,
     weapons,
     spectator,
     chat,
@@ -171,10 +193,10 @@ export function initGame(): void {
   let lastVy = 0;
   let lastVfxTime = performance.now();
 
-  /** Entrées, envoi de l'intention de mouvement, interpolation et mise à jour des drones */
+  /** Entrées, envoi de l'intention de mouvement, interpolation et mise à jour des drones / animations */
   const update = () => {
     const { player } = state;
-    const freezeMovement = transformationWheel.getIsOpen() || chat.getIsOpen();
+    const freezeMovement = transformationWheel.getIsOpen() || emoteWheel.getIsOpen() || chat.getIsOpen();
     let { vx, vy } = freezeMovement ? { vx: 0, vy: 0 } : readMovementInput(state);
 
     if (spectator.isActive) {
@@ -208,6 +230,7 @@ export function initGame(): void {
 
     drones.sync(state, vx, vy, remoteVelocities);
     weapons.syncActiveZap();
+    hunterAnimator.sync(state, vx, vy, remoteVelocities);
   };
 
   /** Rendu d'une image complète */
@@ -220,8 +243,8 @@ export function initGame(): void {
     map.drawGround(ctx);
     effects.drawMines(ctx, mineGroundImage);
     // 2. Personnages triés par profondeur
-    const characters = collectCharacters(state);
-    characters.forEach(c => drawCharacter(ctx, c, propImages, state.showHitbox));
+    const characters = collectCharacters(state, hunterAnimator);
+    characters.forEach(c => drawCharacter(ctx, c, propImages, state.showHitbox, hunterSprites, emoteImages));
     // 3. Drones accompagnants + armes orientées, aides à la visée, effets combat et VFX monde
     weapons.drawHeldWeapons(ctx, effects, drones);
     effects.draw(ctx);
@@ -234,12 +257,16 @@ export function initGame(): void {
     // 5. Vignette & flash d'impact en espace écran
     vfx.updateAndDrawScreen(ctx, canvas.width, canvas.height, dtVfx);
 
-    // 6. Réticule, HUD unifié, roue radiale et minimap
-    if (!transformationWheel.getIsOpen()) drawCrosshair(ctx, state, weapons, effects);
+    // 6. Réticule, HUD unifié, roues radiales et minimap
+    const wheelOpen = transformationWheel.getIsOpen() || emoteWheel.getIsOpen();
+    if (!wheelOpen) drawCrosshair(ctx, state, weapons, effects);
     weapons.updateHud();
+    if (wheelOpen) canvas.style.cursor = 'default';
     if (transformationWheel.getIsOpen()) {
       transformationWheel.setCurrentEquippedPropId(state.player.currentProp.id);
       transformationWheel.render(ctx, canvas.width, canvas.height);
+    } else if (emoteWheel.getIsOpen()) {
+      emoteWheel.render(ctx, canvas.width, canvas.height);
     }
     hud.update();
     minimap.render();

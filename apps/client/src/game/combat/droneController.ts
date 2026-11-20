@@ -1,6 +1,6 @@
-import { PlayerRole, WeaponType } from '@prop-hunt/shared';
+import { WeaponType } from '@prop-hunt/shared';
 import { networkManager } from '../../network/networkManager';
-import { isLocalHunterArmed, type GameState } from '../state';
+import { forEachActiveHunter, type GameState } from '../state';
 
 export interface DroneState {
   x: number;
@@ -59,19 +59,8 @@ export class DroneController {
 
   /** Met à jour tous les drones actifs et supprime ceux des joueurs morts / non-chasseurs */
   public sync(state: GameState, localVx: number, localVy: number, remoteVelocities: Map<string, { dx: number; dy: number }>, now = Date.now()): void {
-    const activeIds = new Set<string>();
-
-    if (isLocalHunterArmed(state) && networkManager.localPlayerId) {
-      activeIds.add(networkManager.localPlayerId);
-      this.updateOne(networkManager.localPlayerId, state.player.x, state.player.y, localVx, localVy, now);
-    }
-
-    state.otherPlayers.forEach((op, id) => {
-      if (op.role === PlayerRole.HUNTER && op.health > 0) {
-        activeIds.add(id);
-        const vel = remoteVelocities.get(id);
-        this.updateOne(id, op.x, op.y, vel?.dx ?? 0, vel?.dy ?? 0, now);
-      }
+    const activeIds = forEachActiveHunter(state, networkManager.localPlayerId, localVx, localVy, remoteVelocities, (id, x, y, vx, vy) => {
+      this.updateOne(id, x, y, vx, vy, now);
     });
 
     this.drones.forEach((_, id) => {

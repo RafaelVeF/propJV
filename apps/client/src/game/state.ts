@@ -133,3 +133,27 @@ export function getAlivePlayerIds(state: GameState): string[] {
 export function isLocalHunterArmed(state: GameState): boolean {
   return state.localPlayerRole === PlayerRole.HUNTER && !state.spectator.active && state.player.health > 0;
 }
+
+/** Parcourt tous les chasseurs vivants (local + distants) et retourne l'ensemble de leurs IDs */
+export function forEachActiveHunter(
+  state: GameState,
+  localPlayerId: string | null,
+  localVx: number,
+  localVy: number,
+  remoteVelocities: Map<string, { dx: number; dy: number }>,
+  onHunter: (id: string, x: number, y: number, vx: number, vy: number, isRemote: boolean) => void
+): Set<string> {
+  const activeIds = new Set<string>();
+  if (isLocalHunterArmed(state) && localPlayerId) {
+    activeIds.add(localPlayerId);
+    onHunter(localPlayerId, state.player.x, state.player.y, localVx, localVy, false);
+  }
+  state.otherPlayers.forEach((op, id) => {
+    if (op.role === PlayerRole.HUNTER && op.health > 0) {
+      activeIds.add(id);
+      const vel = remoteVelocities.get(id);
+      onHunter(id, op.x, op.y, vel?.dx ?? 0, vel?.dy ?? 0, true);
+    }
+  });
+  return activeIds;
+}

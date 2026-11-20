@@ -1,4 +1,5 @@
-import { DEFAULT_PROPS, WEAPON_ORDER, WEAPONS, WeaponType } from '@prop-hunt/shared';
+import { DEFAULT_HUNTER_EMOTES, DEFAULT_PROPS, WEAPON_ORDER, WEAPONS, type WeaponType } from '@prop-hunt/shared';
+import { HUNTER_SPRITE_SPECS } from './render/hunterSpriteSpecs';
 
 function loadImage(src: string): HTMLImageElement {
   const img = new Image();
@@ -36,6 +37,41 @@ export function loadWeaponImages(): Map<WeaponType, HTMLImageElement> {
 export function loadMineGroundImage(): HTMLImageElement | undefined {
   const path = WEAPONS[WeaponType.MINE].groundIconPath;
   return path ? loadImage(path) : undefined;
+}
+
+export type HunterSpriteKey =
+  | 'idle_left'
+  | 'idle_right'
+  | 'idle_north'
+  | 'move_n'
+  | 'move_nw'
+  | 'move_ne'
+  | 'move_s'
+  | 'move_sw'
+  | 'move_se'
+  | 'move_w'
+  | 'move_e';
+
+export type HunterSprites = Record<HunterSpriteKey, HTMLImageElement>;
+
+/** Précharge les sprite sheets du Chasseur à partir de HUNTER_SPRITE_SPECS */
+export function loadHunterSprites(): HunterSprites {
+  const sprites = {} as HunterSprites;
+  (Object.keys(HUNTER_SPRITE_SPECS) as HunterSpriteKey[]).forEach(key => {
+    sprites[key] = loadImage(HUNTER_SPRITE_SPECS[key].assetPath);
+  });
+  return sprites;
+}
+
+/** Précharge les sprite sheets d'emotes des Chasseurs, indexées par assetPath */
+export function loadEmoteImages(): Map<string, HTMLImageElement> {
+  const emoteImages = new Map<string, HTMLImageElement>();
+  DEFAULT_HUNTER_EMOTES.forEach(e => {
+    if (e.assetPath && !emoteImages.has(e.assetPath)) {
+      emoteImages.set(e.assetPath, loadImage(e.assetPath));
+    }
+  });
+  return emoteImages;
 }
 
 export interface DroneImages {
