@@ -16,6 +16,7 @@ import {
     type PropLockPayload,
     type PropWhistlePayload,
     type HunterEmotePayload,
+    type HunterEmoteDefinition,
     DEFAULT_HUNTER_EMOTES,
     type HunterShootPayload,
     type CreateRoomPayload,
@@ -519,11 +520,6 @@ function createRoom(isFreeplay: boolean = false): GameRoom {
                 }
             });
 
-            if (isFreeplay || roomKey.startsWith('FREEPLAY')) {
-                console.log(`[GameServer][${roomKey}] Mode Freeplay actif : télémétrie et succès désactivés.`);
-                return;
-            }
-
             telemetryTracker.startMatch(CURRENT_MAP, trackedInitPlayers);
         },
         onTimerTick: (phase, timeRemaining) => {
@@ -560,11 +556,6 @@ function createRoom(isFreeplay: boolean = false): GameRoom {
                 payload: results
             });
 
-            if (isFreeplay || roomKey.startsWith('FREEPLAY')) {
-                console.log(`[GameServer][${roomKey}] Mode Freeplay actif : aucun rapport de match ni progression de succès envoyés.`);
-                return;
-            }
-
             const winningTeam: WinningTeam =
                 results.winner === PlayerRole.HUNTER
                     ? 'SEEKER'
@@ -574,6 +565,7 @@ function createRoom(isFreeplay: boolean = false): GameRoom {
 
             const report = telemetryTracker.finalizeMatch(winningTeam, SERVER_ID);
             if (report) {
+                report.isFreeplay = isFreeplay;
                 console.log(
                     `[Telemetry Check][${roomKey}] Payload prêt à l'envoi :\n${JSON.stringify(report, null, 2)}`
                 );
@@ -613,6 +605,17 @@ function leaveCurrentRoom(ws: WebSocket, playerId: string): void {
     clientRooms.delete(ws);
     const room = rooms.get(roomKey);
     if (!room) return;
+
+    // Si la room est en mode Freeplay et que la télémétrie est active, finaliser et envoyer les stats du joueur
+    if ((room.isFreeplay || roomKey.startsWith('FREEPLAY')) && room.telemetryTracker.isActive()) {
+        const report = room.telemetryTracker.finalizeMatch('DRAW', SERVER_ID);
+        if (report) {
+            report.isFreeplay = true;
+            console.log(`[GameServer][${roomKey}] Mode Freeplay terminé : envoi du rapport d'activité (${report.players.length} joueur(s)).`);
+            void sendMatchReport(report);
+        }
+        room.telemetryTracker.reset();
+    }
 
     room.roundManager.removePlayer(playerId);
     room.players.delete(playerId);
@@ -728,6 +731,24 @@ function joinRoom(ws: WebSocket, playerId: string, room: GameRoom, customName?: 
     // Ajoute au RoundManager (ce qui déclenche onLobbyStateChanged vers tout le salon)
     room.roundManager.addPlayer(playerId, playerName);
     console.log(`[GameServer][${room.key}] ${playerName} a rejoint le salon (${room.players.size} joueur(s))`);
+
+    // En mode Freeplay, on initialise immédiatement le suivi télémétrique pour comptabiliser les actions du joueur
+    if (room.isFreeplay || room.key.startsWith('FREEPLAY')) {
+        const playerInit: TelemetryInitPlayer = {
+            playerId,
+            userId: clientUserIds.get(playerId) ?? null,
+            username: playerName,
+            role: 'HIDER',
+            initialProp: defaultProp.internalName,
+            seekerClass: null
+        };
+        if (!room.telemetryTracker.isActive()) {
+            room.telemetryTracker.startMatch(CURRENT_MAP, [playerInit]);
+        } else {
+            room.telemetryTracker.registerPlayer(playerInit);
+        }
+        console.log(`[GameServer][${room.key}] Suivi télémétrie Freeplay initialisé pour ${playerName} (userId=${clientUserIds.get(playerId) ?? 'invité'}).`);
+    }
 }
 
 let staticObstacles: Rectangle[] = [];
@@ -944,7 +965,7 @@ wss.on('connection', (ws, req: IncomingMessage) => {
                     const payload = message.payload as Partial<HunterEmotePayload>;
                     const performer = room.players.get(playerId);
                     if (!performer || !isAlive(performer) || performer.role !== PlayerRole.HUNTER) break;
-                    if (!payload?.emoteId || !DEFAULT_HUNTER_EMOTES.some(e => e.id === payload.emoteId)) break;
+                    if (!payload?.emoteId || !DEFAULT_HUNTER_EMOTES.some((e: HunterEmoteDefinition) => e.id === payload.emoteId)) break;
                     broadcastToRoom(room.key, {
                         type: MessageType.HUNTER_EMOTE,
                         payload: { playerId, emoteId: payload.emoteId } satisfies HunterEmotePayload

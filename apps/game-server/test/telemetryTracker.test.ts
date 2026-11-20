@@ -99,17 +99,43 @@ test('MatchTelemetryTracker : partie courte de test (< 1s) génère un rapport c
     assert.equal(seeker.currencyEarned, 10);
 });
 
-test('MatchTelemetryTracker : en mode Freeplay ou inactif, aucun événement ni rapport final n\'est émis', () => {
+test('MatchTelemetryTracker : session Freeplay suit et finalise correctement les métamorphoses et sifflements', () => {
     const tracker = new MatchTelemetryTracker();
-    assert.equal(tracker.isActive(), false, 'Le tracker doit être inactif sans startMatch');
+    // Démarrage de la session Freeplay
+    tracker.startMatch('map_01_32p', [
+        {
+            playerId: 'freeplay_p1',
+            userId: 50,
+            username: 'FreeplayExplorer',
+            role: 'HIDER',
+            initialProp: 'prop_can'
+        }
+    ]);
 
-    // Tentatives d\'enregistrement en mode inactif (Freeplay)
-    tracker.recordTransform('p1', 'prop_can', 50);
-    tracker.recordTaunt('p1', 'taunt_chicken', 30);
-    tracker.recordShot('p2');
-    tracker.recordHit('p2', 'p1', 25, true, 10);
-    tracker.recordElimination('p2', 'p1', 10);
+    assert.equal(tracker.isActive(), true, 'Le tracker doit être actif en mode Freeplay');
 
-    const report = tracker.finalizeMatch('HIDER', 'srv-test-freeplay');
-    assert.equal(report, null, 'Aucun rapport ne doit être généré si le tracker n\'a pas démarré de match');
+    // Ajout d'un 2e joueur en cours de session (registerPlayer)
+    tracker.registerPlayer({
+        playerId: 'freeplay_p2',
+        userId: 51,
+        username: 'FreeplayFriend',
+        role: 'HIDER',
+        initialProp: 'prop_chair'
+    });
+
+    // Enregistrement des métamorphoses et railleries
+    tracker.recordTransform('freeplay_p1', 'prop_chair', null);
+    tracker.recordTransform('freeplay_p1', 'prop_desk', null);
+    tracker.recordTaunt('freeplay_p1', 'taunt_chicken', null);
+
+    // Finalisation de la session Freeplay (DRAW)
+    const report = tracker.finalizeMatch('DRAW', 'srv-freeplay');
+    assert.ok(report, 'Le rapport Freeplay doit être généré');
+    assert.equal(report.winningTeam, 'DRAW');
+    assert.equal(report.players.length, 2);
+
+    const p1 = report.players.find((p) => p.playerId === 'freeplay_p1')!;
+    assert.equal(p1.transformationsCount, 2);
+    assert.equal(p1.tauntsUsed, 1);
+    assert.equal(p1.finalProp, 'prop_desk');
 });

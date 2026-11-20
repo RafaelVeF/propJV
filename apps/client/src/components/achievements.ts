@@ -21,6 +21,7 @@ const CATEGORIES: AchievementCategoryTab[] = [
 ];
 
 // État local du module des succès
+const COIN_ICON_HTML = '<img src="/assets/coin.svg" class="coin-icon" alt="🪙" />';
 let currentCategory: AchievementCategory = 'all';
 let achievementsList: AchievementItem[] = [];
 let unclaimedCount = 0;
@@ -341,7 +342,7 @@ function renderCard(ach: AchievementItem, isAuthenticated: boolean): string {
   if (isClaimable) {
     actionFooterHtml = `
       <button class="btn-claim-reward" data-claim-id="${ach.id}" title="Récupérer +${ach.reward} pièces">
-        RÉCLAMER +${ach.reward} 🪙
+        RÉCLAMER +${ach.reward} ${COIN_ICON_HTML}
       </button>
     `;
   } else if (isClaimed) {
@@ -403,7 +404,7 @@ function renderCard(ach: AchievementItem, isAuthenticated: boolean): string {
 
       <div class="ach-card-footer">
         <div class="ach-reward-badge">
-          <span class="coin-icon">🪙</span>
+          ${COIN_ICON_HTML}
           <span class="reward-text">+${ach.reward} pièces</span>
         </div>
         <div class="ach-card-action">
@@ -475,7 +476,7 @@ function updateAchievementsView(): void {
     barElem.style.width = `${effPercent}%`;
   }
   if (rewardsElem) {
-    rewardsElem.innerHTML = `<span class="coin-icon">🪙</span><strong>+${effCoins}</strong> pièces`;
+    rewardsElem.innerHTML = `${COIN_ICON_HTML}<strong>+${effCoins}</strong> pièces`;
   }
 
   // Bannière d'alerte pour récompenses non réclamées
@@ -592,7 +593,7 @@ export function renderAchievements(): string {
           <div class="banner-rewards-box">
             <span class="rewards-box-label">RÉCOMPENSES RÉCUPÉRÉES</span>
             <div class="rewards-box-value" id="ach-banner-rewards">
-              <span class="coin-icon">🪙</span>
+              ${COIN_ICON_HTML}
               <strong>+0</strong> pièces
             </div>
           </div>

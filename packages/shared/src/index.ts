@@ -626,6 +626,57 @@ export interface FriendActionResponse {
 }
 
 // =========================================================================
+// EMOTES DES CHASSEURS
+// =========================================================================
+
+export interface HunterEmoteDefinition {
+  id: string;
+  name: string;
+  assetPath: string;
+  cols: number;
+  rows: number;
+  frameWidth: number;
+  frameHeight: number;
+  frameCount: number;
+  previewFrame: number;
+  fps?: number;
+}
+
+const createEmote = (
+  id: string,
+  name: string,
+  fileName: string,
+  frameCount: number,
+  previewFrame: number,
+  opts: { cols?: number; rows?: number; frameWidth?: number; fps?: number } = {}
+): HunterEmoteDefinition => ({
+  id,
+  name,
+  assetPath: `/assets/emotes/${fileName}`,
+  cols: opts.cols ?? 3,
+  rows: opts.rows ?? 3,
+  frameWidth: opts.frameWidth ?? 64,
+  frameHeight: 64,
+  frameCount,
+  previewFrame,
+  fps: opts.fps ?? 10
+});
+
+export const DEFAULT_HUNTER_EMOTES: HunterEmoteDefinition[] = [
+  createEmote('amazed', 'Étonné', 'EmoteAmazed.png', 7, 4, { fps: 8 }),
+  createEmote('dance', 'Danse', 'EmoteDance.png', 15, 10, { cols: 4, rows: 4 }),
+  createEmote('love', 'Amour', 'EmoteLove.png', 15, 14, { cols: 3, rows: 5, frameWidth: 84 }),
+  createEmote('aura', 'Aura', 'EmoteAura.png', 13, 5, { cols: 3, rows: 5, frameWidth: 92 }),
+  createEmote('devil', 'Démon', 'EmoteDevil.png', 15, 11, { cols: 4, rows: 4 }),
+  createEmote('ez', 'EZ', 'EmoteEZ.png', 7, 3, { fps: 8 })
+];
+
+export interface HunterEmotePayload {
+  playerId: string;
+  emoteId: string;
+}
+
+// =========================================================================
 // SUCCÈS (ACHIEVEMENTS)
 // =========================================================================
 

@@ -129,6 +129,36 @@ export class MatchTelemetryTracker {
         }
     }
 
+    public registerPlayer(p: TelemetryInitPlayer): void {
+        if (!this.active || this.players.has(p.playerId)) return;
+        const initialProp = p.role === 'HIDER' ? (p.initialProp ?? null) : null;
+        const propsUsed = initialProp ? [initialProp] : [];
+
+        this.players.set(p.playerId, {
+            playerId: p.playerId,
+            userId: p.userId,
+            username: p.username,
+            role: p.role,
+            survived: true,
+            eliminatedAtSec: null,
+            survivalTimeSec: 0,
+            scoreEarned: 0,
+            currencyEarned: 0,
+            eliminations: 0,
+            transformationsCount: 0,
+            propsUsed,
+            finalProp: initialProp,
+            seekerClass: p.role === 'SEEKER' ? (p.seekerClass ?? 'seeker_recruit') : null,
+            tauntsUsed: 0,
+            propsDestroyed: 0,
+            damageDealt: 0,
+            damageTaken: 0,
+            shotsFired: 0,
+            shotsHit: 0,
+            hadActivity: false,
+        });
+    }
+
     public recordActivity(playerId: string): void {
         if (!this.active) return;
         const p = this.players.get(playerId);
