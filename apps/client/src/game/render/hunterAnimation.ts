@@ -2,16 +2,11 @@ import { DEFAULT_HUNTER_EMOTES, PlayerRole, type HunterEmoteDefinition } from '@
 import { networkManager } from '../../network/networkManager';
 import { isImageReady, type HunterSpriteKey, type HunterSprites } from '../assets';
 import type { GameState } from '../state';
+import { HUNTER_RENDER_CONFIG, HUNTER_SPRITE_SPECS } from './hunterSpriteSpecs';
 
-export const HUNTER_FRAME_SIZE = 64;
-export const HUNTER_SHEET_COLS = 3;
-export const HUNTER_FRAME_COUNT = 8;
-export const HUNTER_FPS = 8;
-export const HUNTER_FRAME_DURATION_MS = 1000 / HUNTER_FPS; // 125 ms (~8 fps)
-
-export const HUNTER_DRAW_SIZE = 54;
-export const HUNTER_BODY_WIDTH = 28;
-export const HUNTER_BODY_HEIGHT = 48;
+export const HUNTER_DRAW_SIZE = HUNTER_RENDER_CONFIG.drawSize;
+export const HUNTER_BODY_WIDTH = HUNTER_RENDER_CONFIG.bodyWidth;
+export const HUNTER_BODY_HEIGHT = HUNTER_RENDER_CONFIG.bodyHeight;
 
 export interface ActiveHunterEmote {
   def: HunterEmoteDefinition;
@@ -147,7 +142,7 @@ export class HunterAnimator {
     } else {
       // Expiration de l'emote après une seule boucle complète
       if (anim.activeEmote) {
-        const fps = anim.activeEmote.def.fps ?? HUNTER_FPS;
+        const fps = anim.activeEmote.def.fps ?? HUNTER_RENDER_CONFIG.defaultFps;
         const totalMs = anim.activeEmote.def.frameCount * (1000 / fps);
         if (now - anim.activeEmote.startedAt >= totalMs) {
           anim.activeEmote = undefined;
@@ -172,6 +167,31 @@ export class HunterAnimator {
   }
 }
 
+function drawGridFrame(
+  ctx: CanvasRenderingContext2D,
+  sheet: HTMLImageElement,
+  frameIndex: number,
+  cols: number,
+  frameWidth: number,
+  frameHeight: number,
+  posX: number,
+  posY: number,
+  radius: number
+): void {
+  const col = frameIndex % cols;
+  const row = Math.floor(frameIndex / cols);
+  const scale = HUNTER_DRAW_SIZE / frameHeight;
+  const drawW = frameWidth * scale;
+  const drawH = frameHeight * scale;
+  const drawX = posX - drawW / 2;
+  const drawY = posY + radius - drawH + 1;
+
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(sheet, col * frameWidth, row * frameHeight, frameWidth, frameHeight, drawX, drawY, drawW, drawH);
+  ctx.restore();
+}
+
 /**
  * Dessine la frame courante du sprite Chasseur (ou de son emote ponctuelle).
  * Retourne true si le sprite a été dessiné, false si l'image n'est pas encore prête.
@@ -190,68 +210,24 @@ export function drawHunterSprite(
   if (anim.activeEmote && emoteImages) {
     const { def, startedAt } = anim.activeEmote;
     const emoteSheet = emoteImages.get(def.assetPath);
-    const frameMs = 1000 / (def.fps ?? HUNTER_FPS);
+    const frameMs = 1000 / (def.fps ?? HUNTER_RENDER_CONFIG.defaultFps);
     const frameIndex = Math.floor(Math.max(0, now - startedAt) / frameMs);
 
     if (frameIndex >= def.frameCount) {
       anim.activeEmote = undefined;
     } else if (isImageReady(emoteSheet)) {
-      const col = frameIndex % def.cols;
-      const row = Math.floor(frameIndex / def.cols);
-      const sx = col * def.frameWidth;
-      const sy = row * def.frameHeight;
-
-      const scale = HUNTER_DRAW_SIZE / def.frameHeight;
-      const drawW = def.frameWidth * scale;
-      const drawH = def.frameHeight * scale;
-      const drawX = posX - drawW / 2;
-      const drawY = posY + radius - drawH + 1;
-
-      ctx.save();
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(
-        emoteSheet,
-        sx,
-        sy,
-        def.frameWidth,
-        def.frameHeight,
-        drawX,
-        drawY,
-        drawW,
-        drawH
-      );
-      ctx.restore();
+      drawGridFrame(ctx, emoteSheet, frameIndex, def.cols, def.frameWidth, def.frameHeight, posX, posY, radius);
       return true;
     }
   }
 
-  // 2. Animation normale (Idle ou Marche 8 directions)
+  // 2. Animation normale (Idle ou Marche 8 directions) d'après HUNTER_SPRITE_SPECS
+  const spec = HUNTER_SPRITE_SPECS[anim.currentKey];
   const sheet = sprites[anim.currentKey];
   if (!isImageReady(sheet)) return false;
 
-  const elapsed = Math.max(0, now - anim.animStartedAt);
-  const frameIndex = Math.floor(elapsed / HUNTER_FRAME_DURATION_MS) % HUNTER_FRAME_COUNT;
-  const col = frameIndex % HUNTER_SHEET_COLS;
-  const row = Math.floor(frameIndex / HUNTER_SHEET_COLS);
-
-  const sx = col * HUNTER_FRAME_SIZE;
-  const sy = row * HUNTER_FRAME_SIZE;
-  const drawX = posX - HUNTER_DRAW_SIZE / 2;
-  const drawY = posY + radius - HUNTER_DRAW_SIZE + 1;
-
-  ctx.save();
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(
-    sheet,
-    sx,
-    sy,
-    HUNTER_FRAME_SIZE,
-    HUNTER_FRAME_SIZE,
-    drawX,
-    drawY,
-    HUNTER_DRAW_SIZE,
-    HUNTER_DRAW_SIZE
-  );
-  ctx.restore();
+  const frameMs = 1000 / (spec.fps || HUNTER_RENDER_CONFIG.defaultFps);
+  const frameIndex = Math.floor(Math.max(0, now - anim.animStartedAt) / frameMs) % spec.frameCount;
+  drawGridFrame(ctx, sheet, frameIndex, spec.cols, spec.frameWidth, spec.frameHeight, posX, posY, radius);
   return true;
 }

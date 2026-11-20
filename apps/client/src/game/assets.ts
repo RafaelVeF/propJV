@@ -1,4 +1,5 @@
 import { DEFAULT_HUNTER_EMOTES, DEFAULT_PROPS, WEAPON_ORDER, WEAPONS, type WeaponType } from '@prop-hunt/shared';
+import { HUNTER_SPRITE_SPECS } from './render/hunterSpriteSpecs';
 
 function loadImage(src: string): HTMLImageElement {
   const img = new Image();
@@ -47,21 +48,13 @@ export type HunterSpriteKey =
 
 export type HunterSprites = Record<HunterSpriteKey, HTMLImageElement>;
 
-/** Précharge les 11 sprite sheets (3x3 de 64x64, 8 frames) du Chasseur */
+/** Précharge les sprite sheets du Chasseur à partir de HUNTER_SPRITE_SPECS */
 export function loadHunterSprites(): HunterSprites {
-  return {
-    idle_left: loadImage('/assets/characters/Hunter/IdleHuntLeft.png'),
-    idle_right: loadImage('/assets/characters/Hunter/IdleHuntRight.png'),
-    idle_north: loadImage('/assets/characters/Hunter/IdleHuntNord.png'),
-    move_n: loadImage('/assets/characters/Hunter/MoveHuntNorth.png'),
-    move_nw: loadImage('/assets/characters/Hunter/MoveHuntNorthLeft.png'),
-    move_ne: loadImage('/assets/characters/Hunter/MoveHuntNorthRight.png'),
-    move_s: loadImage('/assets/characters/Hunter/MoveHuntSouth.png'),
-    move_sw: loadImage('/assets/characters/Hunter/MoveHuntSouthLeft.png'),
-    move_se: loadImage('/assets/characters/Hunter/MoveHuntSouthRight.png'),
-    move_w: loadImage('/assets/characters/Hunter/MoveHuntLeft.png'),
-    move_e: loadImage('/assets/characters/Hunter/MoveHuntRight.png')
-  };
+  const sprites = {} as HunterSprites;
+  (Object.keys(HUNTER_SPRITE_SPECS) as HunterSpriteKey[]).forEach(key => {
+    sprites[key] = loadImage(HUNTER_SPRITE_SPECS[key].assetPath);
+  });
+  return sprites;
 }
 
 /** Précharge les sprite sheets d'emotes des Chasseurs, indexées par assetPath */
