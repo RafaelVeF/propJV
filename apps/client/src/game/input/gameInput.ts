@@ -82,9 +82,9 @@ export function registerGameInput(deps: GameInputDeps): void {
       return;
     }
 
-    // 3. Chasseur : sélection d'arme (1/2/3) et rechargement (R)
+    // 3. Chasseur : sélection d'arme (1..5) et rechargement (R)
     if (state.localPlayerRole === PlayerRole.HUNTER) {
-      const slotWeapon = WeaponController.weaponForKey(e.key);
+      const slotWeapon = WeaponController.weaponForKey(e.key, e.code);
       if (slotWeapon) {
         weapons.select(slotWeapon);
         return;

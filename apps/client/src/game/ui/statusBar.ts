@@ -14,7 +14,7 @@ export function updateStatusBar(statusEl: HTMLElement | null, state: GameState):
   if (state.spectator.active) {
     statusEl.innerText = 'WS: Connecté | Mode spectateur';
   } else if (state.localPlayerRole === PlayerRole.HUNTER) {
-    statusEl.innerText = 'WS: Connecté | Clic: Attaquer | 1/2/3 ou Molette: Arme | R: Recharger';
+    statusEl.innerText = 'WS: Connecté | Clic: Attaquer | 1..5 ou Molette: Arme | R: Recharger';
   } else {
     statusEl.innerText = 'WS: Connecté | E: Changer Prop | R: Tourner Prop | K: Dégâts (-15)';
   }

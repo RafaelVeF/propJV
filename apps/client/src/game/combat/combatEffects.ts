@@ -1,4 +1,5 @@
-import { WeaponType, WEAPONS } from '@prop-hunt/shared';
+import { WeaponType, WEAPONS, type ZapStatePayload } from '@prop-hunt/shared';
+import { isImageReady } from '../assets';
 
 /**
  * Effets visuels éphémères du combat et des morts.
@@ -10,6 +11,7 @@ export const DEATH_EFFECT_DURATION = 1600;
 interface Tracer { x1: number; y1: number; x2: number; y2: number; hit: boolean; at: number; }
 interface Swing { x: number; y: number; angle: number; hit: boolean; at: number; }
 interface FlyingGrenade { id: string; x1: number; y1: number; x2: number; y2: number; at: number; fuseMs: number; }
+interface ActiveZapBeam { originX: number; originY: number; impactX: number; impactY: number; hit: boolean; updatedAt: number; }
 interface Explosion { x: number; y: number; radius: number; at: number; }
 interface DamageNumber { x: number; y: number; text: string; at: number; color: string; }
 interface DeathEffect { x: number; y: number; at: number; name: string; particles: { vx: number; vy: number; size: number; color: string }[]; }
@@ -18,6 +20,8 @@ export class CombatEffects {
   readonly tracers: Tracer[] = [];
   readonly swings: Swing[] = [];
   readonly grenades: FlyingGrenade[] = [];
+  readonly mines: FlyingGrenade[] = [];
+  readonly zaps = new Map<string, ActiveZapBeam>();
   readonly explosions: Explosion[] = [];
   readonly damageNumbers: DamageNumber[] = [];
   readonly deathEffects: DeathEffect[] = [];
@@ -31,7 +35,7 @@ export class CombatEffects {
     hunterId: string; weapon: WeaponType;
     originX: number; originY: number; impactX: number; impactY: number;
     angle?: number;
-    hit: boolean; grenadeId?: string; fuseMs?: number;
+    hit: boolean; grenadeId?: string; mineId?: string; fuseMs?: number;
   }): void {
     const now = Date.now();
     const angle = shot.angle ?? Math.atan2(shot.impactY - shot.originY, shot.impactX - shot.originX);
@@ -48,12 +52,50 @@ export class CombatEffects {
         x1: shot.originX, y1: shot.originY, x2: shot.impactX, y2: shot.impactY,
         at: now, fuseMs: shot.fuseMs ?? 1200
       });
+    } else if (shot.weapon === WeaponType.MINE) {
+      this.mines.push({
+        id: shot.mineId ?? `mine-${shot.hunterId}-${now}`,
+        x1: shot.originX, y1: shot.originY, x2: shot.impactX, y2: shot.impactY,
+        at: now, fuseMs: shot.fuseMs ?? 350
+      });
     }
+  }
+
+  public setZapState(
+    payload: ZapStatePayload,
+    originX: number,
+    originY: number,
+    angle: number
+  ): void {
+    if (!payload.active) {
+      this.zaps.delete(payload.hunterId);
+      return;
+    }
+    const now = Date.now();
+    this.hunterAim.set(payload.hunterId, {
+      angle,
+      weapon: WeaponType.ZAP,
+      readyAt: now + 200
+    });
+    this.zaps.set(payload.hunterId, {
+      originX,
+      originY,
+      impactX: payload.impactX,
+      impactY: payload.impactY,
+      hit: Boolean(payload.hitPlayerId),
+      updatedAt: now
+    });
   }
 
   public addExplosion(grenadeId: string, x: number, y: number, radius: number): void {
     const idx = this.grenades.findIndex(g => g.id === grenadeId);
     if (idx >= 0) this.grenades.splice(idx, 1);
+    this.explosions.push({ x, y, radius, at: Date.now() });
+  }
+
+  public addMineExplosion(mineId: string, x: number, y: number, radius: number): void {
+    const idx = this.mines.findIndex(m => m.id === mineId);
+    if (idx >= 0) this.mines.splice(idx, 1);
     this.explosions.push({ x, y, radius, at: Date.now() });
   }
 
@@ -71,16 +113,99 @@ export class CombatEffects {
     this.deathEffects.push({ x, y, at: Date.now(), name, particles });
   }
 
-  /** Nouvelle manche : on oublie les grenades et les armes en main de la manche précédente */
+  /** Nouvelle manche : on oublie les grenades, mines, zaps et armes en main de la manche précédente */
   public resetRound(): void {
     this.hunterAim.clear();
     this.grenades.length = 0;
+    this.mines.length = 0;
+    this.zaps.clear();
+  }
+
+  /** Dessine les mines posées au sol (avant les personnages pour la profondeur) */
+  public drawMines(ctx: CanvasRenderingContext2D, mineImage?: HTMLImageElement): void {
+    const now = Date.now();
+    const triggerRadius = WEAPONS[WeaponType.MINE].triggerRadius ?? 22;
+
+    for (const m of this.mines) {
+      const elapsed = now - m.at;
+      const flight = Math.min(1, elapsed / (m.fuseMs || 350));
+      const mx = m.x1 + (m.x2 - m.x1) * flight;
+      const my = m.y1 + (m.y2 - m.y1) * flight - Math.sin(flight * Math.PI) * 18;
+
+      ctx.save();
+      if (flight >= 1) {
+        const pulse = 0.5 + 0.5 * Math.sin(now * 0.008);
+        ctx.strokeStyle = `rgba(249, 115, 22, ${0.22 + pulse * 0.25})`;
+        ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.beginPath();
+        ctx.arc(m.x2, m.y2, triggerRadius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      if (isImageReady(mineImage)) {
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(mineImage, Math.round(mx - 9), Math.round(my - 9), 18, 18);
+      } else {
+        ctx.fillStyle = '#475569';
+        ctx.strokeStyle = '#ef4444';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(mx, my, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
   }
 
   /** Dessine tous les effets en coordonnées monde (et supprime ceux qui sont terminés) */
   public draw(ctx: CanvasRenderingContext2D): void {
     const now = Date.now();
     const { tracers, swings, grenades, explosions, deathEffects, damageNumbers } = this;
+
+    // A. Faisceaux laser continus du Zap
+    this.zaps.forEach((z, hunterId) => {
+      if (now - z.updatedAt > 400) {
+        this.zaps.delete(hunterId);
+        return;
+      }
+      const pulse = 0.8 + 0.2 * Math.sin(now * 0.045);
+      ctx.save();
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = z.hit ? `rgba(239, 68, 68, ${0.42 * pulse})` : `rgba(249, 115, 22, ${0.38 * pulse})`;
+      ctx.lineWidth = 8;
+      ctx.beginPath();
+      ctx.moveTo(z.originX, z.originY);
+      ctx.lineTo(z.impactX, z.impactY);
+      ctx.stroke();
+
+      ctx.strokeStyle = z.hit ? '#fca5a5' : '#fb923c';
+      ctx.lineWidth = 3.5;
+      ctx.beginPath();
+      ctx.moveTo(z.originX, z.originY);
+      ctx.lineTo(z.impactX, z.impactY);
+      ctx.stroke();
+
+      ctx.strokeStyle = '#fef9c3';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(z.originX, z.originY);
+      ctx.lineTo(z.impactX, z.impactY);
+      ctx.stroke();
+
+      // Halo au canon et à l'impact
+      ctx.fillStyle = z.hit ? '#ef4444' : '#f97316';
+      ctx.beginPath();
+      ctx.arc(z.impactX, z.impactY, 4 + pulse * 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fef08a';
+      ctx.beginPath();
+      ctx.arc(z.impactX, z.impactY, 2.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    });
 
     // B. Traînées de balles du pistolet
     for (let i = tracers.length - 1; i >= 0; i--) {

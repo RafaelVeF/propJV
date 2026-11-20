@@ -15,7 +15,9 @@ export interface DroneState {
 const DRONE_MUZZLE_OFFSET: Record<WeaponType, number> = {
   [WeaponType.PISTOL]: 14,
   [WeaponType.CROWBAR]: 11,
-  [WeaponType.GRENADE]: 10
+  [WeaponType.GRENADE]: 10,
+  [WeaponType.ZAP]: 13,
+  [WeaponType.MINE]: 11
 };
 
 /**

@@ -15,7 +15,10 @@ import {
   hasLineOfSight,
   resolvePistolShot,
   resolveMeleeHit,
+  resolveZapBeam,
   computeGrenadeLanding,
+  computeMineLanding,
+  shouldMineDetonate,
   resolveExplosion,
   HunterArsenal,
   WEAPON_HOLD_OFFSET_Y
@@ -158,5 +161,76 @@ describe('Système de combat autoritaire', () => {
     assert.strictEqual(getNextSpectateTarget(['a', 'b', 'c'], 'c', 1), 'a', 'Boucle à la fin');
     assert.strictEqual(getNextSpectateTarget(['a', 'b', 'c'], 'a', -1), 'c', 'Boucle au début');
     assert.strictEqual(getNextSpectateTarget(['a', 'b'], 'gone'), 'a', 'Cible disparue');
+  });
+
+  it('12. Zap : visée dynamique, murs bloquants, durée 3s, cooldown 5s et 30 DPS', () => {
+    const h = hunter(100, 100);
+    const eastProp = prop(220, 100 + WEAPON_HOLD_OFFSET_Y, 'east');
+    const southProp = prop(100, 220 + WEAPON_HOLD_OFFSET_Y, 'south');
+    const wall: Rectangle = { x: 150, y: 0, width: 20, height: 200 };
+
+    // Suit la visée et reste bloqué par les murs
+    assert.strictEqual(resolveZapBeam(h, { x: 400, y: 100 - WEAPON_HOLD_OFFSET_Y }, [h, eastProp, southProp], []).hitPlayerId, 'east');
+    assert.strictEqual(resolveZapBeam(h, { x: 400, y: 100 - WEAPON_HOLD_OFFSET_Y }, [h, eastProp], [wall]).hitPlayerId, null);
+    assert.strictEqual(resolveZapBeam(h, { x: 100, y: 400 }, [h, eastProp, southProp], []).hitPlayerId, 'south');
+
+    // Durée 3s puis cooldown 5s
+    const arsenal = new HunterArsenal();
+    const zapDef = WEAPONS[WeaponType.ZAP];
+    arsenal.consume(WeaponType.ZAP, 0);
+    assert.strictEqual(arsenal.checkUse(WeaponType.ZAP, 1500), 'ACTIVE');
+    assert.strictEqual(arsenal.checkUse(WeaponType.ZAP, zapDef.durationMs!), 'COOLDOWN');
+    assert.strictEqual(arsenal.checkUse(WeaponType.ZAP, zapDef.durationMs! + zapDef.cooldownMs - 1), 'COOLDOWN');
+    assert.strictEqual(arsenal.checkUse(WeaponType.ZAP, zapDef.durationMs! + zapDef.cooldownMs), null);
+
+    // Accumulation à 30 DPS sur 3s à 20 TPS (0.05s / tick) -> 90 dégâts exacts
+    let acc = 0;
+    let totalDamage = 0;
+    for (let tick = 0; tick < 60; tick++) {
+      acc += zapDef.damage * 0.05;
+      const dmg = Math.floor(acc);
+      acc -= dmg;
+      totalDamage += dmg;
+    }
+    assert.strictEqual(totalDamage, 90);
+  });
+
+  it('13. Mine : pose type grenade, max 5 actives, détection courte prop uniquement et explosion', () => {
+    const h = hunter(0, 100 + WEAPON_HOLD_OFFSET_Y);
+    const mineDef = WEAPONS[WeaponType.MINE];
+
+    // Portée et blocage mur identiques à la grenade
+    const { landing } = computeMineLanding(h, { x: 2000, y: 100 }, []);
+    assert.ok(Math.abs(landing.x - mineDef.range) < 0.001);
+    const wall: Rectangle = { x: 100, y: 0, width: 20, height: 200 };
+    assert.ok(computeMineLanding(h, { x: 2000, y: 100 }, [wall]).landing.x < 100);
+
+    // Détection : uniquement prop vivant à courte portée sans mur entre deux
+    const minePos = { x: 200, y: 200 };
+    const farProp = prop(280, 200, 'far');
+    const nearHunter = hunter(205, 200, 'h2');
+    const deadProp: Player = { ...prop(205, 200, 'dead'), health: 0 };
+    assert.strictEqual(shouldMineDetonate(minePos, h.id, [h, farProp, nearHunter, deadProp], []), false);
+
+    const onMine = prop(205, 200, 'victim');
+    assert.strictEqual(shouldMineDetonate(minePos, h.id, [h, onMine], []), true);
+    assert.strictEqual(shouldMineDetonate(minePos, h.id, [h, onMine], [{ x: 198, y: 180, width: 4, height: 40 }]), false);
+
+    // Explosion de mine : dégâts de mine appliqués au prop proche uniquement
+    const outOfBlast = prop(400, 200, 'outside');
+    const hits = resolveExplosion(minePos, h.id, [onMine, outOfBlast], [], WeaponType.MINE);
+    assert.deepStrictEqual(hits, [{ playerId: 'victim', damage: mineDef.damage }]);
+
+    // Limite max 5 mines posées simultanément
+    const arsenal = new HunterArsenal();
+    let now = 1000;
+    for (let i = 0; i < mineDef.maxDeployed!; i++) {
+      assert.strictEqual(arsenal.checkUse(WeaponType.MINE, now), null);
+      arsenal.consume(WeaponType.MINE, now);
+      now += mineDef.cooldownMs;
+    }
+    assert.strictEqual(arsenal.checkUse(WeaponType.MINE, now), 'MAX_DEPLOYED');
+    arsenal.setDeployedMines(mineDef.maxDeployed! - 1);
+    assert.strictEqual(arsenal.checkUse(WeaponType.MINE, now), null);
   });
 });

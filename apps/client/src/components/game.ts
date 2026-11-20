@@ -3,7 +3,7 @@ import { musicManager } from '../audio/MusicManager';
 import { networkManager } from '../network/networkManager';
 import { switchView } from './viewManager';
 import { createGameState, VISION_RADIUS, type GameState } from '../game/state';
-import { loadDroneImages, loadPropImages, loadWeaponImages } from '../game/assets';
+import { loadDroneImages, loadMineGroundImage, loadPropImages, loadWeaponImages } from '../game/assets';
 import { MapRenderer } from '../game/map/mapRenderer';
 import { collectCharacters, drawCharacter } from '../game/render/characterRenderer';
 import { CombatEffects } from '../game/combat/combatEffects';
@@ -71,6 +71,7 @@ export function initGame(): void {
   const state = createGameState();
   const propImages = loadPropImages();
   const weaponImages = loadWeaponImages();
+  const mineGroundImage = loadMineGroundImage();
   const droneImages = loadDroneImages();
   const map = new MapRenderer();
   map.load();
@@ -206,6 +207,7 @@ export function initGame(): void {
     });
 
     drones.sync(state, vx, vy, remoteVelocities);
+    weapons.syncActiveZap();
   };
 
   /** Rendu d'une image complète */
@@ -214,8 +216,9 @@ export function initGame(): void {
     ctx.save();
     applyCamera(ctx, canvas, state);
 
-    // 1. Sol et murs
+    // 1. Sol, murs et mines armées au sol
     map.drawGround(ctx);
+    effects.drawMines(ctx, mineGroundImage);
     // 2. Personnages triés par profondeur
     const characters = collectCharacters(state);
     characters.forEach(c => drawCharacter(ctx, c, propImages, state.showHitbox));

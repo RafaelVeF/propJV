@@ -16,10 +16,13 @@ import {
     type PropLockPayload,
     type PropWhistlePayload,
     type HunterShootPayload,
+    type HunterZapAimPayload,
     type CreateRoomPayload,
     type JoinRoomPayload,
     type ShotFiredPayload,
     type GrenadeExplodedPayload,
+    type MineExplodedPayload,
+    type ZapStatePayload,
     type PlayerDiedPayload,
     type PlayerHitPayload,
     type SpectatorPlayer,
@@ -42,7 +45,10 @@ import {
     HunterArsenal,
     resolvePistolShot,
     resolveMeleeHit,
+    resolveZapBeam,
     computeGrenadeLanding,
+    computeMineLanding,
+    shouldMineDetonate,
     resolveExplosion
 } from './systems/combat.js';
 import {
@@ -140,6 +146,10 @@ interface GameRoom {
     arsenals: Map<string, HunterArsenal>;
     /** Grenades lancées qui n'ont pas encore explosé */
     pendingGrenades: PendingGrenade[];
+    /** Faisceaux Zap continus actuellement actifs par chasseur */
+    activeZaps: Map<string, ActiveZap>;
+    /** Mines posées sur la carte */
+    activeMines: ActiveMine[];
 }
 
 interface PendingGrenade {
@@ -148,6 +158,23 @@ interface PendingGrenade {
     x: number;
     y: number;
     explodeAt: number;
+}
+
+interface ActiveZap {
+    hunterId: string;
+    aimX: number;
+    aimY: number;
+    endsAt: number;
+    damageAcc: number;
+    lastHitId: string | null;
+}
+
+interface ActiveMine {
+    id: string;
+    hunterId: string;
+    x: number;
+    y: number;
+    armedAt: number;
 }
 
 const rooms = new Map<string, GameRoom>();
@@ -218,9 +245,39 @@ function buildRoundPlayer(previous: Player, role: PlayerRole.HUNTER | PlayerRole
     };
 }
 
+function stopHunterZap(room: GameRoom, hunterId: string) {
+    if (!room.activeZaps.delete(hunterId)) return;
+    broadcastToRoom(room.key, {
+        type: MessageType.ZAP_STATE,
+        payload: {
+            hunterId,
+            active: false,
+            originX: 0,
+            originY: 0,
+            impactX: 0,
+            impactY: 0
+        } satisfies ZapStatePayload
+    });
+}
+
+function clearRoomCombatEntities(room: GameRoom) {
+    room.pendingGrenades = [];
+    room.activeMines = [];
+    Array.from(room.activeZaps.keys()).forEach(id => stopHunterZap(room, id));
+}
+
+function removeHunterMines(room: GameRoom, hunterId: string) {
+    room.activeMines = room.activeMines.filter(m => m.hunterId !== hunterId);
+}
+
+function countHunterMines(room: GameRoom, hunterId: string): number {
+    return room.activeMines.reduce((acc, m) => acc + (m.hunterId === hunterId ? 1 : 0), 0);
+}
+
 function sendWeaponState(room: GameRoom, hunterId: string, now: number = Date.now()) {
     const arsenal = room.arsenals.get(hunterId);
     if (!arsenal) return;
+    arsenal.setDeployedMines(countHunterMines(room, hunterId));
     sendToPlayer(room.key, hunterId, {
         type: MessageType.WEAPON_STATE,
         payload: arsenal.getState(now)
@@ -294,6 +351,7 @@ function killPlayer(room: GameRoom, victimId: string, killerId?: string, weapon?
     room.playerInputs.set(victimId, { vx: 0, vy: 0 });
     room.playerRegenTimers.delete(victimId);
     room.arsenals.delete(victimId);
+    stopHunterZap(room, victimId);
 
     console.log(`[GameServer][${room.key}] ${victim.name} est mort${killer ? ` (tué par ${killer.name})` : ''} -> spectateur`);
 
@@ -329,6 +387,7 @@ function handleHunterAttack(room: GameRoom, hunterId: string, payload: HunterSho
     if (!arsenal) return;
 
     const now = Date.now();
+    arsenal.setDeployedMines(countHunterMines(room, hunterId));
     const refusal = arsenal.checkUse(weapon, now);
     if (refusal) {
         // On renvoie l'état officiel pour que le HUD du client se recale
@@ -357,6 +416,56 @@ function handleHunterAttack(room: GameRoom, hunterId: string, payload: HunterSho
                 fuseMs, grenadeId
             } satisfies ShotFiredPayload
         });
+    } else if (weapon === WeaponType.MINE) {
+        const { origin, landing } = computeMineLanding(hunter, aim, staticObstacles);
+        const armDelay = WEAPONS[WeaponType.MINE].fuseMs ?? 350;
+        const mineId = `mine-${hunterId}-${now}-${room.activeMines.length}`;
+        room.activeMines.push({ id: mineId, hunterId, x: landing.x, y: landing.y, armedAt: now + armDelay });
+
+        broadcastToRoom(room.key, {
+            type: MessageType.HUNTER_SHOOT,
+            payload: {
+                hunterId, weapon,
+                originX: origin.x, originY: origin.y,
+                impactX: landing.x, impactY: landing.y,
+                hitPlayerIds: [],
+                fuseMs: armDelay, mineId
+            } satisfies ShotFiredPayload
+        });
+    } else if (weapon === WeaponType.ZAP) {
+        const duration = WEAPONS[WeaponType.ZAP].durationMs ?? 3000;
+        const beam = resolveZapBeam(hunter, aim, players, staticObstacles);
+        room.activeZaps.set(hunterId, {
+            hunterId,
+            aimX: aim.x,
+            aimY: aim.y,
+            endsAt: now + duration,
+            damageAcc: 0,
+            lastHitId: beam.hitPlayerId
+        });
+
+        broadcastToRoom(room.key, {
+            type: MessageType.HUNTER_SHOOT,
+            payload: {
+                hunterId, weapon,
+                originX: beam.origin.x, originY: beam.origin.y,
+                impactX: beam.impact.x, impactY: beam.impact.y,
+                hitPlayerIds: beam.hitPlayerId ? [beam.hitPlayerId] : []
+            } satisfies ShotFiredPayload
+        });
+
+        broadcastToRoom(room.key, {
+            type: MessageType.ZAP_STATE,
+            payload: {
+                hunterId,
+                active: true,
+                originX: beam.origin.x,
+                originY: beam.origin.y,
+                impactX: beam.impact.x,
+                impactY: beam.impact.y,
+                hitPlayerId: beam.hitPlayerId ?? undefined
+            } satisfies ZapStatePayload
+        });
     } else {
         const result = weapon === WeaponType.PISTOL
             ? resolvePistolShot(hunter, aim, players, staticObstacles)
@@ -376,6 +485,100 @@ function handleHunterAttack(room: GameRoom, hunterId: string, payload: HunterSho
     }
 
     sendWeaponState(room, hunterId, now);
+}
+
+/** Met à jour les faisceaux Zap continus (suivi de visée + 30 DPS) */
+function updateZaps(room: GameRoom, now: number, deltaTime: number) {
+    if (room.activeZaps.size === 0) return;
+
+    if (room.roundManager.getPhase() !== GamePhase.HUNTING) {
+        Array.from(room.activeZaps.keys()).forEach(id => stopHunterZap(room, id));
+        return;
+    }
+
+    const dps = WEAPONS[WeaponType.ZAP].damage;
+
+    room.activeZaps.forEach((zap, hunterId) => {
+        const hunter = room.players.get(hunterId);
+        if (!hunter || !isAlive(hunter) || hunter.role !== PlayerRole.HUNTER || now >= zap.endsAt) {
+            stopHunterZap(room, hunterId);
+            sendWeaponState(room, hunterId, now);
+            return;
+        }
+
+        const beam = resolveZapBeam(hunter, { x: zap.aimX, y: zap.aimY }, room.players.values(), staticObstacles);
+        broadcastToRoom(room.key, {
+            type: MessageType.ZAP_STATE,
+            payload: {
+                hunterId,
+                active: true,
+                originX: beam.origin.x,
+                originY: beam.origin.y,
+                impactX: beam.impact.x,
+                impactY: beam.impact.y,
+                hitPlayerId: beam.hitPlayerId ?? undefined
+            } satisfies ZapStatePayload
+        });
+
+        if (beam.hitPlayerId) {
+            if (zap.lastHitId !== beam.hitPlayerId) {
+                zap.damageAcc = 0;
+                zap.lastHitId = beam.hitPlayerId;
+            }
+            zap.damageAcc += dps * deltaTime;
+            const wholeDamage = Math.floor(zap.damageAcc);
+            if (wholeDamage >= 1) {
+                zap.damageAcc -= wholeDamage;
+                applyDamage(room, beam.hitPlayerId, wholeDamage, hunterId, WeaponType.ZAP);
+            }
+        } else {
+            zap.lastHitId = null;
+            zap.damageAcc = 0;
+        }
+    });
+}
+
+/** Détecte les props qui passent sur les mines posées et déclenche l'explosion */
+function updateMines(room: GameRoom, now: number) {
+    if (room.activeMines.length === 0) return;
+    if (room.roundManager.getPhase() !== GamePhase.HUNTING) return;
+
+    const triggered: ActiveMine[] = [];
+    const remaining: ActiveMine[] = [];
+    const triggerRadius = WEAPONS[WeaponType.MINE].triggerRadius ?? 22;
+
+    for (const mine of room.activeMines) {
+        if (now >= mine.armedAt && shouldMineDetonate(mine, mine.hunterId, room.players.values(), staticObstacles, triggerRadius)) {
+            triggered.push(mine);
+        } else {
+            remaining.push(mine);
+        }
+    }
+
+    if (triggered.length === 0) return;
+    room.activeMines = remaining;
+
+    const blastRadius = WEAPONS[WeaponType.MINE].blastRadius ?? 65;
+    const affectedHunters = new Set<string>();
+
+    for (const mine of triggered) {
+        affectedHunters.add(mine.hunterId);
+        const hits = resolveExplosion(mine, mine.hunterId, room.players.values(), staticObstacles, WeaponType.MINE);
+        broadcastToRoom(room.key, {
+            type: MessageType.MINE_EXPLODED,
+            payload: {
+                mineId: mine.id,
+                hunterId: mine.hunterId,
+                x: mine.x,
+                y: mine.y,
+                radius: blastRadius,
+                hitPlayerIds: hits.map(h => h.playerId)
+            } satisfies MineExplodedPayload
+        });
+        hits.forEach(hit => applyDamage(room, hit.playerId, hit.damage, mine.hunterId, WeaponType.MINE));
+    }
+
+    affectedHunters.forEach(hunterId => sendWeaponState(room, hunterId, now));
 }
 
 /** Fait exploser les grenades dont le délai est écoulé */
@@ -444,7 +647,7 @@ function createRoom(isFreeplay: boolean = false): GameRoom {
         onRoundStarted: (assignments) => {
             console.log(`[GameServer][${roomKey}] Démarrage de la manche #${roundManager.getRoundNumber()} !`);
             roomArsenals.clear();
-            room.pendingGrenades = [];
+            clearRoomCombatEntities(room);
             const trackedInitPlayers: TelemetryInitPlayer[] = [];
 
             assignments.forEach((role, assignedPlayerId) => {
@@ -503,12 +706,12 @@ function createRoom(isFreeplay: boolean = false): GameRoom {
         },
         onPhaseChanged: (phase, timeRemaining) => {
             if (phase === GamePhase.ROUND_END) {
-                room.pendingGrenades = [];
+                clearRoomCombatEntities(room);
             }
             if (phase === GamePhase.LOBBY) {
                 // Retour au salon : tout le monde ressuscite sous forme humaine
                 roomArsenals.clear();
-                room.pendingGrenades = [];
+                clearRoomCombatEntities(room);
                 telemetryTracker.reset();
                 room.godPlayers.clear();
                 room.playerSpeeds.clear();
@@ -562,7 +765,9 @@ function createRoom(isFreeplay: boolean = false): GameRoom {
         godPlayers: new Set<string>(),
         playerSpeeds: new Map<string, number>(),
         arsenals: roomArsenals,
-        pendingGrenades: []
+        pendingGrenades: [],
+        activeZaps: new Map<string, ActiveZap>(),
+        activeMines: []
     };
     rooms.set(roomKey, room);
     console.log(`[GameServer] Salon créé : ${roomKey}`);
@@ -583,6 +788,8 @@ function leaveCurrentRoom(ws: WebSocket, playerId: string): void {
     room.playerRegenTimers.delete(playerId);
     room.godPlayers.delete(playerId);
     room.playerSpeeds.delete(playerId);
+    stopHunterZap(room, playerId);
+    removeHunterMines(room, playerId);
 
     broadcastToRoom(roomKey, {
         type: MessageType.PLAYER_LEFT,
@@ -635,6 +842,8 @@ function swapPlayerRole(room: GameRoom, targetId: string): PlayerRole.HUNTER | P
         sendWeaponState(room, targetId);
     } else {
         room.arsenals.delete(targetId);
+        stopHunterZap(room, targetId);
+        removeHunterMines(room, targetId);
     }
     return newRole;
 }
@@ -916,6 +1125,25 @@ wss.on('connection', (ws, req: IncomingMessage) => {
                     break;
                 }
 
+                case MessageType.HUNTER_ZAP_AIM: {
+                    const hunter = room.players.get(playerId);
+                    const zap = room.activeZaps.get(playerId);
+                    const payload = message.payload as HunterZapAimPayload;
+                    if (
+                        hunter &&
+                        isAlive(hunter) &&
+                        hunter.role === PlayerRole.HUNTER &&
+                        room.roundManager.canPlayerShoot(playerId) &&
+                        zap &&
+                        Number.isFinite(payload?.targetX) &&
+                        Number.isFinite(payload?.targetY)
+                    ) {
+                        zap.aimX = payload.targetX;
+                        zap.aimY = payload.targetY;
+                    }
+                    break;
+                }
+
                 case MessageType.HUNTER_RELOAD: {
                     const hunter = room.players.get(playerId);
                     const arsenal = room.arsenals.get(playerId);
@@ -989,6 +1217,8 @@ const gameLoop = new GameLoop((deltaTime: number) => {
 
     rooms.forEach((room) => {
         updateGrenades(room, now);
+        updateZaps(room, now, deltaTime);
+        updateMines(room, now);
 
         // Fin de rechargement du pistolet : on prévient le chasseur concerné
         room.arsenals.forEach((arsenal, hunterId) => {

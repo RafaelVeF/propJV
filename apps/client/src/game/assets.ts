@@ -1,4 +1,4 @@
-import { DEFAULT_PROPS, WEAPON_ORDER, WEAPONS, type WeaponType } from '@prop-hunt/shared';
+import { DEFAULT_PROPS, WEAPON_ORDER, WEAPONS, WeaponType } from '@prop-hunt/shared';
 
 function loadImage(src: string): HTMLImageElement {
   const img = new Image();
@@ -22,7 +22,7 @@ export function loadPropImages(): Map<string, HTMLImageElement> {
   return propImages;
 }
 
-/** Précharge les sprites des armes (rifle, wave_gun, launcher) */
+/** Précharge les sprites des armes (rifle, wave_gun, launcher, zap, landmine_launcher) */
 export function loadWeaponImages(): Map<WeaponType, HTMLImageElement> {
   const weaponImages = new Map<WeaponType, HTMLImageElement>();
   WEAPON_ORDER.forEach(type => {
@@ -30,6 +30,12 @@ export function loadWeaponImages(): Map<WeaponType, HTMLImageElement> {
     if (path) weaponImages.set(type, loadImage(path));
   });
   return weaponImages;
+}
+
+/** Précharge le sprite de la mine posée au sol */
+export function loadMineGroundImage(): HTMLImageElement | undefined {
+  const path = WEAPONS[WeaponType.MINE].groundIconPath;
+  return path ? loadImage(path) : undefined;
 }
 
 export interface DroneImages {
