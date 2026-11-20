@@ -374,7 +374,7 @@ export function renderProfile(): string {
 
           <!-- Solde de Pièces -->
           <div class="profile-balance-widget" id="profile-coins-display">
-            <span class="coin-icon">🪙</span>
+            <img src="/assets/coin.svg" class="coin-icon" alt="🪙" />
             <div class="balance-text-group">
               <span class="balance-amount">${state.coins}</span>
               <span class="balance-label">pièces</span>
@@ -544,7 +544,7 @@ export function initProfile(): void {
     const coinsDisplay = document.getElementById('profile-coins-display');
     if (coinsDisplay) {
       coinsDisplay.innerHTML = `
-        <span class="coin-icon">🪙</span>
+        <img src="/assets/coin.svg" class="coin-icon" alt="🪙" />
         <div class="balance-text-group">
           <span class="balance-amount">${state.coins}</span>
           <span class="balance-label">pièces</span>

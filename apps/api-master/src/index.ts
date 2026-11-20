@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import { GAME_NAME } from '@prop-hunt/shared';
 import authRoutes from './routes/auth.js';
 import friendsRoutes from './routes/friends.js';
+import achievementsRoutes from './routes/achievements.js';
 import internalRoutes from './routes/internal.js';
 import statsRoutes from './routes/stats.js';
 import { pool } from './db.js';
@@ -28,6 +29,10 @@ app.use('/api/auth', authRoutes);
 // Activation des routes d'amis (/friends et /api/friends pour compatibilité)
 app.use('/friends', friendsRoutes);
 app.use('/api/friends', friendsRoutes);
+
+// Activation des routes de gestion des succès (/achievements et /api/achievements)
+app.use('/achievements', achievementsRoutes);
+app.use('/api/achievements', achievementsRoutes);
 
 // Routes internes sécurisées (game-server -> api-master)
 app.use('/api/internal', internalRoutes);

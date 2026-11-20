@@ -31,15 +31,62 @@ INSERT INTO users_relationships (user_relationship_id, user_id_1, user_id_2, sta
 
 -- 5. Succès
 INSERT INTO achievements (achievement_id, internal_name, reward, target_value, created_by) VALUES
-(1, 'ach_first_win',   50, 1, 1),
-(2, 'ach_chameleon',  100, 1, 1),
-(3, 'ach_terminator', 150, 3, 1);
+(1,  'ach_first_win',       50,    1, 1),
+(2,  'ach_chameleon',      100,   15, 1),
+(3,  'ach_terminator',     300,   20, 1),
+(4,  'ach_win_25',         500,   25, 1),
+(5,  'ach_kill_1',          50,    1, 1),
+(6,  'ach_cleaner',        150,    5, 1),
+(7,  'ach_win_5',          100,    5, 1),
+(8,  'ach_win_10',         250,   10, 1),
+(9,  'ach_survive_time',   150,  600, 1),
+(10, 'ach_rich',           200, 1000, 1),
+(11, 'ach_taunt_spam',     100,   10, 1),
+(12, 'ach_props_smasher',  100,   10, 1),
+(13, 'ach_streak_3',       150,    3, 1),
+(14, 'ach_make_friend',     50,    1, 1),
+(15, 'ach_damage_dealer',  150,  500, 1),
+(16, 'ach_veteran',        150,   10, 1);
+
+INSERT INTO achievements_translations (achievement_translation_id, achievement_id, language_id, display_name, description, created_by) VALUES
+(1,  1,  1, 'First Victory', 'Win your very first match as Hider or Seeker.', 1),
+(2,  1,  2, 'Première Victoire', 'Remportez votre toute première partie en tant que Prop ou Chasseur.', 1),
+(3,  2,  1, 'Compulsive Chameleon', 'Morph at least 15 times into different Props.', 1),
+(4,  2,  2, 'Caméléon Compulsif', 'Métamorphosez-vous au moins 15 fois en Prop.', 1),
+(5,  3,  1, 'Terminator', 'Eliminate 20 Props in total.', 1),
+(6,  3,  2, 'Terminator', 'Éliminez 20 Props au total.', 1),
+(7,  4,  1, 'Living Legend', 'Achieve 25 victories overall.', 1),
+(8,  4,  2, 'Légende Vivante', 'Remportez 25 victoires au total.', 1),
+(9,  5,  1, 'First Blood', 'Eliminate your first Prop as a Seeker.', 1),
+(10, 5,  2, 'Premier Sang', 'Éliminez votre premier Prop en tant que Chasseur.', 1),
+(11, 6,  1, 'The Cleaner', 'Eliminate 5 Props in total.', 1),
+(12, 6,  2, 'Nettoyeur', 'Éliminez 5 Props au total.', 1),
+(13, 7,  1, 'Podium Regular', 'Achieve 5 victories overall.', 1),
+(14, 7,  2, 'Habitué du Podium', 'Remportez 5 victoires au total.', 1),
+(15, 8,  1, 'Game Master', 'Achieve 10 victories overall.', 1),
+(16, 8,  2, 'Maître du Jeu', 'Remportez 10 victoires au total.', 1),
+(17, 9,  1, 'Extreme Survivor', 'Survive for a total of 10 minutes (600 seconds) as a Prop.', 1),
+(18, 9,  2, 'Survivant de l’Extrême', 'Cumulez 10 minutes (600 secondes) de survie en tant que Prop.', 1),
+(19, 10, 1, 'Filthy Rich', 'Reach a balance of 1,000 coins in your bank.', 1),
+(20, 10, 2, 'Plein aux As', 'Atteignez un solde de 1 000 pièces en banque.', 1),
+(21, 11, 1, 'Chicken Taunter', 'Trigger 10 taunts (Cot-cot!) to mock the Seekers.', 1),
+(22, 11, 2, 'La Poule Mouillée', 'Déclenchez 10 railleries (Cot-cot !) pour narguer les Chasseurs.', 1),
+(23, 12, 1, 'Demolition Squad', 'Destroy 10 scenery objects or decoy props.', 1),
+(24, 12, 2, 'Démolisseur', 'Détruisez 10 objets du décor ou faux props.', 1),
+(25, 13, 1, 'On Fire', 'Chain a win streak of 3 consecutive matches.', 1),
+(26, 13, 2, 'Série Brûlante', 'Enchaînez une série de 3 victoires consécutives.', 1),
+(27, 14, 1, 'True Friendship', 'Have at least 1 accepted friend in your list.', 1),
+(28, 14, 2, 'C’est Beau l’Amitié', 'Ayez au moins 1 ami dans votre liste d’amis.', 1),
+(29, 15, 1, 'Heavy Artillery', 'Deal a total of 500 damage to opponents.', 1),
+(30, 15, 2, 'Gros Calibres', 'Infligez un total de 500 dégâts aux adversaires.', 1),
+(31, 16, 1, 'PropJV Veteran', 'Play at least 10 full matches.', 1),
+(32, 16, 2, 'Vétéran de PropJV', 'Disputez au moins 10 parties complètes.', 1);
 
 INSERT INTO users_achievements (user_achievement_id, user_id, achievement_id, progress, is_unlocked, unlocked_at, created_by) VALUES
 (1, 2, 1, 1, TRUE,  '2026-10-06 14:10:00', 1),
-(2, 2, 2, 1, TRUE,  '2026-10-06 16:30:00', 1),
+(2, 2, 2, 15, TRUE, '2026-10-06 16:30:00', 1),
 (3, 3, 1, 1, TRUE,  '2026-10-06 15:00:00', 1),
-(4, 3, 3, 3, TRUE,  '2026-10-06 18:45:00', 1),
+(4, 3, 3, 20, TRUE, '2026-10-06 18:45:00', 1),
 (5, 2, 3, 1, FALSE, NULL,                  1);
 
 -- 6. Taunts

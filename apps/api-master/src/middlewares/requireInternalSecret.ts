@@ -6,7 +6,7 @@ export const requireInternalSecret = (
     res: Response,
     next: NextFunction
 ): void => {
-    const expectedSecret = process.env.INTERNAL_API_SECRET?.trim();
+    const expectedSecret = process.env.INTERNAL_API_SECRET?.trim() || 'prop-hunt-internal-secret-local-dev';
     if (!expectedSecret) {
         console.error('[InternalAuth] INTERNAL_API_SECRET non configuré dans .env');
         res.status(500).json({
