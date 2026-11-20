@@ -22,9 +22,12 @@ export enum MessageType {
   PLAYER_MOVE = 'PLAYER_MOVE',
   TRANSFORM_PROP = 'TRANSFORM_PROP',
   HUNTER_SHOOT = 'HUNTER_SHOOT',
+  HUNTER_ZAP_AIM = 'HUNTER_ZAP_AIM',
   HUNTER_RELOAD = 'HUNTER_RELOAD',
   WEAPON_STATE = 'WEAPON_STATE',
   GRENADE_EXPLODED = 'GRENADE_EXPLODED',
+  ZAP_STATE = 'ZAP_STATE',
+  MINE_EXPLODED = 'MINE_EXPLODED',
   PLAYER_HIT = 'PLAYER_HIT',
   PLAYER_DIED = 'PLAYER_DIED',
   PROP_LOCK = 'PROP_LOCK',
@@ -254,17 +257,19 @@ export interface TransformPropPayload {
 export enum WeaponType {
   PISTOL = 'PISTOL',
   CROWBAR = 'CROWBAR',
-  GRENADE = 'GRENADE'
+  GRENADE = 'GRENADE',
+  ZAP = 'ZAP',
+  MINE = 'MINE'
 }
 
 export interface WeaponDefinition {
   type: WeaponType;
   displayName: string;
-  /** Touche de sélection rapide (1, 2, 3) */
+  /** Touche de sélection rapide (1..5) */
   slot: number;
-  /** Dégâts infligés (pour la grenade : dégâts au centre de l'explosion) */
+  /** Dégâts infligés (grenade/mine : dégâts au centre ; zap : dégâts par seconde) */
   damage: number;
-  /** Portée max en px (pistolet : distance du tir, pied de biche : allonge, grenade : distance de lancer) */
+  /** Portée max en px */
   range: number;
   /** Délai minimum entre deux utilisations (ms) */
   cooldownMs: number;
@@ -274,13 +279,20 @@ export interface WeaponDefinition {
   reloadMs?: number;
   /** Angle d'attaque total en degrés (corps à corps) */
   arcDegrees?: number;
-  /** Rayon de l'explosion (grenade) */
+  /** Durée d'émission continue (zap, ms) */
+  durationMs?: number;
+  /** Rayon d'explosion (grenade / mine) */
   blastRadius?: number;
-  /** Délai avant explosion après le lancer (grenade, ms) */
+  /** Délai d'armement / avant explosion après le lancer (ms) */
   fuseMs?: number;
+  /** Rayon de détection d'un prop (mine) */
+  triggerRadius?: number;
+  /** Nombre max déployé simultanément par chasseur (mine) */
+  maxDeployed?: number;
   /** Part des dégâts conservée au bord de l'explosion (0.35 = 35 %) */
   edgeDamageRatio?: number;
   iconPath?: string;
+  groundIconPath?: string;
 }
 
 export const WEAPONS: Record<WeaponType, WeaponDefinition> = {
@@ -316,10 +328,41 @@ export const WEAPONS: Record<WeaponType, WeaponDefinition> = {
     fuseMs: 1200,
     edgeDamageRatio: 0.35,
     iconPath: '/assets/weapons/launcher.png'
+  },
+  [WeaponType.ZAP]: {
+    type: WeaponType.ZAP,
+    displayName: 'Zap Laser',
+    slot: 4,
+    damage: 30,
+    range: 360,
+    durationMs: 3000,
+    cooldownMs: 5000,
+    iconPath: '/assets/weapons/zap.png'
+  },
+  [WeaponType.MINE]: {
+    type: WeaponType.MINE,
+    displayName: 'Mines',
+    slot: 5,
+    damage: 60,
+    range: 220,
+    cooldownMs: 400,
+    fuseMs: 350,
+    triggerRadius: 22,
+    blastRadius: 65,
+    edgeDamageRatio: 0.4,
+    maxDeployed: 5,
+    iconPath: '/assets/weapons/landmine_launcher.png',
+    groundIconPath: '/assets/weapons/landmine.png'
   }
 };
 
-export const WEAPON_ORDER: WeaponType[] = [WeaponType.PISTOL, WeaponType.CROWBAR, WeaponType.GRENADE];
+export const WEAPON_ORDER: WeaponType[] = [
+  WeaponType.PISTOL,
+  WeaponType.CROWBAR,
+  WeaponType.GRENADE,
+  WeaponType.ZAP,
+  WeaponType.MINE
+];
 
 /** Client -> Serveur : intention de tir. Le serveur calcule lui-même qui est touché. */
 export interface HunterShootPayload {
@@ -337,13 +380,14 @@ export interface ShotFiredPayload {
   weapon: WeaponType;
   originX: number;
   originY: number;
-  /** Point d'impact (pistolet), point frappé (pied de biche) ou point d'atterrissage (grenade) */
+  /** Point d'impact (pistolet / zap), point frappé (canon à ondes) ou point d'atterrissage (grenade / mine) */
   impactX: number;
   impactY: number;
   hitPlayerIds: string[];
-  /** Grenade : délai avant explosion (ms) */
+  /** Grenade / Mine : délai avant explosion / armement (ms) */
   fuseMs?: number;
   grenadeId?: string;
+  mineId?: string;
 }
 
 export interface GrenadeExplodedPayload {
@@ -355,6 +399,32 @@ export interface GrenadeExplodedPayload {
   hitPlayerIds: string[];
 }
 
+export interface MineExplodedPayload {
+  mineId: string;
+  hunterId: string;
+  x: number;
+  y: number;
+  radius: number;
+  hitPlayerIds: string[];
+}
+
+/** Client -> Serveur : mise à jour de la visée pendant que le Zap est actif */
+export interface HunterZapAimPayload {
+  targetX: number;
+  targetY: number;
+}
+
+/** Serveur -> Clients : état continu du faisceau laser Zap */
+export interface ZapStatePayload {
+  hunterId: string;
+  active: boolean;
+  originX: number;
+  originY: number;
+  impactX: number;
+  impactY: number;
+  hitPlayerId?: string;
+}
+
 /** Client -> Serveur : demande de rechargement du pistolet */
 export interface HunterReloadPayload {
   weapon?: WeaponType;
@@ -364,6 +434,12 @@ export interface WeaponSlotState {
   weapon: WeaponType;
   ammo?: number;
   magazineSize?: number;
+  /** Nombre actuellement posé sur la carte (mine) */
+  deployedCount?: number;
+  /** Nombre maximum posable simultanément (mine) */
+  maxDeployed?: number;
+  /** Temps restant d'activation continue (zap, ms) */
+  activeRemainingMs?: number;
   /** Temps restant avant de pouvoir réutiliser l'arme (ms, relatif pour éviter les écarts d'horloge) */
   cooldownRemainingMs: number;
   /** Temps restant de rechargement (ms), 0 si pas en rechargement */

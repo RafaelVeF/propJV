@@ -86,13 +86,13 @@ export function registerGameInput(deps: GameInputDeps): void {
       return;
     }
 
-    // 3. Chasseur : sélection d'arme (1/2/3), rechargement (R) et roue d'emotes (E)
+    // 3. Chasseur : sélection d'arme (1..5), rechargement (R) et roue d'emotes (E)
     if (state.localPlayerRole === PlayerRole.HUNTER) {
       if (key === 'e' && player.health > 0) {
         emoteWheel.toggle();
         return;
       }
-      const slotWeapon = WeaponController.weaponForKey(e.key);
+      const slotWeapon = WeaponController.weaponForKey(e.key, e.code);
       if (slotWeapon) {
         weapons.select(slotWeapon);
         return;

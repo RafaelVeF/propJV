@@ -6,6 +6,7 @@ import {
   WEAPONS,
   WEAPON_ORDER,
   type HunterShootPayload,
+  type HunterZapAimPayload,
   type WeaponStatePayload
 } from '@prop-hunt/shared';
 import { networkManager } from '../../network/networkManager';
@@ -19,6 +20,9 @@ import { drawHunterDrone, HOLD_OFFSET_Y } from './weaponSprites';
 interface WeaponView {
   ammo?: number;
   magazineSize?: number;
+  deployedCount?: number;
+  maxDeployed?: number;
+  activeEndsAt: number;
   cooldownEndsAt: number;
   reloadEndsAt: number;
 }
@@ -31,6 +35,7 @@ export class WeaponController {
   public selectedWeapon: WeaponType = WeaponType.PISTOL;
   private readonly weaponView = new Map<WeaponType, WeaponView>();
   private readonly weaponSlots = new Map<WeaponType, { root: HTMLElement; info: HTMLElement; progress: HTMLElement }>();
+  private lastZapAimSentAt = 0;
 
   constructor(
     private readonly state: GameState,
@@ -52,9 +57,13 @@ export class WeaponController {
   /** Chargeurs pleins et aucun délai (début de manche) */
   public resetView(): void {
     WEAPON_ORDER.forEach(type => {
+      const def = WEAPONS[type];
       this.weaponView.set(type, {
-        ammo: WEAPONS[type].magazineSize,
-        magazineSize: WEAPONS[type].magazineSize,
+        ammo: def.magazineSize,
+        magazineSize: def.magazineSize,
+        deployedCount: def.maxDeployed !== undefined ? 0 : undefined,
+        maxDeployed: def.maxDeployed,
+        activeEndsAt: 0,
         cooldownEndsAt: 0,
         reloadEndsAt: 0
       });
@@ -65,10 +74,15 @@ export class WeaponController {
   public applyServerState(payload: WeaponStatePayload): void {
     const now = Date.now();
     payload.weapons.forEach(w => {
+      const activeMs = w.activeRemainingMs ?? 0;
+      const activeEndsAt = activeMs > 0 ? now + activeMs : 0;
       this.weaponView.set(w.weapon, {
         ammo: w.ammo,
         magazineSize: w.magazineSize,
-        cooldownEndsAt: now + w.cooldownRemainingMs,
+        deployedCount: w.deployedCount,
+        maxDeployed: w.maxDeployed,
+        activeEndsAt,
+        cooldownEndsAt: (activeEndsAt || now) + w.cooldownRemainingMs,
         reloadEndsAt: now + w.reloadRemainingMs
       });
     });
@@ -85,18 +99,28 @@ export class WeaponController {
     this.select(WEAPON_ORDER[(idx + direction + WEAPON_ORDER.length) % WEAPON_ORDER.length]);
   }
 
-  /** Arme associée à une touche (1, 2, 3...) */
-  public static weaponForKey(key: string): WeaponType | undefined {
-    return WEAPON_ORDER.find(type => String(WEAPONS[type].slot) === key);
+  /** Arme associée à une touche (1..5, compatible AZERTY et QWERTY via event.code) */
+  public static weaponForKey(key: string, code?: string): WeaponType | undefined {
+    return WEAPON_ORDER.find(type => {
+      const slot = String(WEAPONS[type].slot);
+      return slot === key || code === `Digit${slot}` || code === `Numpad${slot}`;
+    });
   }
 
   /** Vérification locale, uniquement pour éviter d'envoyer des tirs inutiles (le serveur revérifie tout) */
   public isReady(type: WeaponType, now = Date.now()): boolean {
     const view = this.weaponView.get(type);
     if (!view) return false;
+    if (now < view.activeEndsAt) return false;
     if (now < view.cooldownEndsAt) return false;
     if (type === WeaponType.PISTOL && (now < view.reloadEndsAt || (view.ammo ?? 0) <= 0)) return false;
+    if (type === WeaponType.MINE && (view.deployedCount ?? 0) >= (view.maxDeployed ?? 5)) return false;
     return true;
+  }
+
+  public isZapActive(now = Date.now()): boolean {
+    const view = this.weaponView.get(WeaponType.ZAP);
+    return Boolean(view && now < view.activeEndsAt);
   }
 
   /** Progression du rechargement du pistolet (0 à 1), ou null s'il ne recharge pas */
@@ -122,12 +146,34 @@ export class WeaponController {
 
     // Prédiction locale du délai (corrigée par le WEAPON_STATE du serveur)
     const view = this.weaponView.get(this.selectedWeapon)!;
-    view.cooldownEndsAt = now + WEAPONS[this.selectedWeapon].cooldownMs;
-    if (this.selectedWeapon === WeaponType.PISTOL && view.ammo !== undefined) {
-      view.ammo = Math.max(0, view.ammo - 1);
-      if (view.ammo === 0) view.reloadEndsAt = now + (WEAPONS[WeaponType.PISTOL].reloadMs ?? 0);
+    if (this.selectedWeapon === WeaponType.ZAP) {
+      const duration = WEAPONS[WeaponType.ZAP].durationMs ?? 3000;
+      view.activeEndsAt = now + duration;
+      view.cooldownEndsAt = view.activeEndsAt + WEAPONS[WeaponType.ZAP].cooldownMs;
+    } else {
+      view.cooldownEndsAt = now + WEAPONS[this.selectedWeapon].cooldownMs;
+      if (this.selectedWeapon === WeaponType.PISTOL && view.ammo !== undefined) {
+        view.ammo = Math.max(0, view.ammo - 1);
+        if (view.ammo === 0) view.reloadEndsAt = now + (WEAPONS[WeaponType.PISTOL].reloadMs ?? 0);
+      } else if (this.selectedWeapon === WeaponType.MINE && view.deployedCount !== undefined) {
+        view.deployedCount = Math.min(view.maxDeployed ?? 5, view.deployedCount + 1);
+      }
     }
     this.updateHud();
+  }
+
+  /** Met à jour la visée du Zap continu vers le curseur pendant l'émission (max ~22 Hz) */
+  public syncActiveZap(now = Date.now()): void {
+    if (!this.isZapActive(now)) return;
+    if (!isLocalHunterArmed(this.state) || this.state.currentPhase !== GamePhase.HUNTING) return;
+    if (now - this.lastZapAimSentAt < 45) return;
+    this.lastZapAimSentAt = now;
+
+    const target = screenToWorld(this.state, this.canvas, this.state.mouse.x, this.state.mouse.y);
+    networkManager.send<HunterZapAimPayload>(MessageType.HUNTER_ZAP_AIM, {
+      targetX: target.x,
+      targetY: target.y
+    });
   }
 
   public requestReload(): void {
@@ -157,16 +203,27 @@ export class WeaponController {
       slot.root.style.transform = isSelected ? 'translateY(-4px)' : 'none';
 
       const reloadLeft = view.reloadEndsAt - now;
+      const activeLeft = view.activeEndsAt - now;
       const cooldownLeft = view.cooldownEndsAt - now;
-      if (type === WeaponType.PISTOL && reloadLeft > 0) {
+
+      if (type === WeaponType.ZAP && activeLeft > 0) {
+        slot.info.textContent = `ACTIF ${(activeLeft / 1000).toFixed(1)}s`;
+        slot.info.style.color = '#fb923c';
+        slot.progress.style.width = `${100 * (activeLeft / (def.durationMs ?? 3000))}%`;
+      } else if (type === WeaponType.PISTOL && reloadLeft > 0) {
         slot.info.textContent = 'RECHARGE...';
         slot.info.style.color = '#38bdf8';
         slot.progress.style.width = `${100 * (1 - reloadLeft / (def.reloadMs ?? 1))}%`;
       } else if (cooldownLeft > 1000) {
-        // Long délai (grenade) : on affiche le compte à rebours
+        // Long délai (grenade / zap) : on affiche le compte à rebours
         slot.info.textContent = `${Math.ceil(cooldownLeft / 1000)}s`;
         slot.info.style.color = '#f87171';
         slot.progress.style.width = `${100 * (1 - cooldownLeft / def.cooldownMs)}%`;
+      } else if (type === WeaponType.MINE && view.maxDeployed !== undefined) {
+        const remaining = Math.max(0, view.maxDeployed - (view.deployedCount ?? 0));
+        slot.info.textContent = `${remaining} / ${view.maxDeployed}`;
+        slot.info.style.color = remaining === 0 ? '#f87171' : '#fbbf24';
+        slot.progress.style.width = '0%';
       } else {
         slot.info.textContent = view.magazineSize !== undefined ? `${view.ammo} / ${view.magazineSize}` : 'PRÊT';
         slot.info.style.color = view.ammo === 0 ? '#f87171' : '#fbbf24';
@@ -231,31 +288,43 @@ export class WeaponController {
     const dirY = cursorDistFromOrigin > 0 ? (aim.y - serverOy) / cursorDistFromOrigin : Math.sin(angle);
 
     ctx.save();
-    if (this.selectedWeapon === WeaponType.PISTOL) {
-      const def = WEAPONS[WeaponType.PISTOL];
+    if (this.selectedWeapon === WeaponType.PISTOL || this.selectedWeapon === WeaponType.ZAP) {
+      const isZap = this.selectedWeapon === WeaponType.ZAP;
+      const def = WEAPONS[this.selectedWeapon];
       const clampedDist = Math.min(def.range, cursorDistFromOrigin);
       const endX = serverOx + dirX * clampedDist;
       const endY = serverOy + dirY * clampedDist;
 
       ctx.setLineDash([4, 4]);
-      ctx.strokeStyle = ready ? 'rgba(251, 191, 36, 0.55)' : 'rgba(148, 163, 184, 0.35)';
+      ctx.strokeStyle = isZap
+        ? (ready ? 'rgba(251, 146, 60, 0.7)' : 'rgba(148, 163, 184, 0.35)')
+        : (ready ? 'rgba(251, 191, 36, 0.55)' : 'rgba(148, 163, 184, 0.35)');
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(muzzleX, muzzleY);
       ctx.lineTo(endX, endY);
       ctx.stroke();
-    } else if (this.selectedWeapon === WeaponType.GRENADE) {
-      const def = WEAPONS[WeaponType.GRENADE];
+    } else if (this.selectedWeapon === WeaponType.GRENADE || this.selectedWeapon === WeaponType.MINE) {
+      const isMine = this.selectedWeapon === WeaponType.MINE;
+      const def = WEAPONS[this.selectedWeapon];
       const travel = Math.min(def.range, cursorDistFromOrigin);
       const lx = serverOx + dirX * travel;
       const ly = serverOy + dirY * travel;
 
       ctx.setLineDash([4, 4]);
-      ctx.strokeStyle = ready ? 'rgba(251, 191, 36, 0.8)' : 'rgba(148, 163, 184, 0.45)';
+      ctx.strokeStyle = isMine
+        ? (ready ? 'rgba(249, 115, 22, 0.8)' : 'rgba(148, 163, 184, 0.45)')
+        : (ready ? 'rgba(251, 191, 36, 0.8)' : 'rgba(148, 163, 184, 0.45)');
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.arc(lx, ly, def.blastRadius ?? 80, 0, Math.PI * 2);
       ctx.stroke();
+      if (isMine && def.triggerRadius) {
+        ctx.strokeStyle = ready ? 'rgba(239, 68, 68, 0.9)' : 'rgba(148, 163, 184, 0.45)';
+        ctx.beginPath();
+        ctx.arc(lx, ly, def.triggerRadius, 0, Math.PI * 2);
+        ctx.stroke();
+      }
       ctx.beginPath();
       ctx.moveTo(muzzleX, muzzleY);
       ctx.lineTo(lx, ly);
