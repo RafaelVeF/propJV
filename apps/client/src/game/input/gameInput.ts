@@ -42,6 +42,12 @@ export function registerGameInput(deps: GameInputDeps): void {
       return;
     }
 
+    // E ouvre ou ferme les roues une seule fois par appui
+    if (e.key.toLowerCase() === 'e' && e.repeat) {
+      e.preventDefault();
+      return;
+    }
+
     if (e.key === 'Escape' && state.isFullMapOpen) {
       minimap.setFullMapOpen(false);
       return;
