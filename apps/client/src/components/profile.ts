@@ -323,15 +323,31 @@ export function renderProfile(): string {
   return `
     <!-- Vue 5 : Profil & Inventaire (Grand Format Harmonieux) -->
     <div id="view-profile" class="view modal-view profile-modal hidden">
-      <div class="profile-dashboard-top-bar">
-        <div class="top-title-group">
-          <h2 class="view-title blue-text">PROFIL & INVENTAIRE</h2>
-          <span class="top-subtitle">Gérez vos répliques sonores et consultez votre équipement de traqueur</span>
+      <header class="local-top-bar">
+        <div class="local-top-inner">
+          <div class="local-top-left">
+            <button type="button" class="local-back-btn" id="btn-back-main-from-profile-top">
+              ← RETOUR
+            </button>
+          </div>
+
+          <h1 class="local-brand-title">
+            <span class="purple-text">PROFIL</span>
+            <span class="stats-header-sep">&amp;</span>
+            <span class="blue-text">CASIER</span>
+          </h1>
+
+          <div class="local-top-right">
+            <div class="profile-balance-widget" id="profile-coins-display">
+              <img src="/assets/coin.svg" class="coin-icon" alt="🪙" />
+              <div class="balance-text-group">
+                <span class="balance-amount">${state.coins}</span>
+                <span class="balance-label">pièces</span>
+              </div>
+            </div>
+          </div>
         </div>
-        <button class="btn back top-back-btn" id="btn-back-main-from-profile-top">
-          ← RETOUR
-        </button>
-      </div>
+      </header>
 
       <!-- Toast contextuel pour retours d'actions -->
       <div class="profile-toast ${state.notificationMessage ? 'show' : ''}" id="profile-toast-message">
@@ -369,15 +385,6 @@ export function renderProfile(): string {
             <div class="profile-stat-box">
               <span class="stat-box-label">VICTOIRES HIDER</span>
               <span class="stat-box-value text-purple" id="profile-hider-wins">${state.hiderWins} victoires</span>
-            </div>
-          </div>
-
-          <!-- Solde de Pièces -->
-          <div class="profile-balance-widget" id="profile-coins-display">
-            <img src="/assets/coin.svg" class="coin-icon" alt="🪙" />
-            <div class="balance-text-group">
-              <span class="balance-amount">${state.coins}</span>
-              <span class="balance-label">pièces</span>
             </div>
           </div>
         </div>

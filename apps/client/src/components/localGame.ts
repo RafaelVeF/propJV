@@ -116,9 +116,6 @@ export function renderLocalGame(): string {
                 <h2 class="local-section-title">SALONS PUBLICS</h2>
               </div>
 
-              <button type="button" class="local-refresh-btn" id="btn-refresh-servers">
-                ACTUALISER
-              </button>
             </div>
 
             <!-- En-tête de colonnes de la table plate -->

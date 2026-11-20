@@ -61,7 +61,7 @@ export function renderMainMenu(): string {
               <img src="${logoUrl}" alt="PropJV" class="mm-logo" />
               <div class="mm-brand-text">
                 <h1 class="mm-brand-title">PROPJV</h1>
-                <span class="mm-brand-sub">PROP HUNT MULTIJOUER</span>
+                <span class="mm-brand-sub">PROP HUNT MULTIJOUEUR</span>
               </div>
             </div>
 
@@ -182,20 +182,7 @@ function initDioramaCanvas(viewMain: HTMLElement): void {
   const bagImg = loadSprite('/assets/props/bag/Bag_F.png');
   const canImg = loadSprite('/assets/props/can/Can_F.png');
 
-  // Emotes animées (EmoteAmazed.png et EmoteDance.png depuis DEFAULT_HUNTER_EMOTES)
-  const amazedEmoteDef: HunterEmoteDefinition =
-    DEFAULT_HUNTER_EMOTES.find((e) => e.id === 'amazed') ?? {
-      id: 'amazed',
-      name: 'Étonné',
-      assetPath: '/assets/emotes/EmoteAmazed.png',
-      cols: 3,
-      rows: 3,
-      frameWidth: 64,
-      frameHeight: 64,
-      frameCount: 7,
-      previewFrame: 4,
-      fps: 8,
-    };
+  // Spritesheet de danse du grand Seeker (EmoteDance.png : 256x256 -> grille 4x4 de cellules 64x64, 15 frames, 10 FPS)
   const danceEmoteDef: HunterEmoteDefinition =
     DEFAULT_HUNTER_EMOTES.find((e) => e.id === 'dance') ?? {
       id: 'dance',
@@ -209,12 +196,7 @@ function initDioramaCanvas(viewMain: HTMLElement): void {
       previewFrame: 10,
       fps: 10,
     };
-
-  const emoteDefs = [amazedEmoteDef, danceEmoteDef];
-  const emoteSheets = new Map<string, HTMLImageElement>([
-    [amazedEmoteDef.id, loadSprite(amazedEmoteDef.assetPath)],
-    [danceEmoteDef.id, loadSprite(danceEmoteDef.assetPath)],
-  ]);
+  const danceSheet = loadSprite(danceEmoteDef.assetPath);
 
   let rafId: number | null = null;
   let width = window.innerWidth;
@@ -241,12 +223,12 @@ function initDioramaCanvas(viewMain: HTMLElement): void {
   }
 
   /**
-   * Calcule l'état de patrouille du Seeker :
-   * Cycle de 14 secondes :
-   * - [0.0s .. 4.2s] : marche vers la droite (move_e)
-   * - [4.2s .. 7.0s] : s'arrête et scrute les objets à droite puis à gauche (idle_right -> idle_left)
-   * - [7.0s .. 11.2s] : repart vers la gauche (move_w)
-   * - [11.2s .. 14.0s] : s'arrête et scrute autour de lui (idle_left -> idle_right)
+   * Calcule l'état de patrouille du grand Seeker en 3 temps (cycle de 12.6 secondes) :
+   * 1. [0.0s .. 4.0s] : marche vers la droite (MoveHuntRight.png)
+   *    [4.0s .. 5.8s] : courte pause d'observation à droite (IdleHuntRight.png)
+   * 2. [5.8s .. 9.8s] : marche retour vers la gauche jusqu'à sa position de départ (MoveHuntLeft.png)
+   *    [9.8s .. 10.3s] : bref arrêt au point de départ (IdleHuntLeft.png)
+   * 3. [10.3s .. 12.6s] : phase de danse en fin de cycle complet (EmoteDance.png à taille réelle pendant 2.3s)
    */
   function computeSeekerPatrol(
     tSec: number,
@@ -255,60 +237,78 @@ function initDioramaCanvas(viewMain: HTMLElement): void {
   ): {
     x: number;
     animKey: keyof typeof seekerSpecs;
+    isDancing: boolean;
     facingDir: 1 | -1;
     phaseElapsedMs: number;
     bobY: number;
   } {
-    const cycleDur = 14.0;
+    const cycleDur = 12.6;
     const c = tSec % cycleDur;
 
-    if (c < 4.2) {
-      const p = c / 4.2;
-      // Interpolation douce aux extrémités
+    // 1a. Marche vers la droite
+    if (c < 4.0) {
+      const p = c / 4.0;
       const smooth = p * p * (3 - 2 * p);
       return {
         x: minX + (maxX - minX) * smooth,
         animKey: 'move_e',
+        isDancing: false,
         facingDir: 1,
         phaseElapsedMs: c * 1000,
         bobY: 0,
       };
     }
 
-    if (c < 7.0) {
-      const pauseElapsed = c - 4.2;
-      // Regarde à droite vers la canette/chaise, puis jette un coup d'œil à gauche
-      const lookLeft = pauseElapsed > 1.65;
+    // 1b. Courte pause d'observation à droite
+    if (c < 5.8) {
+      const pauseElapsed = c - 4.0;
       return {
         x: maxX,
-        animKey: lookLeft ? 'idle_left' : 'idle_right',
-        facingDir: lookLeft ? -1 : 1,
+        animKey: 'idle_right',
+        isDancing: false,
+        facingDir: 1,
         phaseElapsedMs: pauseElapsed * 1000,
-        bobY: Math.sin(pauseElapsed * 3.2) * 1.5,
+        bobY: Math.sin(pauseElapsed * 3.2) * 1.2,
       };
     }
 
-    if (c < 11.2) {
-      const moveElapsed = c - 7.0;
-      const p = moveElapsed / 4.2;
+    // 2a. Marche retour vers la gauche jusqu'à sa position de départ
+    if (c < 9.8) {
+      const moveElapsed = c - 5.8;
+      const p = moveElapsed / 4.0;
       const smooth = p * p * (3 - 2 * p);
       return {
         x: maxX - (maxX - minX) * smooth,
         animKey: 'move_w',
+        isDancing: false,
         facingDir: -1,
         phaseElapsedMs: moveElapsed * 1000,
         bobY: 0,
       };
     }
 
-    const pauseElapsed = c - 11.2;
-    const lookRight = pauseElapsed > 1.5;
+    // 2b. Bref recalage avant la danse
+    if (c < 10.3) {
+      const preDanceElapsed = c - 9.8;
+      return {
+        x: minX,
+        animKey: 'idle_left',
+        isDancing: false,
+        facingDir: -1,
+        phaseElapsedMs: preDanceElapsed * 1000,
+        bobY: 0,
+      };
+    }
+
+    // 3. Phase de danse à sa position de départ (2.3s)
+    const danceElapsed = c - 10.3;
     return {
       x: minX,
-      animKey: lookRight ? 'idle_right' : 'idle_left',
-      facingDir: lookRight ? 1 : -1,
-      phaseElapsedMs: pauseElapsed * 1000,
-      bobY: Math.sin(pauseElapsed * 3.2) * 1.5,
+      animKey: 'idle_left',
+      isDancing: true,
+      facingDir: 1,
+      phaseElapsedMs: danceElapsed * 1000,
+      bobY: 0,
     };
   }
 
@@ -442,46 +442,77 @@ function initDioramaCanvas(viewMain: HTMLElement): void {
     const seekerFootY = Math.round(height * 0.69 + patrol.bobY);
     const seekerDrawH = Math.round(64 * unit * 1.15);
 
-    // Faisceau de lampe torche directionnel émis par le Seeker
-    const beamOriginX = patrol.x + patrol.facingDir * (seekerDrawH * 0.16);
-    const beamOriginY = seekerFootY - seekerDrawH * 0.46;
-    const beamLen = width * 0.2;
-    const beamEndX = beamOriginX + patrol.facingDir * beamLen;
-    const beamSweepY = Math.sin(t * 2.1) * 18;
+    // Faisceau de lampe torche directionnel émis par le Seeker (masqué pendant la danse)
+    if (!patrol.isDancing) {
+      const beamOriginX = patrol.x + patrol.facingDir * (seekerDrawH * 0.16);
+      const beamOriginY = seekerFootY - seekerDrawH * 0.46;
+      const beamLen = width * 0.2;
+      const beamEndX = beamOriginX + patrol.facingDir * beamLen;
+      const beamSweepY = Math.sin(t * 2.1) * 18;
 
-    ctx.save();
-    const beamGrad = ctx.createLinearGradient(
-      beamOriginX,
-      beamOriginY,
-      beamEndX,
-      beamOriginY + beamSweepY
-    );
-    beamGrad.addColorStop(0, 'rgba(56, 189, 248, 0.22)');
-    beamGrad.addColorStop(0.55, 'rgba(56, 189, 248, 0.07)');
-    beamGrad.addColorStop(1, 'rgba(56, 189, 248, 0)');
-    ctx.fillStyle = beamGrad;
-    ctx.beginPath();
-    ctx.moveTo(beamOriginX, beamOriginY);
-    ctx.lineTo(beamEndX, beamOriginY - 56 + beamSweepY);
-    ctx.lineTo(beamEndX, beamOriginY + 64 + beamSweepY);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
+      ctx.save();
+      const beamGrad = ctx.createLinearGradient(
+        beamOriginX,
+        beamOriginY,
+        beamEndX,
+        beamOriginY + beamSweepY
+      );
+      beamGrad.addColorStop(0, 'rgba(56, 189, 248, 0.22)');
+      beamGrad.addColorStop(0.55, 'rgba(56, 189, 248, 0.07)');
+      beamGrad.addColorStop(1, 'rgba(56, 189, 248, 0)');
+      ctx.fillStyle = beamGrad;
+      ctx.beginPath();
+      ctx.moveTo(beamOriginX, beamOriginY);
+      ctx.lineTo(beamEndX, beamOriginY - 56 + beamSweepY);
+      ctx.lineTo(beamEndX, beamOriginY + 64 + beamSweepY);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
 
     drawShadow(patrol.x, seekerFootY - 4, seekerDrawH * 0.28, 9, 0.52);
 
-    const activeSeekerSheet = seekerSheets[patrol.animKey];
-    const activeSeekerSpec = seekerSpecs[patrol.animKey];
-    if (isSpriteReady(activeSeekerSheet)) {
+    if (patrol.isDancing && isSpriteReady(danceSheet)) {
+      // Le grand Seeker exécute EmoteDance.png à sa propre échelle (64x64 -> seekerDrawH) et au même ancrage au sol
       drawSheetFrame(
         ctx,
-        activeSeekerSheet,
-        activeSeekerSpec,
+        danceSheet,
+        danceEmoteDef,
         patrol.phaseElapsedMs,
         patrol.x,
         seekerFootY,
         seekerDrawH
       );
+
+      // Particules cyan discrètes autour du grand Seeker pendant sa danse
+      const danceSec = patrol.phaseElapsedMs * 0.001;
+      ctx.save();
+      for (let i = 0; i < 3; i++) {
+        const pPhase = (danceSec * 1.4 + i * 0.35) % 1;
+        const px = patrol.x + (i - 1) * (seekerDrawH * 0.32) + Math.sin(danceSec * 4 + i) * 6;
+        const py = seekerFootY - seekerDrawH * (0.65 + pPhase * 0.35);
+        const pAlpha = Math.sin(pPhase * Math.PI) * 0.65;
+        ctx.fillStyle =
+          i % 2 === 0
+            ? `rgba(56, 189, 248, ${pAlpha.toFixed(3)})`
+            : `rgba(170, 91, 240, ${pAlpha.toFixed(3)})`;
+        ctx.fillRect(Math.round(px), Math.round(py), 4, 4);
+      }
+      ctx.restore();
+    } else {
+      const activeSeekerSheet = seekerSheets[patrol.animKey];
+      const activeSeekerSpec = seekerSpecs[patrol.animKey];
+      if (isSpriteReady(activeSeekerSheet)) {
+        drawSheetFrame(
+          ctx,
+          activeSeekerSheet,
+          activeSeekerSpec,
+          patrol.phaseElapsedMs,
+          patrol.x,
+          seekerFootY,
+          seekerDrawH
+        );
+      }
     }
 
     // 6. Premier plan : Canette (sursaute quand tauntIndex === 0)
@@ -503,55 +534,40 @@ function initDioramaCanvas(viewMain: HTMLElement): void {
       ctx.restore();
     }
 
-    // 7. Ondes "sifflet" + Emote animée (EmoteAmazed / EmoteDance) au-dessus du prop qui nargue
-    if (tauntLocal < 1.45) {
+    // 7. Onde sonore circulaire discrète (anneau cyan/blanc qui s'estompe) autour du prop qui sursaute — sans aucun mini-robot
+    if (tauntLocal < 0.95) {
       const targetCenterX =
         tauntIndex === 0
           ? canBaseX + kw * 0.5
           : tauntIndex === 1
           ? bx + bw * 0.5
           : cx + cw * 0.5;
-      const targetTopY =
-        tauntIndex === 0 ? canBaseY : tauntIndex === 1 ? by : cy;
+      const targetCenterY =
+        tauntIndex === 0
+          ? canBaseY + kh * 0.5
+          : tauntIndex === 1
+          ? by + bh * 0.5
+          : cy + ch * 0.5;
 
-      // Ondes sonores concentriques
-      if (tauntLocal < 1.1) {
-        const waveP = tauntLocal / 1.1;
-        const radius = 12 + waveP * 54;
-        const alpha = (1 - waveP) * 0.5;
-        ctx.save();
-        ctx.strokeStyle = `rgba(170, 91, 240, ${alpha.toFixed(3)})`;
-        ctx.lineWidth = 2;
+      const waveP = tauntLocal / 0.95;
+      const radius = 10 + waveP * 44;
+      const alpha = (1 - waveP) * 0.45;
+      ctx.save();
+      ctx.strokeStyle = `rgba(56, 189, 248, ${alpha.toFixed(3)})`;
+      ctx.lineWidth = 1.75;
+      ctx.beginPath();
+      ctx.arc(targetCenterX, targetCenterY, radius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      if (waveP > 0.2) {
+        const waveP2 = (waveP - 0.2) / 0.8;
+        ctx.strokeStyle = `rgba(255, 255, 255, ${((1 - waveP2) * 0.28).toFixed(3)})`;
+        ctx.lineWidth = 1.25;
         ctx.beginPath();
-        ctx.arc(targetCenterX, targetTopY + 14, radius, 0, Math.PI * 2);
+        ctx.arc(targetCenterX, targetCenterY, 6 + waveP2 * 32, 0, Math.PI * 2);
         ctx.stroke();
-
-        if (waveP > 0.22) {
-          const waveP2 = (waveP - 0.22) / 0.78;
-          ctx.strokeStyle = `rgba(56, 189, 248, ${((1 - waveP2) * 0.38).toFixed(3)})`;
-          ctx.beginPath();
-          ctx.arc(targetCenterX, targetTopY + 14, 8 + waveP2 * 44, 0, Math.PI * 2);
-          ctx.stroke();
-        }
-        ctx.restore();
       }
-
-      // Emote animée au-dessus du prop (alterne entre EmoteAmazed et EmoteDance)
-      const emoteChoice = emoteDefs[Math.floor(t / tauntPeriod) % emoteDefs.length];
-      const emoteSheet = emoteSheets.get(emoteChoice.id);
-      if (isSpriteReady(emoteSheet)) {
-        const emoteSize = Math.round(38 * (unit / 3.0));
-        const floatY = targetTopY - 8 - Math.min(1, tauntLocal / 0.35) * 8;
-        drawSheetFrame(
-          ctx,
-          emoteSheet,
-          emoteChoice,
-          tauntLocal * 1000,
-          targetCenterX,
-          floatY,
-          emoteSize
-        );
-      }
+      ctx.restore();
     }
 
     rafId = window.requestAnimationFrame(renderFrame);
