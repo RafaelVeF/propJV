@@ -1897,6 +1897,10 @@ body {
 }
 
 .achievements-top-bar .view-title {
+  font-family: var(--font-main);
+  font-weight: 800;
+  letter-spacing: 1px;
+  font-size: clamp(1.8rem, 3.2vh, 2.4rem);
   margin-bottom: 0;
   text-align: left;
 }
@@ -1952,16 +1956,18 @@ body {
 }
 
 .banner-progress-title {
-  font-family: var(--font-display);
-  font-size: 1.15rem;
+  font-family: var(--font-main);
+  font-weight: 700;
+  font-size: 1rem;
   letter-spacing: 0.8px;
   color: var(--color-purple);
 }
 
 .banner-progress-counter {
-  font-family: var(--font-display);
-  font-size: 1.2rem;
-  letter-spacing: 0.8px;
+  font-family: var(--font-main);
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: 0.5px;
   color: #fbbf24;
 }
 
@@ -2001,9 +2007,10 @@ body {
 }
 
 .rewards-box-value {
-  font-family: var(--font-display);
-  font-size: 1.25rem;
-  letter-spacing: 0.8px;
+  font-family: var(--font-main);
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
   color: #fbbf24;
   display: flex;
   align-items: center;
@@ -2097,10 +2104,10 @@ body {
 
 /* Badge de pourcentage dédié */
 .ach-percent-badge {
-  font-family: var(--font-display);
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.5px;
+  font-family: var(--font-main);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.3px;
   padding: 2px 7px;
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.06);
@@ -2256,9 +2263,11 @@ body {
 }
 
 .ach-card-title {
-  font-family: var(--font-display);
-  font-size: 1.15rem;
-  letter-spacing: 0.6px;
+  font-family: var(--font-main);
+  font-weight: 700;
+  font-size: 1.05rem;
+  letter-spacing: 0.2px;
+  line-height: 1.25;
   color: #ffffff;
 }
 
@@ -2300,7 +2309,7 @@ body {
 }
 
 .ach-prog-pct-text {
-  font-family: var(--font-display);
+  font-family: var(--font-main);
   font-size: 0.82rem;
   font-weight: 700;
   color: #cbd5e1;
@@ -2362,9 +2371,10 @@ body {
 }
 
 .ach-reward-badge {
-  font-family: var(--font-display);
-  font-size: 1rem;
-  letter-spacing: 0.6px;
+  font-family: var(--font-main);
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: 0.4px;
   color: #fbbf24;
   display: flex;
   align-items: center;
@@ -2394,7 +2404,7 @@ body {
 }
 
 .banner-percent-chip {
-  font-family: var(--font-display);
+  font-family: var(--font-main);
   font-size: 0.95rem;
   font-weight: 800;
   color: #fbbf24;
@@ -2430,10 +2440,11 @@ body {
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.12);
   color: var(--color-text-muted);
-  font-family: var(--font-display);
-  font-size: 0.85rem;
-  letter-spacing: 0.6px;
-  padding: 0.35rem 0.9rem;
+  font-family: var(--font-main);
+  font-weight: 700;
+  font-size: 0.82rem;
+  letter-spacing: 0.8px;
+  padding: 0.4rem 0.95rem;
   border-radius: 6px;
   cursor: pointer;
   transition: all var(--transition);
@@ -2551,10 +2562,10 @@ body {
   background: linear-gradient(135deg, #f59e0b, #d97706);
   border: 1px solid #fbbf24;
   color: #111;
-  font-family: var(--font-display);
-  font-size: 0.85rem;
-  font-weight: bold;
-  padding: 0.3rem 0.75rem;
+  font-family: var(--font-main);
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 0.35rem 0.8rem;
   border-radius: 6px;
   cursor: pointer;
   letter-spacing: 0.5px;

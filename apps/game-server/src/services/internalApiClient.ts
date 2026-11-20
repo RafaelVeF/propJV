@@ -29,7 +29,7 @@ function getApiBaseUrl(): string {
 }
 
 function getInternalSecret(): string {
-    return process.env.INTERNAL_API_SECRET?.trim() || '';
+    return process.env.INTERNAL_API_SECRET?.trim() || 'prop-hunt-internal-secret-local-dev';
 }
 
 async function postInternal(

@@ -180,7 +180,17 @@ router.post('/servers/log', async (req: Request, res: Response): Promise<void> =
 
 // 3. POST /api/internal/matches/report : Transaction TiDB Cloud + Insertion MongoDB match_telemetry
 router.post('/matches/report', async (req: Request, res: Response): Promise<void> => {
-    const body = (req.body || {}) as MatchReportBody;
+    const body = (req.body || {}) as MatchReportBody & { isFreeplay?: boolean };
+
+    // Les parties en mode Freeplay ne doivent jamais incrémenter les statistiques ni les succès
+    if (body.isFreeplay === true || body.serverId?.includes('freeplay') || body.mapName?.includes('freeplay')) {
+        res.status(200).json({
+            success: true,
+            matchId: null,
+            message: 'Partie en mode Freeplay ignorée : aucune statistique de succès enregistrée.'
+        });
+        return;
+    }
     const serverId = typeof body.serverId === 'string' && body.serverId.trim()
         ? body.serverId.trim()
         : 'srv-local-01';

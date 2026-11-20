@@ -98,3 +98,18 @@ test('MatchTelemetryTracker : partie courte de test (< 1s) génère un rapport c
     // Seeker perdant : 10 (participation)
     assert.equal(seeker.currencyEarned, 10);
 });
+
+test('MatchTelemetryTracker : en mode Freeplay ou inactif, aucun événement ni rapport final n\'est émis', () => {
+    const tracker = new MatchTelemetryTracker();
+    assert.equal(tracker.isActive(), false, 'Le tracker doit être inactif sans startMatch');
+
+    // Tentatives d\'enregistrement en mode inactif (Freeplay)
+    tracker.recordTransform('p1', 'prop_can', 50);
+    tracker.recordTaunt('p1', 'taunt_chicken', 30);
+    tracker.recordShot('p2');
+    tracker.recordHit('p2', 'p1', 25, true, 10);
+    tracker.recordElimination('p2', 'p1', 10);
+
+    const report = tracker.finalizeMatch('HIDER', 'srv-test-freeplay');
+    assert.equal(report, null, 'Aucun rapport ne doit être généré si le tracker n\'a pas démarré de match');
+});

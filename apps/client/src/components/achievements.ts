@@ -141,7 +141,7 @@ const PREVIEW_ACHIEVEMENTS: AchievementItem[] = [
   {
     id: 30009,
     internalName: 'ach_survive_time',
-    displayName: 'Survivant de l’Extrême',
+    displayName: "Survivant de l'Extrême",
     description: 'Cumulez 10 minutes (600 secondes) de survie en tant que Prop.',
     reward: 150,
     targetValue: 600,
@@ -231,8 +231,8 @@ const PREVIEW_ACHIEVEMENTS: AchievementItem[] = [
   {
     id: 30015,
     internalName: 'ach_make_friend',
-    displayName: 'C’est Beau l’Amitié',
-    description: 'Ayez au moins 1 ami dans votre liste d’amis.',
+    displayName: "C'est Beau l'Amitié",
+    description: "Ayez au moins 1 ami dans votre liste d'amis.",
     reward: 50,
     targetValue: 1,
     progress: 0,

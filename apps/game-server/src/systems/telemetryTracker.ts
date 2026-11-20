@@ -47,6 +47,7 @@ export interface TelemetryEvent {
 export interface MatchReportPayload {
     serverId: string;
     mapName: string;
+    isFreeplay?: boolean;
     startTime: string;
     endTime: string;
     durationSec: number;
