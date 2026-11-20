@@ -23,108 +23,34 @@ export const HUNTER_RENDER_CONFIG = {
   defaultFps: 8
 } as const;
 
+const hunterGridSpec = (
+  fileName: string,
+  frameCount: number = 8,
+  fps: number = HUNTER_RENDER_CONFIG.defaultFps
+): HunterSpriteSpec => ({
+  assetPath: `/assets/characters/Hunter/${fileName}`,
+  cols: 3,
+  rows: 3,
+  frameWidth: 64,
+  frameHeight: 64,
+  frameCount,
+  fps
+});
+
 /**
  * Table centrale des animations du Chasseur.
  * Modifier ici le frameCount, cols/rows, fps ou assetPath sans toucher au moteur d'animation.
  */
 export const HUNTER_SPRITE_SPECS: Record<HunterSpriteKey, HunterSpriteSpec> = {
-  idle_left: {
-    assetPath: '/assets/characters/Hunter/IdleHuntLeft.png',
-    cols: 3,
-    rows: 3,
-    frameWidth: 64,
-    frameHeight: 64,
-    frameCount: 8,
-    fps: 8
-  },
-  idle_right: {
-    assetPath: '/assets/characters/Hunter/IdleHuntRight.png',
-    cols: 3,
-    rows: 3,
-    frameWidth: 64,
-    frameHeight: 64,
-    frameCount: 8,
-    fps: 8
-  },
-  idle_north: {
-    assetPath: '/assets/characters/Hunter/IdleHuntNord.png',
-    cols: 3,
-    rows: 3,
-    frameWidth: 64,
-    frameHeight: 64,
-    frameCount: 8,
-    fps: 8
-  },
-  move_n: {
-    assetPath: '/assets/characters/Hunter/MoveHuntNorth.png',
-    cols: 3,
-    rows: 3,
-    frameWidth: 64,
-    frameHeight: 64,
-    frameCount: 8,
-    fps: 8
-  },
-  move_nw: {
-    assetPath: '/assets/characters/Hunter/MoveHuntNorthLeft.png',
-    cols: 3,
-    rows: 3,
-    frameWidth: 64,
-    frameHeight: 64,
-    frameCount: 8,
-    fps: 8
-  },
-  move_ne: {
-    assetPath: '/assets/characters/Hunter/MoveHuntNorthRight.png',
-    cols: 3,
-    rows: 3,
-    frameWidth: 64,
-    frameHeight: 64,
-    frameCount: 8,
-    fps: 8
-  },
-  move_s: {
-    assetPath: '/assets/characters/Hunter/MoveHuntSouth.png',
-    cols: 3,
-    rows: 3,
-    frameWidth: 64,
-    frameHeight: 64,
-    frameCount: 8,
-    fps: 8
-  },
-  move_sw: {
-    assetPath: '/assets/characters/Hunter/MoveHuntSouthLeft.png',
-    cols: 3,
-    rows: 3,
-    frameWidth: 64,
-    frameHeight: 64,
-    frameCount: 8,
-    fps: 8
-  },
-  move_se: {
-    assetPath: '/assets/characters/Hunter/MoveHuntSouthRight.png',
-    cols: 3,
-    rows: 3,
-    frameWidth: 64,
-    frameHeight: 64,
-    frameCount: 8,
-    fps: 8
-  },
-  move_w: {
-    assetPath: '/assets/characters/Hunter/MoveHuntLeft.png',
-    cols: 3,
-    rows: 3,
-    frameWidth: 64,
-    frameHeight: 64,
-    frameCount: 7,
-    fps: 8
-  },
-  move_e: {
-    assetPath: '/assets/characters/Hunter/MoveHuntRight.png',
-    cols: 3,
-    rows: 3,
-    frameWidth: 64,
-    frameHeight: 64,
-    frameCount: 7,
-    fps: 8
-  }
+  idle_left: hunterGridSpec('IdleHuntLeft.png'),
+  idle_right: hunterGridSpec('IdleHuntRight.png'),
+  idle_north: hunterGridSpec('IdleHuntNord.png'),
+  move_n: hunterGridSpec('MoveHuntNorth.png'),
+  move_nw: hunterGridSpec('MoveHuntNorthLeft.png'),
+  move_ne: hunterGridSpec('MoveHuntNorthRight.png'),
+  move_s: hunterGridSpec('MoveHuntSouth.png'),
+  move_sw: hunterGridSpec('MoveHuntSouthLeft.png'),
+  move_se: hunterGridSpec('MoveHuntSouthRight.png'),
+  move_w: hunterGridSpec('MoveHuntLeft.png', 7),
+  move_e: hunterGridSpec('MoveHuntRight.png', 7)
 };

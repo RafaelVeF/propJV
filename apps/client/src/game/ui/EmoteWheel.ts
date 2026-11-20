@@ -10,11 +10,9 @@ export interface EmoteWheelConfig {
 /**
  * Roue radiale d'emotes des Chasseurs (aperçu découpé depuis le spritesheet de chaque emote).
  */
-export class EmoteWheel {
-  private readonly menu: RadialMenu<HunterEmoteDefinition>;
-
+export class EmoteWheel extends RadialMenu<HunterEmoteDefinition> {
   constructor(config: EmoteWheelConfig) {
-    this.menu = new RadialMenu<HunterEmoteDefinition>({
+    super({
       title: 'Emotes',
       sliceCount: Math.max(3, Math.min(8, config.emotesList.length || 3)),
       hasPagination: config.emotesList.length > 8,
@@ -41,37 +39,5 @@ export class EmoteWheel {
         config.onSelectEmote(selectedEmote);
       }
     });
-  }
-
-  public getIsOpen(): boolean {
-    return this.menu.getIsOpen();
-  }
-
-  public toggle(): void {
-    this.menu.toggle();
-  }
-
-  public close(): void {
-    if (this.menu.getIsOpen()) this.menu.close();
-  }
-
-  public render(ctx: CanvasRenderingContext2D, width: number, height: number): void {
-    this.menu.render(ctx, width, height);
-  }
-
-  public handleKeyDown(e: KeyboardEvent): boolean {
-    return this.menu.handleKeyDown(e);
-  }
-
-  public handleMouseMove(clientX: number, clientY: number, canvas: HTMLCanvasElement): void {
-    this.menu.handleMouseMove(clientX, clientY, canvas);
-  }
-
-  public handleClick(clientX: number, clientY: number, canvas: HTMLCanvasElement): boolean {
-    return this.menu.handleClick(clientX, clientY, canvas);
-  }
-
-  public handleWheel(e: WheelEvent): boolean {
-    return this.menu.handleWheel(e);
   }
 }

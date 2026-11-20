@@ -32,6 +32,10 @@ export function registerGameInput(deps: GameInputDeps): void {
   const { state, canvas, viewGame, transformationWheel, emoteWheel, weapons, spectator, chat, hud, minimap } = deps;
   const { keys, mouse, player } = state;
 
+  const getActiveWheel = () => (
+    transformationWheel.getIsOpen() ? transformationWheel : emoteWheel.getIsOpen() ? emoteWheel : null
+  );
+
   window.addEventListener('keydown', (e) => {
     // 0. Si le chat est ouvert, il capture toute la saisie clavier
     if (chat.getIsOpen()) {
@@ -43,20 +47,11 @@ export function registerGameInput(deps: GameInputDeps): void {
       return;
     }
 
-    // 1. Si la roue de transformation est ouverte, elle capture les touches en priorité
-    if (transformationWheel.getIsOpen()) {
-      const handled = transformationWheel.handleKeyDown(e);
-      if (handled) {
-        e.preventDefault();
-        return;
-      }
-    }
-    if (emoteWheel.getIsOpen()) {
-      const handled = emoteWheel.handleKeyDown(e);
-      if (handled) {
-        e.preventDefault();
-        return;
-      }
+    // 1. Si une roue (transformation ou emotes) est ouverte, elle capture les touches en priorité
+    const activeWheel = getActiveWheel();
+    if (activeWheel?.handleKeyDown(e)) {
+      e.preventDefault();
+      return;
     }
 
     if (e.key === 'Escape' && viewGame.classList.contains('active')) {
@@ -132,25 +127,15 @@ export function registerGameInput(deps: GameInputDeps): void {
     mouse.x = e.clientX - rect.left;
     mouse.y = e.clientY - rect.top;
     mouse.inside = true;
-    if (transformationWheel.getIsOpen()) {
-      transformationWheel.handleMouseMove(e.clientX, e.clientY, canvas);
-    }
-    if (emoteWheel.getIsOpen()) {
-      emoteWheel.handleMouseMove(e.clientX, e.clientY, canvas);
-    }
+    getActiveWheel()?.handleMouseMove(e.clientX, e.clientY, canvas);
   });
 
   canvas.addEventListener('mouseleave', () => { mouse.inside = false; });
 
   canvas.addEventListener('mousedown', (e) => {
-    if (transformationWheel.getIsOpen()) {
-      const handled = transformationWheel.handleClick(e.clientX, e.clientY, canvas);
-      if (handled) e.stopPropagation();
-      return;
-    }
-    if (emoteWheel.getIsOpen()) {
-      const handled = emoteWheel.handleClick(e.clientX, e.clientY, canvas);
-      if (handled) e.stopPropagation();
+    const activeWheel = getActiveWheel();
+    if (activeWheel) {
+      if (activeWheel.handleClick(e.clientX, e.clientY, canvas)) e.stopPropagation();
       return;
     }
     if (spectator.isActive) {
@@ -171,14 +156,9 @@ export function registerGameInput(deps: GameInputDeps): void {
   });
 
   canvas.addEventListener('wheel', (e) => {
-    if (transformationWheel.getIsOpen()) {
-      const handled = transformationWheel.handleWheel(e);
-      if (handled) e.preventDefault();
-      return;
-    }
-    if (emoteWheel.getIsOpen()) {
-      const handled = emoteWheel.handleWheel(e);
-      if (handled) e.preventDefault();
+    const activeWheel = getActiveWheel();
+    if (activeWheel) {
+      if (activeWheel.handleWheel(e)) e.preventDefault();
       return;
     }
     if (spectator.isActive) {

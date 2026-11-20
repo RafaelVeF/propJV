@@ -66,6 +66,8 @@ export function loadEmoteImages(): Map<string, HTMLImageElement> {
     }
   });
   return emoteImages;
+}
+
 export interface DroneImages {
   ready: HTMLImageElement;
   reloading: HTMLImageElement;

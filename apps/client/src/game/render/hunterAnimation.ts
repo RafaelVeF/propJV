@@ -1,7 +1,7 @@
-import { DEFAULT_HUNTER_EMOTES, PlayerRole, type HunterEmoteDefinition } from '@prop-hunt/shared';
+import { DEFAULT_HUNTER_EMOTES, type HunterEmoteDefinition } from '@prop-hunt/shared';
 import { networkManager } from '../../network/networkManager';
 import { isImageReady, type HunterSpriteKey, type HunterSprites } from '../assets';
-import type { GameState } from '../state';
+import { forEachActiveHunter, type GameState } from '../state';
 import { HUNTER_RENDER_CONFIG, HUNTER_SPRITE_SPECS } from './hunterSpriteSpecs';
 
 export const HUNTER_DRAW_SIZE = HUNTER_RENDER_CONFIG.drawSize;
@@ -58,11 +58,7 @@ export class HunterAnimator {
     return this.states.get(playerId);
   }
 
-  /** Joue une emote une seule fois (une boucle) sur le chasseur ciblé */
-  public playEmote(playerId: string, emoteId: string, now = Date.now()): void {
-    const def = DEFAULT_HUNTER_EMOTES.find(e => e.id === emoteId);
-    if (!def) return;
-
+  private getOrCreate(playerId: string, now: number): HunterAnimState {
     let anim = this.states.get(playerId);
     if (!anim) {
       anim = {
@@ -74,7 +70,14 @@ export class HunterAnimator {
       };
       this.states.set(playerId, anim);
     }
-    anim.activeEmote = { def, startedAt: now };
+    return anim;
+  }
+
+  /** Joue une emote une seule fois (une boucle) sur le chasseur ciblé */
+  public playEmote(playerId: string, emoteId: string, now = Date.now()): void {
+    const def = DEFAULT_HUNTER_EMOTES.find(e => e.id === emoteId);
+    if (!def) return;
+    this.getOrCreate(playerId, now).activeEmote = { def, startedAt: now };
   }
 
   public sync(
@@ -84,28 +87,9 @@ export class HunterAnimator {
     remoteVelocities: Map<string, { dx: number; dy: number }>,
     now = Date.now()
   ): void {
-    const activeHunters = new Set<string>();
-
-    if (
-      state.localPlayerRole === PlayerRole.HUNTER &&
-      !state.spectator.active &&
-      state.player.health > 0 &&
-      networkManager.localPlayerId
-    ) {
-      activeHunters.add(networkManager.localPlayerId);
-      const isMoving = localVx !== 0 || localVy !== 0;
-      this.updateOne(networkManager.localPlayerId, isMoving, localVx, localVy, now);
-    }
-
-    state.otherPlayers.forEach((op, id) => {
-      if (op.role === PlayerRole.HUNTER && op.health > 0) {
-        activeHunters.add(id);
-        const vel = remoteVelocities.get(id);
-        const dx = vel?.dx ?? 0;
-        const dy = vel?.dy ?? 0;
-        const isMoving = Math.hypot(dx, dy) > 0.35;
-        this.updateOne(id, isMoving, dx, dy, now);
-      }
+    const activeHunters = forEachActiveHunter(state, networkManager.localPlayerId, localVx, localVy, remoteVelocities, (id, _x, _y, vx, vy, isRemote) => {
+      const isMoving = isRemote ? Math.hypot(vx, vy) > 0.35 : (vx !== 0 || vy !== 0);
+      this.updateOne(id, isMoving, vx, vy, now);
     });
 
     this.states.forEach((_, id) => {
@@ -114,17 +98,7 @@ export class HunterAnimator {
   }
 
   private updateOne(playerId: string, isMoving: boolean, dx: number, dy: number, now: number): void {
-    let anim = this.states.get(playerId);
-    if (!anim) {
-      anim = {
-        currentKey: 'idle_left',
-        animStartedAt: now,
-        lastDirX: -1,
-        lastDirY: 1,
-        lastHorizontal: 'left'
-      };
-      this.states.set(playerId, anim);
-    }
+    const anim = this.getOrCreate(playerId, now);
 
     let nextKey: HunterSpriteKey;
 
