@@ -58,13 +58,32 @@ function createActionButton(
   return btn;
 }
 
+function getInitialMonogram(username: string): string {
+  const cleaned = username.trim();
+  return cleaned ? cleaned.slice(0, 2).toUpperCase() : 'JV';
+}
+
 function createFriendRow(friend: FriendEntry): HTMLElement {
   const active = isRecentlyActive(friend.lastConnection);
   const row = document.createElement('div');
-  row.className = `player-item ${active ? 'ready' : 'not-ready'}`;
+  row.className = `friends-flat-row friends-roster-row player-item ${
+    active ? 'ready is-online' : 'not-ready is-offline'
+  }`;
 
   const info = document.createElement('div');
   info.className = 'friend-info';
+
+  const avatar = document.createElement('div');
+  avatar.className = `friend-avatar-initial ${active ? 'is-online' : 'is-offline'}`;
+  avatar.textContent = getInitialMonogram(friend.username);
+
+  const statusDot = document.createElement('span');
+  statusDot.className = `friend-status-dot ${active ? 'is-online' : 'is-offline'}`;
+  statusDot.setAttribute('aria-hidden', 'true');
+  avatar.appendChild(statusDot);
+
+  const textGroup = document.createElement('div');
+  textGroup.className = 'friend-text-group';
 
   const nameSpan = document.createElement('span');
   nameSpan.className = 'player-name';
@@ -72,15 +91,39 @@ function createFriendRow(friend: FriendEntry): HTMLElement {
 
   const statusSpan = document.createElement('span');
   statusSpan.className = 'player-status';
-  statusSpan.textContent = active ? 'Actif récemment' : 'Hors ligne';
+  statusSpan.textContent = active ? 'EN LIGNE · DISPONIBLE' : 'HORS LIGNE';
 
-  info.append(nameSpan, statusSpan);
+  textGroup.append(nameSpan, statusSpan);
+  info.append(avatar, textGroup);
 
   const actions = document.createElement('div');
-  actions.className = 'request-actions';
+  actions.className = 'request-actions friends-row-actions';
+  if (active) {
+    actions.append(
+      createActionButton(
+        'REJOINDRE SALON',
+        'friends-flat-btn friends-join-btn',
+        'join',
+        friend.relationshipId,
+        friend.username
+      )
+    );
+  }
   actions.append(
-    createActionButton('Bloquer', 'btn secondary friend-muted-btn', 'block', friend.relationshipId, friend.username),
-    createActionButton('Supprimer', 'btn secondary reject-btn', 'remove', friend.relationshipId, friend.username)
+    createActionButton(
+      'BLOQUER',
+      'friends-flat-btn friend-muted-btn',
+      'block',
+      friend.relationshipId,
+      friend.username
+    ),
+    createActionButton(
+      'RETIRER',
+      'friends-flat-btn reject-btn',
+      'remove',
+      friend.relationshipId,
+      friend.username
+    )
   );
 
   row.append(info, actions);
@@ -89,35 +132,44 @@ function createFriendRow(friend: FriendEntry): HTMLElement {
 
 function createIncomingRequestRow(request: FriendRequestEntry): HTMLElement {
   const row = document.createElement('div');
-  row.className = 'player-item request-item';
+  row.className = 'friends-flat-row player-item request-item';
+
+  const info = document.createElement('div');
+  info.className = 'friend-info';
+
+  const avatar = document.createElement('div');
+  avatar.className = 'friend-avatar-initial is-pending';
+  avatar.textContent = getInitialMonogram(request.username);
 
   const nameSpan = document.createElement('span');
   nameSpan.className = 'player-name';
   nameSpan.textContent = request.username;
 
+  info.append(avatar, nameSpan);
+
   const actions = document.createElement('div');
-  actions.className = 'request-actions';
+  actions.className = 'request-actions friends-row-actions';
   actions.append(
-    createActionButton('Accepter', 'btn primary accept-btn', 'accept', request.relationshipId),
-    createActionButton('Refuser', 'btn secondary reject-btn', 'reject', request.relationshipId)
+    createActionButton('ACCEPTER', 'friends-flat-btn accept-btn', 'accept', request.relationshipId),
+    createActionButton('REFUSER', 'friends-flat-btn reject-btn', 'reject', request.relationshipId)
   );
 
-  row.append(nameSpan, actions);
+  row.append(info, actions);
   return row;
 }
 
 function createOutgoingRequestRow(request: FriendRequestEntry): HTMLElement {
   const row = document.createElement('div');
-  row.className = 'player-item request-item';
+  row.className = 'friends-flat-row player-item request-item';
 
   const nameSpan = document.createElement('span');
   nameSpan.className = 'player-name';
-  nameSpan.textContent = request.username;
+  nameSpan.textContent = `${request.username} (en attente)`;
 
   const actions = document.createElement('div');
-  actions.className = 'request-actions';
+  actions.className = 'request-actions friends-row-actions';
   actions.append(
-    createActionButton('Annuler', 'btn secondary reject-btn', 'reject', request.relationshipId)
+    createActionButton('ANNULER', 'friends-flat-btn reject-btn', 'reject', request.relationshipId)
   );
 
   row.append(nameSpan, actions);
@@ -126,16 +178,21 @@ function createOutgoingRequestRow(request: FriendRequestEntry): HTMLElement {
 
 function createBlockedRow(blocked: FriendEntry): HTMLElement {
   const row = document.createElement('div');
-  row.className = 'player-item not-ready';
+  row.className = 'friends-flat-row player-item not-ready';
 
   const nameSpan = document.createElement('span');
   nameSpan.className = 'player-name';
   nameSpan.textContent = blocked.username;
 
   const actions = document.createElement('div');
-  actions.className = 'request-actions';
+  actions.className = 'request-actions friends-row-actions';
   actions.append(
-    createActionButton('Débloquer', 'btn secondary friend-muted-btn', 'unblock', blocked.relationshipId)
+    createActionButton(
+      'DÉBLOQUER',
+      'friends-flat-btn friend-muted-btn',
+      'unblock',
+      blocked.relationshipId
+    )
   );
 
   row.append(nameSpan, actions);
@@ -144,91 +201,136 @@ function createBlockedRow(blocked: FriendEntry): HTMLElement {
 
 export function renderFriends(): string {
   return `
-    <!-- Vue 7 : Amis -->
-    <div id="view-friends" class="view modal-view hidden">
-      <h2 class="view-title purple-text">AMIS</h2>
-      <div class="menu-container friends-container">
-        <div id="friends-alert" class="auth-alert" role="alert" aria-live="polite"></div>
+    <!-- Vue 7 : Amis — Hub Social Centré (max-width: 920px - 100vh - 100% Souris) -->
+    <div id="view-friends" class="view friends-fullscreen-view hidden">
+      <!-- 1. En-tête unifié (top-bar) -->
+      <header class="local-top-bar">
+        <div class="local-top-inner">
+          <div class="local-top-left">
+            <button type="button" class="local-back-btn" id="btn-back-main-from-friends">
+              ← RETOUR
+            </button>
+          </div>
 
-        <div class="friends-panels-wrapper">
-          <!-- Contenu principal (flouté et bloqué si déconnecté) -->
-          <div id="friends-authenticated-content" class="friends-content-area">
-            <!-- Liste des Amis -->
-            <div class="players-list">
-              <div class="list-header">
-                <h3>LISTE D'AMIS <span id="friends-count" class="friends-count-badge">0</span></h3>
-                <div class="friends-header-actions">
-                  <button type="button" class="icon-btn-inline purple-text" id="btn-refresh-friends" title="Actualiser">↻</button>
-                  <button type="button" class="icon-btn-inline purple-text" id="btn-open-add-friend" title="Ajouter un ami">+</button>
+          <h1 class="local-brand-title">
+            <span class="purple-text">AMIS</span>
+          </h1>
+
+          <div class="local-top-right">
+            <span class="local-player-tag is-auth" id="friends-online-summary">0 EN LIGNE</span>
+          </div>
+        </div>
+      </header>
+
+      <!-- 2. Colonne centrale aérée (max-width: 920px) -->
+      <main class="friends-hub-stage">
+        <div class="friends-hub-container">
+          <div id="friends-alert" class="auth-alert friends-top-alert" role="alert" aria-live="polite"></div>
+
+          <div class="friends-panels-wrapper">
+            <div id="friends-authenticated-content" class="friends-hub-content">
+              <!-- Bandeau supérieur d'action rapide : Ajout d'ami par pseudo -->
+              <section class="friends-hub-top-strip" aria-label="Ajouter un ami">
+                <form id="form-add-friend" class="friends-hub-add-form" novalidate>
+                  <div class="friends-hub-add-left">
+                    <span class="local-kicker">INVITATION DIRECTE</span>
+                    <label class="friends-hub-add-title" for="input-add-friend">AJOUTER UN JOUEUR</label>
+                  </div>
+
+                  <div class="friends-hub-add-controls join-container">
+                    <input
+                      type="text"
+                      id="input-add-friend"
+                      class="input-field local-code-input friends-pseudo-input"
+                      maxlength="30"
+                      autocomplete="off"
+                      spellcheck="false"
+                      placeholder="Entrez le pseudo exact..."
+                    />
+                    <button type="submit" class="local-join-btn" id="btn-add-friend">
+                      <span>AJOUTER</span>
+                      <span aria-hidden="true">+</span>
+                    </button>
+                  </div>
+                </form>
+                <div id="add-friend-alert" class="auth-alert" role="alert" aria-live="polite"></div>
+              </section>
+
+              <!-- Bandeau mis en valeur pour les demandes d'amis en attente -->
+              <section class="friends-pending-banner requests-list" id="incoming-requests-banner" aria-label="Demandes reçues">
+                <div class="friends-section-head">
+                  <div class="local-servers-heading-row">
+                    <h2 class="friends-sub-heading">DEMANDES D'AMIS EN ATTENTE</h2>
+                    <span id="incoming-requests-count" class="friends-count-badge">0</span>
+                  </div>
+                </div>
+                <div id="requests-items-list" class="friends-pending-grid"></div>
+              </section>
+
+              <!-- Roster Social Principal (Liste d'amis) -->
+              <section class="friends-roster-section" aria-label="Roster social">
+                <div class="local-servers-header">
+                  <div class="local-servers-heading-row">
+                    <h2 class="local-section-title">Liste d'amis</h2>
+                    <span id="friends-count" class="friends-count-badge">0</span>
+                  </div>
+                </div>
+
+                <div class="friends-cols-head" aria-hidden="true">
+                  <span>JOUEUR &amp; PRÉSENCE EN DIRECT</span>
+                  <span class="align-right">ACTIONS CONTEXTUELLES</span>
+                </div>
+
+                <div id="friends-items-list" class="friends-roster-list"></div>
+              </section>
+
+              <!-- Demandes envoyées & Utilisateurs bloqués (affichés uniquement si non vides) -->
+              <div class="friends-secondary-strips">
+                <div id="outgoing-requests-section" class="friends-section-block requests-list" hidden>
+                  <div class="friends-section-head">
+                    <h3 class="friends-sub-heading">INVITATIONS ENVOYÉES</h3>
+                    <span id="outgoing-requests-count" class="friends-count-badge">0</span>
+                  </div>
+                  <div id="outgoing-requests-list" class="friends-flat-list"></div>
+                </div>
+
+                <div id="blocked-users-section" class="friends-section-block requests-list" hidden>
+                  <div class="friends-section-head">
+                    <h3 class="friends-sub-heading">COMPTES BLOQUÉS</h3>
+                    <span id="blocked-users-count" class="friends-count-badge">0</span>
+                  </div>
+                  <div id="blocked-users-list" class="friends-flat-list"></div>
                 </div>
               </div>
-              <div id="friends-items-list" class="scrollable-friends-items"></div>
             </div>
 
-            <!-- Section Demandes Reçues -->
-            <div class="players-list requests-list">
-              <h3>DEMANDES REÇUES <span id="incoming-requests-count" class="friends-count-badge">0</span></h3>
-              <div id="requests-items-list" class="scrollable-friends-items"></div>
-            </div>
-
-            <!-- Section Demandes Envoyées -->
-            <div id="outgoing-requests-section" class="players-list requests-list" hidden>
-              <h3>DEMANDES ENVOYÉES <span id="outgoing-requests-count" class="friends-count-badge">0</span></h3>
-              <div id="outgoing-requests-list" class="scrollable-friends-items"></div>
-            </div>
-
-            <!-- Section Utilisateurs Bloqués -->
-            <div id="blocked-users-section" class="players-list requests-list" hidden>
-              <h3>UTILISATEURS BLOQUÉS <span id="blocked-users-count" class="friends-count-badge">0</span></h3>
-              <div id="blocked-users-list" class="scrollable-friends-items"></div>
-            </div>
-          </div>
-
-          <!-- Voile flouté bloquant si l'utilisateur n'est pas connecté -->
-          <div id="friends-guest-notice" class="friends-guest-overlay" hidden>
-            <div class="friends-guest-card">
-              <svg class="friends-lock-icon" width="38" height="38" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                <path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1s3.1 1.39 3.1 3.1v2z" />
-              </svg>
-              <p class="friends-guest-text">Connectez-vous pour accéder à vos amis et gérer vos demandes.</p>
-              <button type="button" class="btn primary friends-guest-login-btn" id="btn-friends-open-auth">
-                SE CONNECTER
-              </button>
+            <!-- Voile bloquant si l'utilisateur n'est pas connecté -->
+            <div id="friends-guest-notice" class="friends-guest-overlay" hidden>
+              <div class="friends-guest-card">
+                <span class="local-kicker">CONNEXION REQUISE</span>
+                <h3 class="local-section-title">HUB SOCIAL VERROUILLÉ</h3>
+                <p class="friends-guest-text">Connectez-vous à votre compte PropJV pour retrouver vos amis et rejoindre leurs salons.</p>
+                <button type="button" class="local-join-btn friends-guest-login-btn" id="btn-friends-open-auth">
+                  <span>SE CONNECTER</span>
+                  <span aria-hidden="true">→</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
-
-        <button type="button" class="btn back" id="btn-back-main-from-friends">RETOUR</button>
-      </div>
+      </main>
     </div>
 
-    <!-- Vue 7b : Ajouter un Ami -->
-    <div id="view-add-friend" class="view modal-view hidden">
-      <h2 class="view-title purple-text">AJOUTER UN AMI</h2>
-      <form id="form-add-friend" class="menu-container" novalidate>
-        <div id="add-friend-alert" class="auth-alert" role="alert" aria-live="polite"></div>
-        <div class="join-container">
-          <label class="input-label" for="input-add-friend">PSEUDO DE L'AMI</label>
-          <input
-            type="text"
-            id="input-add-friend"
-            class="input-field"
-            maxlength="30"
-            autocomplete="off"
-            placeholder="Entrez le pseudo..."
-          />
-        </div>
-        <button type="submit" class="btn primary" id="btn-add-friend">
-          <span>+ ENVOYER LA DEMANDE</span>
-        </button>
-        <button type="button" class="btn back" id="btn-back-friends-from-add-friend">RETOUR</button>
-      </form>
+    <!-- Vue 7b conservée pour compatibilité descendante des IDs -->
+    <div id="view-add-friend" class="view hidden" aria-hidden="true">
+      <button type="button" id="btn-back-friends-from-add-friend" hidden>RETOUR</button>
     </div>
   `;
 }
 
 export function initFriends(): void {
   const viewMain = document.getElementById('view-main');
+  const viewLocal = document.getElementById('view-local');
   const viewAuth = document.getElementById('view-auth');
   const viewFriends = document.getElementById('view-friends');
   const viewAddFriend = document.getElementById('view-add-friend');
@@ -248,6 +350,7 @@ export function initFriends(): void {
   const addFriendAlert = document.getElementById('add-friend-alert');
   const guestNotice = document.getElementById('friends-guest-notice');
   const authenticatedContent = document.getElementById('friends-authenticated-content');
+  const incomingBanner = document.getElementById('incoming-requests-banner');
 
   const friendsItemsList = document.getElementById('friends-items-list');
   const requestsItemsList = document.getElementById('requests-items-list');
@@ -260,23 +363,38 @@ export function initFriends(): void {
   const incomingCount = document.getElementById('incoming-requests-count');
   const outgoingCount = document.getElementById('outgoing-requests-count');
   const blockedCount = document.getElementById('blocked-users-count');
+  const onlineSummary = document.getElementById('friends-online-summary');
 
   const renderOverview = (data: FriendsOverviewResponse): void => {
     const friends = data.friends ?? [];
     const incoming = data.incomingRequests ?? [];
     const outgoing = data.outgoingRequests ?? [];
     const blocked = data.blockedUsers ?? [];
+    const onlineCount = friends.filter((f) => isRecentlyActive(f.lastConnection)).length;
 
     if (friendsCount) friendsCount.textContent = String(friends.length);
     if (incomingCount) incomingCount.textContent = String(incoming.length);
     if (outgoingCount) outgoingCount.textContent = String(outgoing.length);
     if (blockedCount) blockedCount.textContent = String(blocked.length);
+    if (onlineSummary) {
+      onlineSummary.textContent = `${onlineCount} EN LIGNE / ${friends.length} AMI${
+        friends.length > 1 ? 'S' : ''
+      }`;
+    }
+
+    if (incomingBanner) {
+      incomingBanner.classList.toggle('has-requests', incoming.length > 0);
+    }
 
     if (friendsItemsList) {
       friendsItemsList.replaceChildren(
         ...(friends.length > 0
           ? friends.map(createFriendRow)
-          : [createEmptyNotice('Aucun ami pour le moment.')])
+          : [
+              createEmptyNotice(
+                'Votre roster social est vide — ajoutez un joueur par son pseudo ci-dessus.'
+              ),
+            ])
       );
     }
 
@@ -284,7 +402,7 @@ export function initFriends(): void {
       requestsItemsList.replaceChildren(
         ...(incoming.length > 0
           ? incoming.map(createIncomingRequestRow)
-          : [createEmptyNotice('Aucune demande reçue.')])
+          : [createEmptyNotice('Aucune demande d’ami en attente.')])
       );
     }
 
@@ -304,6 +422,7 @@ export function initFriends(): void {
     if (incomingCount) incomingCount.textContent = '0';
     if (outgoingCount) outgoingCount.textContent = '0';
     if (blockedCount) blockedCount.textContent = '0';
+    if (onlineSummary) onlineSummary.textContent = 'MODE INVITÉ';
     friendsItemsList?.replaceChildren(createEmptyNotice('Connexion requise.'));
     requestsItemsList?.replaceChildren(createEmptyNotice('Connexion requise.'));
     if (outgoingSection) outgoingSection.hidden = true;
@@ -355,6 +474,11 @@ export function initFriends(): void {
 
     if (!action || Number.isNaN(relationshipId)) return;
 
+    if (action === 'join') {
+      switchView(viewFriends, viewLocal ?? viewMain);
+      return;
+    }
+
     btn.disabled = true;
     setAlert(friendsAlert, null);
 
@@ -382,7 +506,6 @@ export function initFriends(): void {
     }
   };
 
-  // Navigation
   btnOpenFriends?.addEventListener('click', () => {
     void loadFriends();
   });
@@ -393,6 +516,7 @@ export function initFriends(): void {
 
   btnBackMainFromFriends?.addEventListener('click', () => {
     setAlert(friendsAlert, null);
+    setAlert(addFriendAlert, null);
     switchView(viewFriends, viewMain);
   });
 
@@ -404,8 +528,6 @@ export function initFriends(): void {
   btnOpenAddFriend?.addEventListener('click', () => {
     if (!isAuthenticated()) return;
     setAlert(addFriendAlert, null);
-    if (inputAddFriend) inputAddFriend.value = '';
-    switchView(viewFriends, viewAddFriend);
     inputAddFriend?.focus();
   });
 
@@ -414,7 +536,6 @@ export function initFriends(): void {
     switchView(viewAddFriend, viewFriends);
   });
 
-  // Délégation des actions sur les listes (accepter, refuser, annuler, supprimer, bloquer, débloquer)
   authenticatedContent?.addEventListener('click', (event) => {
     const target = event.target as HTMLElement | null;
     const actionBtn = target?.closest<HTMLButtonElement>('button[data-friend-action]');
@@ -423,7 +544,6 @@ export function initFriends(): void {
     }
   });
 
-  // Envoi d'une demande d'ami
   formAddFriend?.addEventListener('submit', async (event) => {
     event.preventDefault();
     if (!inputAddFriend || !btnAddFriend || !isAuthenticated()) return;
@@ -444,9 +564,7 @@ export function initFriends(): void {
     try {
       const result = await sendFriendRequest(pseudo);
       inputAddFriend.value = '';
-      setAlert(addFriendAlert, null);
-      switchView(viewAddFriend, viewFriends);
-      setAlert(friendsAlert, 'success', result.message);
+      setAlert(addFriendAlert, 'success', result.message);
       await loadFriends(true);
     } catch (error) {
       const message =
@@ -459,13 +577,18 @@ export function initFriends(): void {
     }
   });
 
-  // Synchronisation automatique lors d'une connexion / déconnexion
+  if (viewFriends) {
+    const observer = new MutationObserver(() => {
+      if (viewFriends.classList.contains('active') && !viewFriends.classList.contains('hidden')) {
+        void loadFriends(true);
+      }
+    });
+    observer.observe(viewFriends, { attributes: true, attributeFilter: ['class'] });
+  }
+
   onAuthChange(() => {
     if (viewFriends?.classList.contains('active')) {
       void loadFriends();
-    } else if (viewAddFriend?.classList.contains('active') && !isAuthenticated()) {
-      switchView(viewAddFriend, viewFriends);
-      syncAuthVisibility();
     } else {
       syncAuthVisibility();
     }

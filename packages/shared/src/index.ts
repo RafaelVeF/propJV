@@ -10,6 +10,8 @@ export enum MessageType {
   CREATE_ROOM = 'CREATE_ROOM',
   JOIN_ROOM = 'JOIN_ROOM',
   LEAVE_ROOM = 'LEAVE_ROOM',
+  LIST_ROOMS = 'LIST_ROOMS',
+  ROOMS_LIST = 'ROOMS_LIST',
   ROOM_ERROR = 'ROOM_ERROR',
   KICK_PLAYER = 'KICK_PLAYER',
   KICKED = 'KICKED',
@@ -477,6 +479,19 @@ export interface JoinRoomPayload {
 
 export interface RoomErrorPayload {
   message: string;
+}
+
+export interface PublicRoomInfo {
+  roomKey: string;
+  hostName: string;
+  map: string;
+  status: 'WAITING' | 'IN_GAME';
+  playersCount: number;
+  maxPlayers: number;
+}
+
+export interface RoomsListPayload {
+  rooms: PublicRoomInfo[];
 }
 
 export interface KickPlayerPayload {

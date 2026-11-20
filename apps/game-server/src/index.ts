@@ -21,6 +21,8 @@ import {
     type HunterShootPayload,
     type CreateRoomPayload,
     type JoinRoomPayload,
+    type PublicRoomInfo,
+    type RoomsListPayload,
     type ShotFiredPayload,
     type GrenadeExplodedPayload,
     type PlayerDiedPayload,
@@ -441,6 +443,65 @@ function generateRoomKey(prefix: string = 'LOCAL'): string {
     return key;
 }
 
+function buildPublicRoomsList(): PublicRoomInfo[] {
+    const list: PublicRoomInfo[] = [];
+    rooms.forEach((room) => {
+        if (room.isFreeplay || room.key.startsWith('FREEPLAY')) return;
+        if (room.players.size === 0) return;
+
+        let hostName = 'Hôte';
+        for (const session of room.roundManager.players.values()) {
+            if (session.isHost) {
+                hostName = session.name;
+                break;
+            }
+        }
+        if (hostName === 'Hôte') {
+            const firstPlayer = room.players.values().next().value;
+            if (firstPlayer?.name) {
+                hostName = firstPlayer.name;
+            }
+        }
+
+        const phase = room.roundManager.getPhase();
+        const status: 'WAITING' | 'IN_GAME' =
+            phase === GamePhase.LOBBY ? 'WAITING' : 'IN_GAME';
+
+        list.push({
+            roomKey: room.key,
+            hostName,
+            map: CURRENT_MAP,
+            status,
+            playersCount: room.players.size,
+            maxPlayers: MAX_PLAYERS,
+        });
+    });
+    return list;
+}
+
+function sendPublicRoomsList(ws: WebSocket): void {
+    if (ws.readyState !== WebSocket.OPEN) return;
+    ws.send(
+        JSON.stringify({
+            type: MessageType.ROOMS_LIST,
+            payload: { rooms: buildPublicRoomsList() } satisfies RoomsListPayload,
+        } satisfies NetworkMessage)
+    );
+}
+
+function broadcastPublicRoomsList(): void {
+    const messageString = JSON.stringify({
+        type: MessageType.ROOMS_LIST,
+        payload: { rooms: buildPublicRoomsList() } satisfies RoomsListPayload,
+    } satisfies NetworkMessage);
+
+    clients.forEach((_, clientWs) => {
+        if (clientWs.readyState === WebSocket.OPEN) {
+            clientWs.send(messageString);
+        }
+    });
+}
+
 function createRoom(isFreeplay: boolean = false): GameRoom {
     const roomKey = generateRoomKey(isFreeplay ? 'FREEPLAY' : 'LOCAL');
     const roomPlayers = new Map<string, Player>();
@@ -455,18 +516,27 @@ function createRoom(isFreeplay: boolean = false): GameRoom {
                 type: MessageType.LOBBY_STATE,
                 payload: { ...lobbyState, roomKey }
             });
+            if (!isFreeplay) {
+                broadcastPublicRoomsList();
+            }
         },
         onCountdownStarted: (seconds) => {
             broadcastToRoom(roomKey, {
                 type: MessageType.START_COUNTDOWN,
                 payload: { countdownSeconds: seconds }
             });
+            if (!isFreeplay) {
+                broadcastPublicRoomsList();
+            }
         },
         onCountdownCancelled: () => {
             broadcastToRoom(roomKey, {
                 type: MessageType.LOBBY_STATE,
                 payload: { ...roundManager.getLobbyState(), roomKey }
             });
+            if (!isFreeplay) {
+                broadcastPublicRoomsList();
+            }
         },
         onRoundStarted: (assignments) => {
             console.log(`[GameServer][${roomKey}] Démarrage de la manche #${roundManager.getRoundNumber()} !`);
@@ -527,6 +597,9 @@ function createRoom(isFreeplay: boolean = false): GameRoom {
                 type: MessageType.ROUND_TIMER_TICK,
                 payload: { phase, timeRemaining }
             });
+            if (!isFreeplay) {
+                broadcastPublicRoomsList();
+            }
         },
         onPhaseChanged: (phase, timeRemaining) => {
             if (phase === GamePhase.ROUND_END) {
@@ -548,6 +621,9 @@ function createRoom(isFreeplay: boolean = false): GameRoom {
                 type: MessageType.ROUND_TIMER_TICK,
                 payload: { phase, timeRemaining }
             });
+            if (!isFreeplay) {
+                broadcastPublicRoomsList();
+            }
         },
         onRoundEnded: (results) => {
             console.log(`[GameServer][${roomKey}] Fin de manche ! Vainqueur : ${results.winner} (Raison: ${results.reason})`);
@@ -633,6 +709,9 @@ function leaveCurrentRoom(ws: WebSocket, playerId: string): void {
         room.roundManager.destroy();
         rooms.delete(roomKey);
         console.log(`[GameServer] Salon vide supprimé : ${roomKey}`);
+    }
+    if (!room.isFreeplay && !roomKey.startsWith('FREEPLAY')) {
+        broadcastPublicRoomsList();
     }
 }
 
@@ -832,10 +911,24 @@ wss.on('connection', (ws, req: IncomingMessage) => {
                 await refreshClientIdentity(playerId, payload.token);
                 const requestedKey = (payload.roomKey || '').trim().toUpperCase();
                 const targetRoom = rooms.get(requestedKey);
-                if (!targetRoom) {
+                if (!targetRoom || targetRoom.isFreeplay || targetRoom.key.startsWith('FREEPLAY')) {
                     ws.send(JSON.stringify({
                         type: MessageType.ROOM_ERROR,
                         payload: { message: `Salon "${requestedKey || '?'}" introuvable. Vérifiez la clé.` }
+                    } satisfies NetworkMessage));
+                    return;
+                }
+                if (targetRoom.players.size >= MAX_PLAYERS) {
+                    ws.send(JSON.stringify({
+                        type: MessageType.ROOM_ERROR,
+                        payload: { message: `Le salon "${requestedKey}" est complet.` }
+                    } satisfies NetworkMessage));
+                    return;
+                }
+                if (targetRoom.roundManager.getPhase() !== GamePhase.LOBBY) {
+                    ws.send(JSON.stringify({
+                        type: MessageType.ROOM_ERROR,
+                        payload: { message: `Une partie est déjà en cours dans le salon "${requestedKey}".` }
                     } satisfies NetworkMessage));
                     return;
                 }
@@ -845,6 +938,11 @@ wss.on('connection', (ws, req: IncomingMessage) => {
 
             if (message.type === MessageType.LEAVE_ROOM) {
                 leaveCurrentRoom(ws, playerId);
+                return;
+            }
+
+            if (message.type === MessageType.LIST_ROOMS) {
+                sendPublicRoomsList(ws);
                 return;
             }
 

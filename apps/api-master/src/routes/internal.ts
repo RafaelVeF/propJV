@@ -112,6 +112,7 @@ router.post('/servers/heartbeat', async (req: Request, res: Response): Promise<v
             return;
         }
 
+        const now = new Date();
         const payload = {
             serverId,
             name: body.name || serverId,
@@ -121,7 +122,8 @@ router.post('/servers/heartbeat', async (req: Request, res: Response): Promise<v
             status: body.status || 'WAITING',
             playersCount: Math.max(0, Math.floor(Number(body.playersCount) || 0)),
             maxPlayers: Math.max(1, Math.floor(Number(body.maxPlayers) || 16)),
-            lastHeartbeat: new Date(),
+            lastHeartbeat: now,
+            updatedAt: now,
         };
 
         const db = await getMongoDb();

@@ -564,16 +564,29 @@ export function renderAchievements(): string {
     <!-- Vue : Succès & Hauts Faits -->
     <div id="view-achievements" class="view modal-view achievements-modal hidden">
       <div class="achievements-dashboard-wrapper">
-        <!-- En-tête supérieur avec titre et retour -->
-        <div class="achievements-top-bar">
-          <div class="top-title-group">
-            <h2 class="view-title purple-text">SUCCÈS & HAUTS FAITS</h2>
-            <span class="top-subtitle">Relevez des défis en partie pour remporter des pièces et enrichir votre profil</span>
+        <!-- En-tête supérieur unifié -->
+        <header class="local-top-bar">
+          <div class="local-top-inner">
+            <div class="local-top-left">
+              <button type="button" class="local-back-btn" id="btn-back-main-from-achievements-top">
+                ← RETOUR
+              </button>
+            </div>
+
+            <h1 class="local-brand-title">
+              <span class="purple-text">SUCCÈS</span>
+              <span class="stats-header-sep">&amp;</span>
+              <span class="blue-text">HAUTS FAITS</span>
+            </h1>
+
+            <div class="local-top-right">
+              <div class="rewards-box-value ach-top-rewards" id="ach-banner-rewards">
+                ${COIN_ICON_HTML}
+                <strong>+0</strong> pièces
+              </div>
+            </div>
           </div>
-          <button class="btn back top-back-btn" id="btn-back-main-from-achievements-top">
-            ← RETOUR
-          </button>
-        </div>
+        </header>
 
         <!-- Grande bannière de progression horizontale -->
         <div class="achievements-summary-banner-wide">
@@ -588,13 +601,6 @@ export function renderAchievements(): string {
             </div>
             <div class="banner-progress-track">
               <div class="banner-progress-bar" id="ach-banner-bar" style="width: 0%;"></div>
-            </div>
-          </div>
-          <div class="banner-rewards-box">
-            <span class="rewards-box-label">RÉCOMPENSES RÉCUPÉRÉES</span>
-            <div class="rewards-box-value" id="ach-banner-rewards">
-              ${COIN_ICON_HTML}
-              <strong>+0</strong> pièces
             </div>
           </div>
         </div>
