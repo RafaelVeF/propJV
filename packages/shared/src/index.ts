@@ -663,6 +663,42 @@ export const DEFAULT_HUNTER_EMOTES: HunterEmoteDefinition[] = [
     frameCount: 15,
     previewFrame: 14,
     fps: 10
+  },
+  {
+    id: 'aura',
+    name: 'Aura',
+    assetPath: '/assets/emotes/EmoteAura.png',
+    cols: 3,
+    rows: 5,
+    frameWidth: 92,
+    frameHeight: 64,
+    frameCount: 13,
+    previewFrame: 5,
+    fps: 10
+  },
+  {
+    id: 'devil',
+    name: 'Démon',
+    assetPath: '/assets/emotes/EmoteDevil.png',
+    cols: 4,
+    rows: 4,
+    frameWidth: 64,
+    frameHeight: 64,
+    frameCount: 15,
+    previewFrame: 11,
+    fps: 10
+  },
+  {
+    id: 'ez',
+    name: 'EZ',
+    assetPath: '/assets/emotes/EmoteEZ.png',
+    cols: 3,
+    rows: 3,
+    frameWidth: 64,
+    frameHeight: 64,
+    frameCount: 7,
+    previewFrame: 3,
+    fps: 8
   }
 ];
 
