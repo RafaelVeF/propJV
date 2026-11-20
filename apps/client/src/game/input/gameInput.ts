@@ -1,6 +1,7 @@
 import { MessageType, PlayerRole } from '@prop-hunt/shared';
 import { musicManager } from '../../audio/MusicManager';
 import { networkManager } from '../../network/networkManager';
+import type { EmoteWheel } from '../ui/EmoteWheel';
 import type { ChatManager } from '../ui/ChatManager';
 import type { HudController } from '../ui/hudController';
 import type { MinimapController } from '../ui/Minimap';
@@ -14,6 +15,7 @@ export interface GameInputDeps {
   canvas: HTMLCanvasElement;
   viewGame: HTMLElement;
   transformationWheel: TransformationWheel;
+  emoteWheel: EmoteWheel;
   weapons: WeaponController;
   spectator: SpectatorController;
   chat: ChatManager;
@@ -27,8 +29,12 @@ export interface GameInputDeps {
  * c'est la boucle de jeu qui les lit et envoie l'intention de mouvement au serveur.
  */
 export function registerGameInput(deps: GameInputDeps): void {
-  const { state, canvas, viewGame, transformationWheel, weapons, spectator, chat, hud, minimap } = deps;
+  const { state, canvas, viewGame, transformationWheel, emoteWheel, weapons, spectator, chat, hud, minimap } = deps;
   const { keys, mouse, player } = state;
+
+  const getActiveWheel = () => (
+    transformationWheel.getIsOpen() ? transformationWheel : emoteWheel.getIsOpen() ? emoteWheel : null
+  );
 
   window.addEventListener('keydown', (e) => {
     // 0. Si le chat est ouvert, il capture toute la saisie clavier
@@ -41,13 +47,11 @@ export function registerGameInput(deps: GameInputDeps): void {
       return;
     }
 
-    // 1. Si la roue de transformation est ouverte, elle capture les touches en priorité
-    if (transformationWheel.getIsOpen()) {
-      const handled = transformationWheel.handleKeyDown(e);
-      if (handled) {
-        e.preventDefault();
-        return;
-      }
+    // 1. Si une roue (transformation ou emotes) est ouverte, elle capture les touches en priorité
+    const activeWheel = getActiveWheel();
+    if (activeWheel?.handleKeyDown(e)) {
+      e.preventDefault();
+      return;
     }
 
     if (e.key === 'Escape' && viewGame.classList.contains('active')) {
@@ -82,8 +86,12 @@ export function registerGameInput(deps: GameInputDeps): void {
       return;
     }
 
-    // 3. Chasseur : sélection d'arme (1/2/3) et rechargement (R)
+    // 3. Chasseur : sélection d'arme (1/2/3), rechargement (R) et roue d'emotes (E)
     if (state.localPlayerRole === PlayerRole.HUNTER) {
+      if (key === 'e' && player.health > 0) {
+        emoteWheel.toggle();
+        return;
+      }
       const slotWeapon = WeaponController.weaponForKey(e.key);
       if (slotWeapon) {
         weapons.select(slotWeapon);
@@ -119,17 +127,15 @@ export function registerGameInput(deps: GameInputDeps): void {
     mouse.x = e.clientX - rect.left;
     mouse.y = e.clientY - rect.top;
     mouse.inside = true;
-    if (transformationWheel.getIsOpen()) {
-      transformationWheel.handleMouseMove(e.clientX, e.clientY, canvas);
-    }
+    getActiveWheel()?.handleMouseMove(e.clientX, e.clientY, canvas);
   });
 
   canvas.addEventListener('mouseleave', () => { mouse.inside = false; });
 
   canvas.addEventListener('mousedown', (e) => {
-    if (transformationWheel.getIsOpen()) {
-      const handled = transformationWheel.handleClick(e.clientX, e.clientY, canvas);
-      if (handled) e.stopPropagation();
+    const activeWheel = getActiveWheel();
+    if (activeWheel) {
+      if (activeWheel.handleClick(e.clientX, e.clientY, canvas)) e.stopPropagation();
       return;
     }
     if (spectator.isActive) {
@@ -150,9 +156,9 @@ export function registerGameInput(deps: GameInputDeps): void {
   });
 
   canvas.addEventListener('wheel', (e) => {
-    if (transformationWheel.getIsOpen()) {
-      const handled = transformationWheel.handleWheel(e);
-      if (handled) e.preventDefault();
+    const activeWheel = getActiveWheel();
+    if (activeWheel) {
+      if (activeWheel.handleWheel(e)) e.preventDefault();
       return;
     }
     if (spectator.isActive) {

@@ -6,6 +6,7 @@ import {
   WeaponType,
   getPlayerHurtbox,
   type GrenadeExplodedPayload,
+  type HunterEmotePayload,
   type HitboxTogglePayload,
   type KickedPayload,
   type LobbyStatePayload,
@@ -25,6 +26,7 @@ import { getPlayerRenderInfo, type GameState } from '../state';
 import type { CombatEffects } from '../combat/combatEffects';
 import type { DroneController } from '../combat/droneController';
 import type { WeaponController } from '../combat/weaponController';
+import type { HunterAnimator } from '../render/hunterAnimation';
 import type { SpectatorController } from '../spectator/spectatorController';
 import type { ChatManager } from '../ui/ChatManager';
 import type { RoundHud } from '../ui/roundHud';
@@ -34,6 +36,7 @@ export interface GameNetworkDeps {
   state: GameState;
   weapons: WeaponController;
   effects: CombatEffects;
+  hunterAnimator: HunterAnimator;
   drones: DroneController;
   vfx: VisualEffectsManager;
   chat: ChatManager;
@@ -49,7 +52,7 @@ export interface GameNetworkDeps {
 
 /** Abonne l'écran de jeu à tous les messages du serveur */
 export function registerGameNetworkHandlers(deps: GameNetworkDeps): void {
-  const { state, weapons, effects, drones, vfx, chat, spectator, roundHud, updateStatus, returnToLobby, onKicked } = deps;
+  const { state, weapons, effects, drones, hunterAnimator, vfx, chat, spectator, roundHud, updateStatus, returnToLobby, onKicked } = deps;
   const { player, otherPlayers } = state;
 
   networkManager.onOpen(updateStatus);
@@ -264,6 +267,12 @@ export function registerGameNetworkHandlers(deps: GameNetworkDeps): void {
       angle,
       hit
     });
+  });
+
+  networkManager.on<HunterEmotePayload>(MessageType.HUNTER_EMOTE, (payload) => {
+    if (payload.playerId && payload.playerId !== networkManager.localPlayerId) {
+      hunterAnimator.playEmote(payload.playerId, payload.emoteId);
+    }
   });
 
   networkManager.on<GrenadeExplodedPayload>(MessageType.GRENADE_EXPLODED, (payload) => {
