@@ -1,4 +1,4 @@
-import { DEFAULT_HUNTER_EMOTES, DEFAULT_PROPS, WEAPON_ORDER, WEAPONS, type WeaponType } from '@prop-hunt/shared';
+import { DEFAULT_HUNTER_EMOTES, DEFAULT_PROPS, WEAPON_ORDER, WEAPONS, WeaponType } from '@prop-hunt/shared';
 import { HUNTER_SPRITE_SPECS } from './render/hunterSpriteSpecs';
 
 function loadImage(src: string): HTMLImageElement {
