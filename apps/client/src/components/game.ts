@@ -55,10 +55,15 @@ export function initGame(): void {
     if (viewGame.classList.contains('active')) {
       musicManager.start();
     } else {
-      musicManager.stop();
+      musicManager.stop(true);
     }
   });
   viewObserver.observe(viewGame, { attributes: true, attributeFilter: ['class'] });
+
+  // Au chargement initial hors partie, lance la musique d'ambiance lobby.mp3
+  if (!viewGame.classList.contains('active')) {
+    musicManager.startLobbyMusic();
+  }
 
   // Redimensionnement du canvas
   const resize = () => {

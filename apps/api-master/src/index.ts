@@ -7,6 +7,7 @@ import friendsRoutes from './routes/friends.js';
 import achievementsRoutes from './routes/achievements.js';
 import internalRoutes from './routes/internal.js';
 import statsRoutes from './routes/stats.js';
+import serversRoutes from './routes/servers.js';
 import { pool } from './db.js';
 import { initMongo } from './mongo.js';
 
@@ -39,6 +40,10 @@ app.use('/api/internal', internalRoutes);
 
 // Activation des routes de statistiques
 app.use('/api/stats', statsRoutes);
+
+// Activation de la route publique des serveurs actifs (MongoDB active_servers)
+app.use('/servers', serversRoutes);
+app.use('/api/servers', serversRoutes);
 
 // Test des connexions aux bases de données au démarrage
 pool.getConnection()
