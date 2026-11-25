@@ -4,7 +4,7 @@ import { EmoteWheel } from '../game/ui/EmoteWheel';
 import { TransformationWheel } from '../game/ui/TransformationWheel';
 import { DEFAULT_HUNTER_EMOTES, DEFAULT_PROPS, MessageType, type PropDefinition } from '@prop-hunt/shared';
 import { createGameState, VISION_RADIUS, type GameState } from '../game/state';
-import { loadDroneImages, loadEmoteImages, loadHunterSprites, loadPropImages, loadWeaponImages } from '../game/assets';
+import { loadDroneImages, loadMineGroundImage, loadEmoteImages, loadHunterSprites, loadPropImages, loadWeaponImages } from '../game/assets';
 import { musicManager } from '../audio/MusicManager';
 import { MapRenderer } from '../game/map/mapRenderer';
 import { collectCharacters, drawCharacter } from '../game/render/characterRenderer';
@@ -78,6 +78,7 @@ export function initGame(): void {
   const state = createGameState();
   const propImages = loadPropImages();
   const weaponImages = loadWeaponImages();
+  const mineGroundImage = loadMineGroundImage();
   const droneImages = loadDroneImages();
   const hunterSprites = loadHunterSprites();
   const emoteImages = loadEmoteImages();
@@ -233,6 +234,7 @@ export function initGame(): void {
     });
 
     drones.sync(state, vx, vy, remoteVelocities);
+    weapons.syncActiveZap();
     hunterAnimator.sync(state, vx, vy, remoteVelocities);
   };
 
@@ -242,8 +244,9 @@ export function initGame(): void {
     ctx.save();
     applyCamera(ctx, canvas, state);
 
-    // 1. Sol et murs
+    // 1. Sol, murs et mines armées au sol
     map.drawGround(ctx);
+    effects.drawMines(ctx, mineGroundImage);
     // 2. Personnages triés par profondeur
     const characters = collectCharacters(state, hunterAnimator);
     characters.forEach(c => drawCharacter(ctx, c, propImages, state.showHitbox, hunterSprites, emoteImages));

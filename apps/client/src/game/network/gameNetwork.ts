@@ -10,6 +10,7 @@ import {
   type HitboxTogglePayload,
   type KickedPayload,
   type LobbyStatePayload,
+  type MineExplodedPayload,
   type Player,
   type PlayerDiedPayload,
   type PlayerHitPayload,
@@ -19,6 +20,7 @@ import {
   type RoundTimerTickPayload,
   type ShotFiredPayload,
   type WeaponStatePayload,
+  type ZapStatePayload,
   type ChatMessagePayload
 } from '@prop-hunt/shared';
 import { networkManager } from '../../network/networkManager';
@@ -113,6 +115,7 @@ export function registerGameNetworkHandlers(deps: GameNetworkDeps): void {
   networkManager.on(MessageType.PLAYER_LEFT, (payload) => {
     otherPlayers.delete(payload.playerId);
     effects.hunterAim.delete(payload.playerId);
+    effects.zaps.delete(payload.playerId);
     drones.delete(payload.playerId);
     console.log('[WS] Joueur déconnecté :', payload.playerId);
     if (spectator.isActive && payload.playerId === state.spectator.targetId) spectator.cycleTarget(1);
@@ -269,6 +272,12 @@ export function registerGameNetworkHandlers(deps: GameNetworkDeps): void {
     });
   });
 
+  const triggerExplosionFeedback = (x: number, y: number, hunterId: string, hitPlayerIds: string[]) => {
+    const dist = Math.hypot(x - state.view.camX, y - state.view.camY);
+    if (dist < 400) state.screenShake = Math.max(state.screenShake, 6 * (1 - dist / 400));
+    if (hitPlayerIds.length > 0 && hunterId === networkManager.localPlayerId) effects.hitMarkerAt = Date.now();
+  };
+  
   networkManager.on<HunterEmotePayload>(MessageType.HUNTER_EMOTE, (payload) => {
     if (payload.playerId && payload.playerId !== networkManager.localPlayerId) {
       hunterAnimator.playEmote(payload.playerId, payload.emoteId);
@@ -277,10 +286,22 @@ export function registerGameNetworkHandlers(deps: GameNetworkDeps): void {
 
   networkManager.on<GrenadeExplodedPayload>(MessageType.GRENADE_EXPLODED, (payload) => {
     effects.addExplosion(payload.grenadeId, payload.x, payload.y, payload.radius);
-    // Petite secousse d'écran si l'explosion est proche de la caméra
-    const dist = Math.hypot(payload.x - state.view.camX, payload.y - state.view.camY);
-    if (dist < 400) state.screenShake = Math.max(state.screenShake, 6 * (1 - dist / 400));
-    if (payload.hitPlayerIds.length > 0 && payload.hunterId === networkManager.localPlayerId) effects.hitMarkerAt = Date.now();
+    triggerExplosionFeedback(payload.x, payload.y, payload.hunterId, payload.hitPlayerIds);
+  });
+
+  networkManager.on<MineExplodedPayload>(MessageType.MINE_EXPLODED, (payload) => {
+    effects.addMineExplosion(payload.mineId, payload.x, payload.y, payload.radius);
+    triggerExplosionFeedback(payload.x, payload.y, payload.hunterId, payload.hitPlayerIds);
+  });
+
+  networkManager.on<ZapStatePayload>(MessageType.ZAP_STATE, (payload) => {
+    const dronePos = drones.getOrigin(payload.hunterId, payload.originX, payload.originY);
+    const angle = Math.atan2(payload.impactY - dronePos.y, payload.impactX - dronePos.x);
+    const muzzle = drones.getMuzzle(dronePos.x, dronePos.y, angle, WeaponType.ZAP);
+    effects.setZapState(payload, muzzle.x, muzzle.y, angle);
+    if (payload.active && payload.hitPlayerId && payload.hunterId === networkManager.localPlayerId) {
+      effects.hitMarkerAt = Date.now();
+    }
   });
 
   networkManager.on<PlayerDiedPayload>(MessageType.PLAYER_DIED, (payload) => {
@@ -334,7 +355,7 @@ export function registerGameNetworkHandlers(deps: GameNetworkDeps): void {
   networkManager.on<RoundEndPayload>(MessageType.ROUND_END, (payload) => {
     state.currentPhase = GamePhase.ROUND_END;
     weapons.updateHud();
-    effects.grenades.length = 0;
+    effects.resetRound();
     roundHud.showRoundEnd(payload);
   });
 

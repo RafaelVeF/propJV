@@ -105,17 +105,23 @@ export interface AttackResult {
     hits: { playerId: string; damage: number }[];
 }
 
-/**
- * PISTOLET : tir instantané en ligne droite (hitscan).
- * Touche le premier prop sur la trajectoire, sauf si un mur est plus proche.
- */
-export function resolvePistolShot(attacker: Player, aim: Point, players: Iterable<Player>, obstacles: Rectangle[]): AttackResult {
-    const weapon = WEAPONS[WeaponType.PISTOL];
+function resolveRayHit(
+    attacker: Player,
+    aim: Point,
+    players: Iterable<Player>,
+    obstacles: Rectangle[],
+    range: number,
+    damage: number
+): AttackResult {
     const origin = getAttackOrigin(attacker);
-    const dist = Math.hypot(aim.x - origin.x, aim.y - origin.y) || 1;
+    const dx = aim.x - origin.x;
+    const dy = aim.y - origin.y;
+    const dist = Math.hypot(dx, dy);
+    const dirX = dist > 1e-6 ? dx / dist : 1;
+    const dirY = dist > 1e-6 ? dy / dist : 0;
     const end = {
-        x: origin.x + ((aim.x - origin.x) / dist) * weapon.range,
-        y: origin.y + ((aim.y - origin.y) / dist) * weapon.range
+        x: origin.x + dirX * range,
+        y: origin.y + dirY * range
     };
 
     const wallT = firstWallHit(origin, end, obstacles);
@@ -133,7 +139,28 @@ export function resolvePistolShot(attacker: Player, aim: Point, players: Iterabl
     return {
         origin,
         impact: { x: origin.x + (end.x - origin.x) * bestT, y: origin.y + (end.y - origin.y) * bestT },
-        hits: hitId ? [{ playerId: hitId, damage: weapon.damage }] : []
+        hits: hitId ? [{ playerId: hitId, damage }] : []
+    };
+}
+
+/**
+ * PISTOLET : tir instantané en ligne droite (hitscan).
+ * Touche le premier prop sur la trajectoire, sauf si un mur est plus proche.
+ */
+export function resolvePistolShot(attacker: Player, aim: Point, players: Iterable<Player>, obstacles: Rectangle[]): AttackResult {
+    const weapon = WEAPONS[WeaponType.PISTOL];
+    return resolveRayHit(attacker, aim, players, obstacles, weapon.range, weapon.damage);
+}
+
+/**
+ * ZAP : rayon laser continu dans la direction visée, bloqué par les murs et les props.
+ */
+export function resolveZapBeam(attacker: Player, aim: Point, players: Iterable<Player>, obstacles: Rectangle[]): { origin: Point; impact: Point; hitPlayerId: string | null } {
+    const result = resolveRayHit(attacker, aim, players, obstacles, WEAPONS[WeaponType.ZAP].range, 0);
+    return {
+        origin: result.origin,
+        impact: result.impact,
+        hitPlayerId: result.hits[0]?.playerId ?? null
     };
 }
 
@@ -176,20 +203,19 @@ export function resolveMeleeHit(attacker: Player, aim: Point, players: Iterable<
 }
 
 /**
- * GRENADE : calcule le point d'atterrissage (limité par la portée et arrêté par les murs).
+ * Calcul commun du point d'atterrissage d'un projectile lancé (limité par la portée et arrêté par les murs).
  */
-export function computeGrenadeLanding(attacker: Player, aim: Point, obstacles: Rectangle[]): { origin: Point; landing: Point } {
-    const weapon = WEAPONS[WeaponType.GRENADE];
+export function computeThrowLanding(attacker: Player, aim: Point, obstacles: Rectangle[], range: number): { origin: Point; landing: Point } {
     const origin = getAttackOrigin(attacker);
     const dist = Math.hypot(aim.x - origin.x, aim.y - origin.y);
-    const travel = Math.min(dist, weapon.range);
+    const travel = Math.min(dist, range);
     const dirX = dist > 0 ? (aim.x - origin.x) / dist : 0;
     const dirY = dist > 0 ? (aim.y - origin.y) / dist : 0;
     let landing = { x: origin.x + dirX * travel, y: origin.y + dirY * travel };
 
     const wallT = firstWallHit(origin, landing, obstacles);
     if (wallT !== null) {
-        // La grenade rebondit sur le mur : on la pose juste devant (4 px de marge)
+        // Le projectile s'arrête juste devant le mur (4 px de marge)
         const stopDist = Math.max(0, travel * wallT - 4);
         landing = { x: origin.x + dirX * stopDist, y: origin.y + dirY * stopDist };
     }
@@ -197,10 +223,50 @@ export function computeGrenadeLanding(attacker: Player, aim: Point, obstacles: R
 }
 
 /**
- * GRENADE : dégâts de zone, dégressifs avec la distance, bloqués par les murs.
+ * GRENADE : calcule le point d'atterrissage (limité par la portée et arrêté par les murs).
  */
-export function resolveExplosion(center: Point, attackerId: string, players: Iterable<Player>, obstacles: Rectangle[]): { playerId: string; damage: number }[] {
-    const weapon = WEAPONS[WeaponType.GRENADE];
+export function computeGrenadeLanding(attacker: Player, aim: Point, obstacles: Rectangle[]): { origin: Point; landing: Point } {
+    return computeThrowLanding(attacker, aim, obstacles, WEAPONS[WeaponType.GRENADE].range);
+}
+
+/**
+ * MINE : calcule le point de pose de la mine (même fonctionnement que la grenade).
+ */
+export function computeMineLanding(attacker: Player, aim: Point, obstacles: Rectangle[]): { origin: Point; landing: Point } {
+    return computeThrowLanding(attacker, aim, obstacles, WEAPONS[WeaponType.MINE].range);
+}
+
+/**
+ * Vérifie si un prop vivant passe dans le rayon de détection d'une mine armée.
+ */
+export function shouldMineDetonate(
+    minePos: Point,
+    hunterId: string,
+    players: Iterable<Player>,
+    obstacles: Rectangle[],
+    triggerRadius: number = WEAPONS[WeaponType.MINE].triggerRadius ?? 22
+): boolean {
+    for (const target of getDamageableTargets(players, hunterId)) {
+        const point = closestPointOnRect(minePos, hurtboxOf(target));
+        const dist = Math.hypot(point.x - minePos.x, point.y - minePos.y);
+        if (dist <= triggerRadius && hasLineOfSight(minePos, point, obstacles)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * EXPLOSION (grenade / mine) : dégâts de zone, dégressifs avec la distance, bloqués par les murs.
+ */
+export function resolveExplosion(
+    center: Point,
+    attackerId: string,
+    players: Iterable<Player>,
+    obstacles: Rectangle[],
+    weaponType: WeaponType.GRENADE | WeaponType.MINE = WeaponType.GRENADE
+): { playerId: string; damage: number }[] {
+    const weapon = WEAPONS[weaponType];
     const radius = weapon.blastRadius ?? 80;
     const edgeRatio = weapon.edgeDamageRatio ?? 0.35;
     const hits: { playerId: string; damage: number }[] = [];
@@ -217,28 +283,35 @@ export function resolveExplosion(center: Point, attackerId: string, players: Ite
 }
 
 // =========================================================================
-// ARSENAL D'UN CHASSEUR : munitions, rechargement et délais entre deux attaques
+// ARSENAL D'UN CHASSEUR : munitions, rechargement, zap continu, mines et délais
 // =========================================================================
 
-export type UseRefusal = 'COOLDOWN' | 'RELOADING' | 'NO_AMMO';
+export type UseRefusal = 'COOLDOWN' | 'RELOADING' | 'NO_AMMO' | 'ACTIVE' | 'MAX_DEPLOYED';
 
 export class HunterArsenal {
     private ammo: number;
     private reloadEndsAt = 0;
+    private zapEndsAt = 0;
+    private deployedMines = 0;
     private readonly nextUseAt = new Map<WeaponType, number>();
 
     constructor() {
         this.ammo = WEAPONS[WeaponType.PISTOL].magazineSize ?? 0;
     }
 
-    /** Termine un rechargement si son délai est écoulé. Retourne true si l'état a changé. */
+    /** Termine un rechargement ou une émission Zap si son délai est écoulé. Retourne true si l'état a changé. */
     public update(now: number): boolean {
+        let changed = false;
         if (this.reloadEndsAt > 0 && now >= this.reloadEndsAt) {
             this.ammo = WEAPONS[WeaponType.PISTOL].magazineSize ?? 0;
             this.reloadEndsAt = 0;
-            return true;
+            changed = true;
         }
-        return false;
+        if (this.zapEndsAt > 0 && now >= this.zapEndsAt) {
+            this.zapEndsAt = 0;
+            changed = true;
+        }
+        return changed;
     }
 
     public getAmmo(): number {
@@ -249,23 +322,48 @@ export class HunterArsenal {
         return this.reloadEndsAt > now;
     }
 
+    public isZapActive(now: number): boolean {
+        return this.zapEndsAt > now;
+    }
+
+    public getDeployedMines(): number {
+        return this.deployedMines;
+    }
+
+    public setDeployedMines(count: number): void {
+        this.deployedMines = Math.max(0, count);
+    }
+
     /** Vérifie si l'arme peut être utilisée maintenant (null = autorisé) */
     public checkUse(weapon: WeaponType, now: number): UseRefusal | null {
         this.update(now);
+        if (weapon === WeaponType.ZAP && this.isZapActive(now)) return 'ACTIVE';
         if (now < (this.nextUseAt.get(weapon) ?? 0)) return 'COOLDOWN';
         if (weapon === WeaponType.PISTOL) {
             if (this.isReloading(now)) return 'RELOADING';
             if (this.ammo <= 0) return 'NO_AMMO';
+        }
+        if (weapon === WeaponType.MINE) {
+            const maxMines = WEAPONS[WeaponType.MINE].maxDeployed ?? 5;
+            if (this.deployedMines >= maxMines) return 'MAX_DEPLOYED';
         }
         return null;
     }
 
     /** Consomme une utilisation (à appeler après checkUse). Recharge automatiquement un chargeur vide. */
     public consume(weapon: WeaponType, now: number): void {
+        if (weapon === WeaponType.ZAP) {
+            const duration = WEAPONS[WeaponType.ZAP].durationMs ?? 3000;
+            this.zapEndsAt = now + duration;
+            this.nextUseAt.set(weapon, this.zapEndsAt + WEAPONS[WeaponType.ZAP].cooldownMs);
+            return;
+        }
         this.nextUseAt.set(weapon, now + WEAPONS[weapon].cooldownMs);
         if (weapon === WeaponType.PISTOL) {
             this.ammo = Math.max(0, this.ammo - 1);
             if (this.ammo === 0) this.startReload(now);
+        } else if (weapon === WeaponType.MINE) {
+            this.deployedMines += 1;
         }
     }
 
@@ -282,11 +380,17 @@ export class HunterArsenal {
         return {
             weapons: WEAPON_ORDER.map(weapon => {
                 const def = WEAPONS[weapon];
+                const isZap = weapon === WeaponType.ZAP;
+                const activeRemainingMs = isZap ? Math.max(0, this.zapEndsAt - now) : undefined;
+                const cooldownTarget = isZap ? Math.max(now, this.zapEndsAt) : now;
                 return {
                     weapon,
                     ammo: def.magazineSize !== undefined ? this.ammo : undefined,
                     magazineSize: def.magazineSize,
-                    cooldownRemainingMs: Math.max(0, (this.nextUseAt.get(weapon) ?? 0) - now),
+                    deployedCount: weapon === WeaponType.MINE ? this.deployedMines : undefined,
+                    maxDeployed: def.maxDeployed,
+                    activeRemainingMs,
+                    cooldownRemainingMs: Math.max(0, (this.nextUseAt.get(weapon) ?? 0) - cooldownTarget),
                     reloadRemainingMs: weapon === WeaponType.PISTOL ? Math.max(0, this.reloadEndsAt - now) : 0
                 };
             })
