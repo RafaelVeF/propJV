@@ -56,15 +56,18 @@ export function renderAuth(): string {
         </div>
         <div class="join-container">
           <label class="input-label" for="auth-login-password">MOT DE PASSE</label>
-          <input
-            class="input-field"
-            id="auth-login-password"
-            name="password"
-            type="password"
-            autocomplete="current-password"
-            maxlength="100"
-            placeholder="••••••••"
-          />
+          <div class="auth-password-field">
+            <input
+              class="input-field"
+              id="auth-login-password"
+              name="password"
+              type="password"
+              autocomplete="current-password"
+              maxlength="100"
+              placeholder="••••••••"
+            />
+            <button type="button" class="auth-password-toggle" aria-controls="auth-login-password" aria-pressed="false">Afficher</button>
+          </div>
         </div>
         <button type="submit" class="btn primary auth-submit-btn" id="auth-login-submit">
           SE CONNECTER
@@ -98,27 +101,33 @@ export function renderAuth(): string {
         </div>
         <div class="join-container">
           <label class="input-label" for="auth-register-password">MOT DE PASSE</label>
-          <input
-            class="input-field"
-            id="auth-register-password"
-            name="password"
-            type="password"
-            autocomplete="new-password"
-            maxlength="100"
-            placeholder="8 caractères minimum"
-          />
+          <div class="auth-password-field">
+            <input
+              class="input-field"
+              id="auth-register-password"
+              name="password"
+              type="password"
+              autocomplete="new-password"
+              maxlength="100"
+              placeholder="8 caractères minimum"
+            />
+            <button type="button" class="auth-password-toggle" aria-controls="auth-register-password" aria-pressed="false">Afficher</button>
+          </div>
         </div>
         <div class="join-container">
           <label class="input-label" for="auth-register-confirm">CONFIRMER LE MOT DE PASSE</label>
-          <input
-            class="input-field"
-            id="auth-register-confirm"
-            name="confirmPassword"
-            type="password"
-            autocomplete="new-password"
-            maxlength="100"
-            placeholder="Retapez votre mot de passe"
-          />
+          <div class="auth-password-field">
+            <input
+              class="input-field"
+              id="auth-register-confirm"
+              name="confirmPassword"
+              type="password"
+              autocomplete="new-password"
+              maxlength="100"
+              placeholder="Retapez votre mot de passe"
+            />
+            <button type="button" class="auth-password-toggle" aria-controls="auth-register-confirm" aria-pressed="false">Afficher</button>
+          </div>
         </div>
         <button type="submit" class="btn primary auth-submit-btn" id="auth-register-submit">
           CRÉER UN COMPTE
@@ -161,6 +170,17 @@ export function initAuth(): void {
   const registerEmail = getInput('auth-register-email');
   const registerPassword = getInput('auth-register-password');
   const registerConfirm = getInput('auth-register-confirm');
+
+  viewAuth.querySelectorAll<HTMLButtonElement>('.auth-password-toggle').forEach((toggle) => {
+    toggle.addEventListener('click', () => {
+      const input = getInput(toggle.getAttribute('aria-controls') ?? '');
+      if (!input) return;
+      const visible = input.type === 'password';
+      input.type = visible ? 'text' : 'password';
+      toggle.textContent = visible ? 'Masquer' : 'Afficher';
+      toggle.setAttribute('aria-pressed', String(visible));
+    });
+  });
 
   function setAlert(kind: AlertKind | null, message = ''): void {
     if (!alertBox) return;

@@ -23,6 +23,12 @@ export interface GameInputDeps {
   minimap: MinimapController;
 }
 
+function isInputTarget(target: EventTarget | null): boolean {
+  if (!target || !(target instanceof HTMLElement)) return false;
+  const tag = target.tagName.toLowerCase();
+  return tag === 'input' || tag === 'textarea' || tag === 'select' || target.isContentEditable;
+}
+
 /**
  * Clavier et souris de l'écran de jeu.
  * Les touches de déplacement (ZQSD / flèches) sont seulement mémorisées dans state.keys :
@@ -37,6 +43,16 @@ export function registerGameInput(deps: GameInputDeps): void {
   );
 
   window.addEventListener('keydown', (e) => {
+    // Si l'utilisateur est en train de saisir du texte dans un champ de formulaire ou un élément éditable
+    if (isInputTarget(e.target) || isInputTarget(document.activeElement)) {
+      return;
+    }
+
+    // Les entrées de jeu ne doivent être actives que lorsque la vue de jeu est affichée
+    if (!viewGame.classList.contains('active')) {
+      return;
+    }
+
     // 0. Si le chat est ouvert, il capture toute la saisie clavier
     if (chat.getIsOpen()) {
       return;
