@@ -1,5 +1,6 @@
 import { switchView } from './viewManager';
 import { networkManager } from '../network/networkManager';
+import { showLocalRoomNotice } from './localGame';
 import {
   MessageType,
   type LobbyPlayerInfo,
@@ -70,6 +71,7 @@ export function renderLobby(): string {
 
 export function initLobby(): void {
   const viewMain = document.getElementById('view-main');
+  const viewLocal = document.getElementById('view-local');
   const viewLobby = document.getElementById('view-lobby');
   const viewGame = document.getElementById('view-game');
   const btnBackMainFromOnline = document.getElementById('btn-back-main-from-online');
@@ -137,7 +139,7 @@ export function initLobby(): void {
     btnBackMainFromOnline.addEventListener('click', () => {
       if (playersModal) playersModal.style.display = 'none';
       networkManager.send(MessageType.LEAVE_ROOM, {});
-      switchView(viewLobby, viewMain);
+      switchView(viewLobby, viewLocal ?? viewMain);
     });
   }
 
@@ -352,8 +354,8 @@ export function initLobby(): void {
       clearInterval(countdownInterval);
       countdownInterval = null;
     }
-    switchView(viewLobby, viewMain);
-    alert(payload.reason || "Vous avez été expulsé du salon par l'hôte.");
+    showLocalRoomNotice(payload.reason || "Vous avez été expulsé du salon par l'hôte.");
+    switchView(viewLobby, viewLocal ?? viewMain);
   });
 
   // Compte à rebours avant lancement de la manche
