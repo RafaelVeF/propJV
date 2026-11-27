@@ -435,7 +435,7 @@ export function renderProfile(): string {
                 <h3 class="section-heading">COLLECTION DE TAUNTS</h3>
                 <span class="section-subtext">Glissez vos répliques vers la roue ci-dessus ou cliquez sur « Équiper »</span>
               </div>
-              <span class="section-counter">${ownedTauntsCount} possédés sur ${TAUNTS_COLLECTION.length}</span>
+              <span class="section-counter" id="taunts-owned-counter">${ownedTauntsCount} possédés sur ${TAUNTS_COLLECTION.length}</span>
             </div>
 
             <div class="taunts-showcase-grid" id="taunts-showcase-container">
@@ -452,7 +452,7 @@ export function renderProfile(): string {
                 <h3 class="section-heading">ARMURERIE DES CLASSES SEEKER</h3>
                 <span class="section-subtext">Consultez les caractéristiques de vos classes de traqueur débloquées</span>
               </div>
-              <span class="section-counter">${ownedClassesCount} / ${SEEKER_CLASSES.length} possédée(s)</span>
+              <span class="section-counter" id="classes-owned-counter">${ownedClassesCount} / ${SEEKER_CLASSES.length} possédée(s)</span>
             </div>
 
             <div class="classes-showcase-grid" id="classes-showcase-container">
@@ -594,17 +594,28 @@ export function initProfile(): void {
       tauntsContainer.innerHTML = renderTauntsShowcaseHtml();
     }
 
-    // 6. Badges des onglets
+    // 6. Badges des onglets & compteurs de collection
     const equippedTauntsCount = state.tauntSlots.filter((s) => s !== null).length;
     const badgeTaunts = document.getElementById('badge-taunts-equipped');
     if (badgeTaunts) {
       badgeTaunts.textContent = `${equippedTauntsCount}/5 équipés`;
     }
 
+    const ownedTauntsCount = TAUNTS_COLLECTION.filter((t) => t.isOwned).length;
+    const tauntsCounter = document.getElementById('taunts-owned-counter');
+    if (tauntsCounter) {
+      tauntsCounter.textContent = `${ownedTauntsCount} possédés sur ${TAUNTS_COLLECTION.length}`;
+    }
+
     const ownedClassesCount = SEEKER_CLASSES.filter((c) => c.isOwned).length;
     const badgeClasses = document.getElementById('badge-classes-owned');
     if (badgeClasses) {
-      badgeClasses.textContent = `${ownedClassesCount}/2`;
+      badgeClasses.textContent = `${ownedClassesCount}/${SEEKER_CLASSES.length}`;
+    }
+
+    const classesCounter = document.getElementById('classes-owned-counter');
+    if (classesCounter) {
+      classesCounter.textContent = `${ownedClassesCount} / ${SEEKER_CLASSES.length} possédée(s)`;
     }
 
     // 7. Toast message
@@ -620,6 +631,8 @@ export function initProfile(): void {
       classesContainer.innerHTML = renderSeekerClassesShowcaseHtml();
     }
   };
+
+  updateProfileUI();
 
   if (!viewProfile) return;
 
